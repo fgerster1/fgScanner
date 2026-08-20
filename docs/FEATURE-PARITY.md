@@ -1,0 +1,23 @@
+# FEATURE-PARITY.md — living checklist
+
+Tracks FG Scanner against the NAPS2 8.3.2 inventory (docs/research/research-1-naps2.md) and the PLAN §5.8 commitments. Status: ☐ todo · ◐ partial · ☑ done · — n/a. Update at the end of every phase.
+
+| Area | Target | Status | Phase |
+|---|---|---|---|
+| WIA / TWAIN / eSCL scanning | [F] | ☐ | 1 |
+| Profiles (full NAPS2 settings surface) | [F] | ☐ | 1,4 |
+| Groups + index schema + entry grid | FG core | ☐ | 2,3 |
+| Index export CSV/XLSX/XML/JSON | FG core | ☐ | 3 |
+| Trash w/ 30-day retention | FG core | ☐ | 3 |
+| Editing transforms + undo/redo | [F] | ☐ | 4 |
+| PDF (PDF/A, metadata, encryption) + images export | [F] | ☐ | 4 |
+| Import PDF/images; file associations | [F] | ☐ | 4,9 |
+| OCR → .md + searchable PDF + languages | [F]+ | ☐ | 5 |
+| AI descriptions (Gemini, BYO-key, queue, cost) | FG core | ☐ | 6 |
+| Retro-process existing folder + reconcile | FG core | ☐ | 7 |
+| Batch dialog + CLI + shortcuts + profiles import/export | [P] | ☐ | 8 |
+| Installer, auto-update, signing, winget | [F] | ◐ | 0,9 |
+| Email (MAPI) / print / clipboard | [P] | ☐ | 4,9 |
+| Crash recovery + session restore + single instance | [F] | ☐ | 1,8 |
+| Dark/light theme | [F] | ☑ | 0 |
+| Walking skeleton (solution, CI, installer stub) | — | ☑ | 0 |

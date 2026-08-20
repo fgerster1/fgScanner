@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  attestations: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Version from tag
+        id: ver
+        shell: pwsh
+        run: '"version=$($env:GITHUB_REF_NAME.TrimStart(''v''))" >> $env:GITHUB_OUTPUT'
+
+      - name: Publish app
+        run: >
+          dotnet publish src/FgScanner.App/FgScanner.App.csproj -c Release
+          -p:PublishProfile=win-x64
+          -p:Version=${{ steps.ver.outputs.version }}
+
+      # --- Code signing (payload) — enable when SignPath / Azure Artifact Signing is configured.
+      #     See docs/PLAN.md §4. Sign publish/win-x64 exe+dll BEFORE packing the installer.
+      # - name: Sign payload (stub)
+      #   run: echo "signing not yet configured"
+
+      - name: Install Inno Setup 7
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = Get-ChildItem "$env:ProgramFiles(x86)\Inno Setup*","$env:ProgramFiles\Inno Setup*" -Filter ISCC.exe -Recurse | Select-Object -First 1
+          & $iscc.FullName /DAppVersion=${{ steps.ver.outputs.version }} build\installer\setup.iss
+
+      # - name: Sign installer (stub)
+      #   run: echo "signing not yet configured"
+
+      - name: Checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem dist\*.exe | ForEach-Object {
+            "$((Get-FileHash $_ -Algorithm SHA256).Hash) *$($_.Name)"
+          } | Out-File dist\SHA256SUMS.txt -Encoding ascii
+
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: 'dist/*.exe'
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            dist/*.exe
+            dist/SHA256SUMS.txt
+          generate_release_notes: true
+          draft: true
