@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using FgScanner.App.Services;
 using FgScanner.Data;
 using FgScanner.Ocr;
 using Serilog;
@@ -16,19 +17,24 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly AppSettingsService _appSettings;
     private readonly LanguageManager _languageManager;
 
+    private readonly FgScanner.Ai.CredentialStore _credentials;
+
     public SettingsViewModel(
         ProfileService profileService,
         TrashService trashService,
         AppSettingsService appSettings,
-        LanguageManager languageManager)
+        LanguageManager languageManager,
+        FgScanner.Ai.CredentialStore credentials)
     {
         _profileService = profileService;
         _trashService = trashService;
         _appSettings = appSettings;
         _languageManager = languageManager;
+        _credentials = credentials;
         DownloadableLanguages = [.. LanguageManager.KnownLanguages.Where(l => l.Code != "eng")];
         _ = ReloadAsync();
         _ = LoadOcrSettingsAsync();
+        _ = LoadAiSettingsAsync();
     }
 
     public ObservableCollection<Profile> Profiles { get; } = [];
@@ -122,6 +128,109 @@ public sealed partial class SettingsViewModel : ObservableObject
             Log.Error(ex, "Installing language {Code}", language.Code);
             StatusText = $"Download failed: {ex.Message}";
         }
+    }
+
+    // ---- AI descriptions (PLAN §5.6, §4 privacy) ----
+
+    public const string ConsentSettingKey = "Ai.ConsentUtc";
+
+    private const string PrivacyNotice =
+        "AI descriptions send each page image to Google's Gemini API under YOUR Google account " +
+        "and YOUR agreement with Google.\n\n" +
+        "Important:\n" +
+        "• Google's FREE tier may use submitted content for training and allows human review — " +
+        "use a PAID-tier key for real documents.\n" +
+        "• Users in the EEA, UK, and Switzerland are contractually required to use the paid tier.\n" +
+        "• FG Scanner stores your key in Windows Credential Manager, never logs it, and sends " +
+        "nothing anywhere until you start an AI run.\n\n" +
+        "Enable the AI description feature?";
+
+    [ObservableProperty]
+    private string _apiKeyInput = "";
+
+    [ObservableProperty]
+    private bool _hasStoredKey;
+
+    [ObservableProperty]
+    private string _aiModel = FgScanner.Ai.GeminiDescriptionProvider.DefaultModel;
+
+    [ObservableProperty]
+    private string _spendText = "";
+
+    private async Task LoadAiSettingsAsync()
+    {
+        try
+        {
+            HasStoredKey = _credentials.HasKey;
+            AiModel = await _appSettings.GetAsync(
+                AiWorker.ModelSettingKey, FgScanner.Ai.GeminiDescriptionProvider.DefaultModel);
+            var spend = await _appSettings.GetAsync(AiWorker.SpendSettingKey, "0");
+            SpendText = $"Cumulative AI spend this install: ${spend}";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Loading AI settings");
+        }
+    }
+
+    [RelayCommand]
+    private async Task SaveApiKeyAsync()
+    {
+        var key = ApiKeyInput.Trim();
+        if (key.Length == 0)
+        {
+            StatusText = "Paste your Google AI Studio API key first.";
+            return;
+        }
+
+        // First enable: privacy notice + recorded consent (SignPath requirement, PLAN §4).
+        var consent = await _appSettings.GetAsync(ConsentSettingKey, "");
+        if (consent.Length == 0)
+        {
+            var answer = System.Windows.MessageBox.Show(
+                PrivacyNotice, "FG Scanner — AI privacy notice",
+                System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+            if (answer != System.Windows.MessageBoxResult.Yes)
+            {
+                StatusText = "AI feature not enabled.";
+                return;
+            }
+
+            await _appSettings.SetAsync(
+                ConsentSettingKey, DateTime.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        StatusText = "Validating key with a 1-token test call…";
+        try
+        {
+            using var provider = new FgScanner.Ai.GeminiDescriptionProvider(key, AiModel.Trim());
+            var result = await provider.ValidateKeyAsync();
+            // An empty MAX_TOKENS response still proves auth worked; only transport/auth failures matter.
+            if (!result.Success && result.FailureReason?.Contains("HTTP 4", StringComparison.Ordinal) == true)
+            {
+                StatusText = $"Key rejected: {result.FailureReason}";
+                return;
+            }
+
+            _credentials.SetKey(key);
+            await _appSettings.SetAsync(AiWorker.ModelSettingKey, AiModel.Trim());
+            ApiKeyInput = "";
+            HasStoredKey = true;
+            StatusText = "API key validated and stored in Windows Credential Manager.";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Validating API key"); // exception text never contains the key
+            StatusText = $"Validation failed: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private void ClearApiKey()
+    {
+        _credentials.ClearKey();
+        HasStoredKey = false;
+        StatusText = "Stored API key cleared.";
     }
 
     /// <summary>Notifies other views (Groups) that profiles changed.</summary>

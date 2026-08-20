@@ -53,3 +53,11 @@ Run before each release, and after any change to FgScanner.Scanning. Automated t
 - [ ] "Re-OCR all": previous .md files appear in Trash and are restorable.
 - [ ] Low-quality page (crumpled/skewed photo) shows "Yes ⚠ nn% — review" in the grid.
 - [ ] Settings → download German; OCR a German page with languages "eng+deu".
+
+## Phase 6 — AI descriptions (manual checks)
+
+- [ ] Settings → paste a PAID-tier AI Studio key: privacy notice appears once, key validates, "AI describe" button appears in Groups.
+- [ ] Smoke run (≤$0.01): AI-describe a 2–3 page group; estimate dialog shows ≈$0.0006/page; descriptions land in the grid, AIDescription column fills in the re-exported index files; compare actual spend in Settings against the estimate (should be within 20%).
+- [ ] Pull the network cable mid-run: remaining pages stay Pending; reconnect + restart resumes without re-billing finished pages.
+- [ ] A blank page (OCRed, <5 words) shows Skipped / "BLANK PAGE" with no API call (spend unchanged).
+- [ ] Windows Credential Manager shows "FGScanner:GeminiApiKey"; "Clear stored key" removes it and hides the AI button.

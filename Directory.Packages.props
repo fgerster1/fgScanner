@@ -19,6 +19,10 @@
     <!-- Tesseract 5.5 executable, Apache-2.0; shelled out per PLAN §5.5, never P/Invoked. -->
     <PackageVersion Include="NAPS2.Tesseract.Binaries" Version="1.4.0" />
     <PackageVersion Include="System.Drawing.Common" Version="10.0.2" />
+    <!-- Gemini SDK (Apache-2.0), BYO-key only; key lives in Windows Credential Manager. -->
+    <PackageVersion Include="Google.GenAI" Version="1.19.0" />
+    <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.11" />
+    <PackageVersion Include="RichardSzalay.MockHttp" Version="7.1.0" />
 
     <!-- Data (PLAN §5.1: SQLite is a first-class deliverable) -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.2" />

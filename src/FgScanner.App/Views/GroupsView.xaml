@@ -95,6 +95,7 @@
                     <Button Content="Import PDF/images…" Command="{Binding ImportFilesCommand}" Padding="10,6" Margin="0,0,6,0" />
                     <Button Content="OCR pages" Command="{Binding OcrPagesCommand}" Padding="10,6" Margin="0,0,6,0" ToolTip="Recognize text on pages not yet OCRed" />
                     <Button Content="Re-OCR all" Command="{Binding ReOcrAllCommand}" Padding="10,6" Margin="0,0,6,0" ToolTip="Redo OCR on every page (old .md files go to Trash)" />
+                    <Button Content="AI describe" Command="{Binding DescribePagesCommand}" Padding="10,6" Margin="0,0,6,0" ToolTip="Generate AI descriptions with your Gemini key (cost estimate shown first)" Visibility="{Binding AiAvailable, Converter={x:Static views:BoolToVisibilityConverter.Instance}}" />
                     <Button Content="Delete page (to Trash)" Command="{Binding DeleteSelectedCommand}" Padding="10,6" />
                 </WrapPanel>
                 <WrapPanel Margin="0,0,0,6">

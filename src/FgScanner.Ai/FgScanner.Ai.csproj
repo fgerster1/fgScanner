@@ -1,5 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <!-- CredentialStore P/Invokes advapi32; this app is Windows-only. -->
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Google.GenAI" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FgScanner.Core\FgScanner.Core.csproj" />
+  </ItemGroup>
 </Project>
