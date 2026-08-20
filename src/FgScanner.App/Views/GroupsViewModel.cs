@@ -15,19 +15,22 @@ public sealed partial class GroupsViewModel : ObservableObject
     private readonly IndexingService _indexingService;
     private readonly TrashService _trashService;
     private readonly ActiveGroupStore _activeGroup;
+    private readonly PageEditingToolset _toolset;
 
     public GroupsViewModel(
         GroupService groupService,
         ProfileService profileService,
         IndexingService indexingService,
         TrashService trashService,
-        ActiveGroupStore activeGroup)
+        ActiveGroupStore activeGroup,
+        PageEditingToolset toolset)
     {
         _groupService = groupService;
         _profileService = profileService;
         _indexingService = indexingService;
         _trashService = trashService;
         _activeGroup = activeGroup;
+        _toolset = toolset;
         activeGroup.GroupContentChanged += () => _ = Detail?.ReloadRowsAsync();
         _ = InitializeAsync();
     }
@@ -84,8 +87,9 @@ public sealed partial class GroupsViewModel : ObservableObject
 
         try
         {
+            Detail?.UndoRedo.Dispose();
             var detail = new GroupDetailViewModel(
-                group, _groupService, _profileService, _indexingService, _trashService, _activeGroup);
+                group, _groupService, _profileService, _indexingService, _trashService, _activeGroup, _toolset);
             await detail.LoadAsync();
             Detail = detail;
         }

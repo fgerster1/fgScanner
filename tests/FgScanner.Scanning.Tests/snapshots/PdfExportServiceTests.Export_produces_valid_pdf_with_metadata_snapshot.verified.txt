@@ -1,0 +1,10 @@
+﻿{
+  Header: %PDF-1.4,
+  PageCount: 2,
+  HasTitle: true,
+  HasAuthor: true,
+  HasSubject: true,
+  HasKeywords: true,
+  Encrypted: false,
+  PdfAMarker: false
+}

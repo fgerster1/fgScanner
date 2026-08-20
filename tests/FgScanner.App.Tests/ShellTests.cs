@@ -54,6 +54,13 @@ public sealed class ShellTests : IDisposable
         public FgScannerDbContext CreateDbContext() => new(DbBootstrapper.BuildOptions(dbPath));
     }
 
+    private PageEditingToolset CreateToolset() => new(
+        new FgScanner.Scanning.Editing.ImageEditor(),
+        new FgScanner.Scanning.Export.PdfExportService(),
+        new FgScanner.Scanning.Export.ImageExportService(),
+        new FgScanner.Scanning.Import.FileImportService(),
+        new ReorderService(new TestFactory(_dbPath)));
+
     private ScanViewModel CreateScanViewModel(FakeScanService? service = null) =>
         new(service ?? new FakeScanService(), _sessionService, _groupService, _indexingService, _activeGroup);
 
@@ -62,7 +69,7 @@ public sealed class ShellTests : IDisposable
     {
         var shell = new ShellViewModel(
             CreateScanViewModel(),
-            new GroupsViewModel(_groupService, _profileService, _indexingService, _trashService, _activeGroup),
+            new GroupsViewModel(_groupService, _profileService, _indexingService, _trashService, _activeGroup, CreateToolset()),
             new TrashViewModel(_trashService, _activeGroup),
             new SettingsViewModel(_profileService, _trashService));
         Assert.Equal(["Scan", "Groups", "Trash", "Settings"], shell.Sections);

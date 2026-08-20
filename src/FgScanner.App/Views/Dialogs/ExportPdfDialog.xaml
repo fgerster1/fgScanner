@@ -1,0 +1,48 @@
+<Window x:Class="FgScanner.App.Views.Dialogs.ExportPdfDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Export PDF" SizeToContent="Height" Width="440"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False">
+    <StackPanel Margin="14">
+        <TextBlock Text="Metadata" FontWeight="SemiBold" Margin="0,0,0,4" />
+        <UniformGrid Columns="2" Margin="0,0,0,8">
+            <StackPanel Margin="0,0,6,4"><TextBlock Text="Title" Opacity="0.7" FontSize="11" /><TextBox x:Name="TitleBox" /></StackPanel>
+            <StackPanel Margin="0,0,0,4"><TextBlock Text="Author" Opacity="0.7" FontSize="11" /><TextBox x:Name="AuthorBox" /></StackPanel>
+            <StackPanel Margin="0,0,6,0"><TextBlock Text="Subject" Opacity="0.7" FontSize="11" /><TextBox x:Name="SubjectBox" /></StackPanel>
+            <StackPanel><TextBlock Text="Keywords" Opacity="0.7" FontSize="11" /><TextBox x:Name="KeywordsBox" /></StackPanel>
+        </UniformGrid>
+
+        <TextBlock Text="Compatibility" FontWeight="SemiBold" Margin="0,0,0,4" />
+        <ComboBox x:Name="CompatBox" SelectedIndex="0" Margin="0,0,0,10">
+            <ComboBoxItem Content="Standard PDF" />
+            <ComboBoxItem Content="PDF/A-1b" />
+            <ComboBoxItem Content="PDF/A-2b" />
+            <ComboBoxItem Content="PDF/A-3b" />
+            <ComboBoxItem Content="PDF/A-3u" />
+        </ComboBox>
+
+        <CheckBox x:Name="EncryptCheck" Content="Encrypt with password" FontWeight="SemiBold" Margin="0,0,0,4" />
+        <StackPanel IsEnabled="{Binding ElementName=EncryptCheck, Path=IsChecked}">
+            <UniformGrid Columns="2" Margin="0,0,0,4">
+                <StackPanel Margin="0,0,6,0"><TextBlock Text="Owner password" Opacity="0.7" FontSize="11" /><TextBox x:Name="OwnerBox" /></StackPanel>
+                <StackPanel><TextBlock Text="User password (to open)" Opacity="0.7" FontSize="11" /><TextBox x:Name="UserBox" /></StackPanel>
+            </UniformGrid>
+            <TextBlock Text="Allow readers to:" Opacity="0.7" FontSize="11" Margin="0,2,0,2" />
+            <UniformGrid Columns="2" Margin="0,0,0,8">
+                <CheckBox x:Name="AllowPrinting" Content="Print" IsChecked="True" />
+                <CheckBox x:Name="AllowFullPrint" Content="Print full quality" IsChecked="True" />
+                <CheckBox x:Name="AllowModify" Content="Modify document" IsChecked="True" />
+                <CheckBox x:Name="AllowAssembly" Content="Assemble pages" IsChecked="True" />
+                <CheckBox x:Name="AllowCopy" Content="Copy content" IsChecked="True" />
+                <CheckBox x:Name="AllowCopyAccess" Content="Copy for accessibility" IsChecked="True" />
+                <CheckBox x:Name="AllowAnnotate" Content="Annotate" IsChecked="True" />
+                <CheckBox x:Name="AllowForms" Content="Fill forms" IsChecked="True" />
+            </UniformGrid>
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
+            <Button Content="Export" IsDefault="True" MinWidth="90" Margin="0,0,6,0" Click="OnExport" />
+            <Button Content="Cancel" IsCancel="True" MinWidth="90" />
+        </StackPanel>
+    </StackPanel>
+</Window>

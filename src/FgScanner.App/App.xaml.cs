@@ -59,6 +59,13 @@ public partial class App : Application
                     Path.Combine(
                         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                         "FGScanner", "trash")));
+                services.AddSingleton<ReorderService>();
+                services.AddSingleton(sp => new PageEditingToolset(
+                    new FgScanner.Scanning.Editing.ImageEditor(),
+                    new FgScanner.Scanning.Export.PdfExportService(),
+                    new FgScanner.Scanning.Export.ImageExportService(),
+                    new FgScanner.Scanning.Import.FileImportService(),
+                    sp.GetRequiredService<ReorderService>()));
                 services.AddSingleton<ActiveGroupStore>();
                 services.AddSingleton<GroupsViewModel>();
                 services.AddSingleton<TrashViewModel>();

@@ -1,6 +1,8 @@
 using System.ComponentModel;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Input;
 using FgScanner.Data;
 
 namespace FgScanner.App.Views;
@@ -27,6 +29,36 @@ public partial class GroupsView : UserControl
         if (e.PropertyName == nameof(GroupsViewModel.Detail) && sender is GroupsViewModel vm)
         {
             HookDetail(vm.Detail);
+        }
+    }
+
+    /// <summary>Mirrors the grid's multi-selection into the VM for apply-to-selected edits.</summary>
+    private void OnGridSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_detail is null)
+        {
+            return;
+        }
+
+        _detail.SelectedRows.Clear();
+        foreach (var item in EntryGrid.SelectedItems)
+        {
+            if (item is DocumentRow row)
+            {
+                _detail.SelectedRows.Add(row);
+            }
+        }
+    }
+
+    /// <summary>Drag-out: dragging the preview hands the page file to Explorer or another app.</summary>
+    private void OnThumbnailMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton == MouseButtonState.Pressed
+            && _detail?.SelectedRow is { } row
+            && System.IO.File.Exists(row.ImagePath))
+        {
+            var data = new DataObject(DataFormats.FileDrop, new[] { row.ImagePath });
+            DragDrop.DoDragDrop((DependencyObject)sender, data, DragDropEffects.Copy);
         }
     }
 
