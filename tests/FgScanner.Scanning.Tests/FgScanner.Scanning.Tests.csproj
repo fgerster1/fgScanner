@@ -2,9 +2,12 @@
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
     <OutputType>Exe</OutputType>
+    <!-- NAPS2 API is used directly in editing/export tests. -->
+    <NoWarn>$(NoWarn);CA2252</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Verify.XunitV3" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
   <ItemGroup>

@@ -14,6 +14,8 @@
     <PackageVersion Include="NAPS2.Sdk" Version="1.3.0" />
     <PackageVersion Include="NAPS2.Sdk.Worker.Win32" Version="1.3.0" />
     <PackageVersion Include="NAPS2.Images.Gdi" Version="1.3.0" />
+    <!-- Pdfium native binary for PDF import/render (BSD-3-Clause). -->
+    <PackageVersion Include="NAPS2.Pdfium.Binaries" Version="1.3.0" />
 
     <!-- Data (PLAN §5.1: SQLite is a first-class deliverable) -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.2" />

@@ -24,6 +24,8 @@ public sealed class ThumbnailConverter : IValueConverter
             bitmap.UriSource = new Uri(path);
             bitmap.DecodePixelWidth = 180;
             bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            // Edits rewrite the same path; without this WPF serves the stale cached bitmap.
+            bitmap.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
             bitmap.EndInit();
             bitmap.Freeze();
             return bitmap;

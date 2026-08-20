@@ -19,6 +19,10 @@ public sealed partial class GroupDetailViewModel : ObservableObject
     private readonly IndexingService _indexingService;
     private readonly TrashService _trashService;
     private readonly ActiveGroupStore _activeGroup;
+    private readonly PageEditingToolset _toolset;
+
+    /// <summary>Undo/redo for edits and reorders in this group (deletions excluded — they go to Trash).</summary>
+    public UndoRedoService UndoRedo { get; } = new();
 
     public GroupDetailViewModel(
         Group group,
@@ -26,7 +30,8 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         ProfileService profileService,
         IndexingService indexingService,
         TrashService trashService,
-        ActiveGroupStore activeGroup)
+        ActiveGroupStore activeGroup,
+        PageEditingToolset toolset)
     {
         Group = group;
         _groupService = groupService;
@@ -34,6 +39,12 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         _indexingService = indexingService;
         _trashService = trashService;
         _activeGroup = activeGroup;
+        _toolset = toolset;
+        UndoRedo.Changed += () =>
+        {
+            UndoCommand.NotifyCanExecuteChanged();
+            RedoCommand.NotifyCanExecuteChanged();
+        };
     }
 
     public Group Group { get; }
@@ -47,6 +58,9 @@ public sealed partial class GroupDetailViewModel : ObservableObject
 
     [ObservableProperty]
     private DocumentRow? _selectedRow;
+
+    /// <summary>Multi-selection from the grid (kept in sync by the view) for apply-to-selected edits.</summary>
+    public ObservableCollection<DocumentRow> SelectedRows { get; } = [];
 
     [ObservableProperty]
     private string _statusText = "";
@@ -95,6 +109,7 @@ public sealed partial class GroupDetailViewModel : ObservableObject
             var documentRow = new DocumentRow
             {
                 DocumentId = page.DocumentId,
+                PageId = page.Id,
                 Sequence = sequence,
                 ImageName = page.FileName,
                 ImagePath = Path.Combine(Group.DirectoryPath, page.FileName),

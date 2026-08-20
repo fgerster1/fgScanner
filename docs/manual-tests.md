@@ -33,3 +33,14 @@ Run before each release, and after any change to FgScanner.Scanning. Automated t
 - [ ] After force-killing FgScanner.exe, verify no NAPS2.Worker.exe processes linger
       (observed once during phase 1 when killing seconds after startup — likely a race
       before Job-object assignment; workers are normally tied to the parent's lifetime).
+
+## Phase 4 — editing & export (manual checks)
+
+- [ ] Rotate/flip/deskew a page in Groups: thumbnail refreshes, file on disk changes, checksum updates (re-scan of same original no longer flags duplicate).
+- [ ] Undo (Ctrl+Z) and redo (Ctrl+Y) an edit and a reorder; verify committed groups re-export after each.
+- [ ] Export PDF with PDF/A-2b + encryption; open in Adobe/Edge: metadata present, password required, printing restricted per flags.
+- [ ] Export multi-page TIFF; open in an image viewer and page through frames.
+- [ ] Import a password-protected PDF: password prompt appears, pages land in the group grid.
+- [ ] Print… sends pages to a real printer / Microsoft Print to PDF at full page size.
+- [ ] Copy puts the page image on the clipboard (paste into Paint).
+- [ ] Drag the preview thumbnail into Explorer: file copy lands.

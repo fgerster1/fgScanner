@@ -92,7 +92,31 @@
                             Padding="10,6" Margin="0,0,6,0" />
                     <Button Content="Re-export index files" Command="{Binding ReexportCommand}" Padding="10,6" Margin="0,0,6,0" />
                     <Button Content="Add missed page…" Command="{Binding AddMissedPageCommand}" Padding="10,6" Margin="0,0,6,0" />
+                    <Button Content="Import PDF/images…" Command="{Binding ImportFilesCommand}" Padding="10,6" Margin="0,0,6,0" />
                     <Button Content="Delete page (to Trash)" Command="{Binding DeleteSelectedCommand}" Padding="10,6" />
+                </WrapPanel>
+                <WrapPanel Margin="0,0,0,6">
+                    <Button Content="↶ Undo" Command="{Binding UndoCommand}" Padding="8,4" Margin="0,0,4,0" ToolTip="Ctrl+Z" />
+                    <Button Content="↷ Redo" Command="{Binding RedoCommand}" Padding="8,4" Margin="0,0,10,0" ToolTip="Ctrl+Y" />
+                    <Button Content="⟲ 90°" Command="{Binding RotateLeftCommand}" Padding="8,4" Margin="0,0,4,0" ToolTip="Rotate left" />
+                    <Button Content="⟳ 90°" Command="{Binding RotateRightCommand}" Padding="8,4" Margin="0,0,4,0" ToolTip="Rotate right" />
+                    <Button Content="Flip" Command="{Binding FlipCommand}" Padding="8,4" Margin="0,0,4,0" ToolTip="Rotate 180°" />
+                    <Button Content="Angle…" Command="{Binding CustomRotateCommand}" Padding="8,4" Margin="0,0,4,0" ToolTip="Custom rotation angle" />
+                    <Button Content="Deskew" Command="{Binding DeskewCommand}" Padding="8,4" Margin="0,0,4,0" ToolTip="Auto-straighten" />
+                    <Button Content="Adjust…" Command="{Binding AdjustCommand}" Padding="8,4" Margin="0,0,10,0"
+                            ToolTip="Brightness, contrast, hue, saturation, sharpen, black &amp; white, crop" />
+                    <Button Content="Split ⇅" Command="{Binding SplitCommand}" CommandParameter="h" Padding="8,4" Margin="0,0,4,0" ToolTip="Split top/bottom" />
+                    <Button Content="Split ⇆" Command="{Binding SplitCommand}" CommandParameter="v" Padding="8,4" Margin="0,0,4,0" ToolTip="Split left/right" />
+                    <Button Content="Combine" Command="{Binding CombineWithNextCommand}" Padding="8,4" Margin="0,0,10,0" ToolTip="Combine with the next page" />
+                    <Button Content="▲" Command="{Binding MoveUpCommand}" Padding="8,4" Margin="0,0,4,0" ToolTip="Move page up" />
+                    <Button Content="▼" Command="{Binding MoveDownCommand}" Padding="8,4" Margin="0,0,4,0" ToolTip="Move page down" />
+                    <Button Content="Reverse" Command="{Binding ReverseOrderCommand}" Padding="8,4" Margin="0,0,4,0" />
+                    <Button Content="Interleave" Command="{Binding InterleaveCommand}" Padding="8,4" Margin="0,0,4,0" ToolTip="Merge fronts and backs (manual duplex)" />
+                    <Button Content="Deinterleave" Command="{Binding DeinterleaveCommand}" Padding="8,4" Margin="0,0,10,0" />
+                    <Button Content="Export PDF…" Command="{Binding ExportPdfCommand}" Padding="8,4" Margin="0,0,4,0" />
+                    <Button Content="Export images…" Command="{Binding ExportImagesCommand}" Padding="8,4" Margin="0,0,4,0" />
+                    <Button Content="Print…" Command="{Binding PrintCommand}" Padding="8,4" Margin="0,0,4,0" />
+                    <Button Content="Copy" Command="{Binding CopyPageCommand}" Padding="8,4" ToolTip="Copy page image to clipboard" />
                 </WrapPanel>
                 <TextBlock Text="{Binding ValidationSummary}" Foreground="IndianRed"
                            TextWrapping="Wrap" Margin="0,0,0,4"
@@ -112,7 +136,14 @@
                           CanUserAddRows="False" CanUserDeleteRows="False"
                           HeadersVisibility="Column"
                           EnableRowVirtualization="True"
-                          SelectionUnit="FullRow" SelectionMode="Single">
+                          SelectionChanged="OnGridSelectionChanged"
+                          SelectionUnit="FullRow" SelectionMode="Extended">
+                    <DataGrid.InputBindings>
+                        <KeyBinding Modifiers="Ctrl" Key="Z" Command="{Binding UndoCommand}" />
+                        <KeyBinding Modifiers="Ctrl" Key="Y" Command="{Binding RedoCommand}" />
+                        <KeyBinding Modifiers="Ctrl+Shift" Key="Left" Command="{Binding RotateLeftCommand}" />
+                        <KeyBinding Modifiers="Ctrl+Shift" Key="Right" Command="{Binding RotateRightCommand}" />
+                    </DataGrid.InputBindings>
                     <DataGrid.CellStyle>
                         <Style TargetType="DataGridCell">
                             <Style.Triggers>
@@ -126,9 +157,10 @@
                         </Style>
                     </DataGrid.CellStyle>
                 </DataGrid>
-                <Border Grid.Column="1" Margin="8,0,0,0" BorderBrush="Gray" BorderThickness="1">
+                <Border Grid.Column="1" Margin="8,0,0,0" BorderBrush="Gray" BorderThickness="1"
+                        ToolTip="Drag this preview to copy the page file elsewhere">
                     <Image Source="{Binding SelectedRow.ImagePath, Converter={x:Static views:ThumbnailConverter.Instance}}"
-                           Stretch="Uniform" />
+                           Stretch="Uniform" MouseMove="OnThumbnailMouseMove" />
                 </Border>
             </Grid>
         </DockPanel>

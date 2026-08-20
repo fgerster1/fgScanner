@@ -15,6 +15,8 @@ public sealed class DocumentRow : ObservableObject
 {
     public required Guid DocumentId { get; init; }
 
+    public required Guid PageId { get; init; }
+
     public required int Sequence { get; init; }
 
     public required string ImageName { get; init; }

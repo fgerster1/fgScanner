@@ -4,10 +4,16 @@
     <!-- CA2252: NAPS2.Sdk 1.x marks its API [RequiresPreviewFeatures] as an api-stability signal.
          We suppress at this boundary project only, rather than marking our own assembly preview. -->
     <NoWarn>$(NoWarn);CA2252</NoWarn>
+    <!-- SkewEstimator reads pixels through NAPS2's BitwiseImageData pointer API. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="NAPS2.Sdk" />
     <PackageReference Include="NAPS2.Sdk.Worker.Win32" />
     <PackageReference Include="NAPS2.Images.Gdi" />
+    <PackageReference Include="NAPS2.Pdfium.Binaries" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FgScanner.Core\FgScanner.Core.csproj" />
   </ItemGroup>
 </Project>
