@@ -1,10 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- Windows TFM for the scanning stack; still fully headless — no WPF reference. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
     <AssemblyName>fgscanner</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="System.CommandLine" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\FgScanner.Core\FgScanner.Core.csproj" />
+    <ProjectReference Include="..\FgScanner.Scanning\FgScanner.Scanning.csproj" />
+    <ProjectReference Include="..\FgScanner.Data\FgScanner.Data.csproj" />
+    <ProjectReference Include="..\FgScanner.Ocr\FgScanner.Ocr.csproj" />
+    <ProjectReference Include="..\FgScanner.Ai\FgScanner.Ai.csproj" />
   </ItemGroup>
 </Project>

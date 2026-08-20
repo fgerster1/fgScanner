@@ -35,6 +35,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _ = ReloadAsync();
         _ = LoadOcrSettingsAsync();
         _ = LoadAiSettingsAsync();
+        _ = LoadShortcutsAsync();
     }
 
     public ObservableCollection<Profile> Profiles { get; } = [];
@@ -233,6 +234,104 @@ public sealed partial class SettingsViewModel : ObservableObject
         StatusText = "Stored API key cleared.";
     }
 
+    // ---- keyboard shortcuts (PLAN §5.8) ----
+
+    public const string ShortcutsSettingKey = "Shortcuts.Json";
+
+    public ObservableCollection<ShortcutRow> Shortcuts { get; } = [];
+
+    /// <summary>Raised after saving so the shell re-applies key bindings immediately.</summary>
+    public event Action<FgScanner.Core.ShortcutMap>? ShortcutsChanged;
+
+    private async Task LoadShortcutsAsync()
+    {
+        try
+        {
+            var map = FgScanner.Core.ShortcutMap.FromJson(await _appSettings.GetAsync(ShortcutsSettingKey, ""));
+            Shortcuts.Clear();
+            foreach (var (action, gesture) in map.Bindings.OrderBy(b => b.Key, StringComparer.Ordinal))
+            {
+                Shortcuts.Add(new ShortcutRow { Action = action, Gesture = gesture });
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Loading shortcuts");
+        }
+    }
+
+    [RelayCommand]
+    private async Task ResetShortcutsAsync()
+    {
+        await _appSettings.SetAsync(ShortcutsSettingKey, "");
+        await LoadShortcutsAsync();
+        ShortcutsChanged?.Invoke(FgScanner.Core.ShortcutMap.CreateDefault());
+        StatusText = "Shortcuts reset to the NAPS2 defaults.";
+    }
+
+    // ---- profile import/export (.fgprofile, PLAN §5.8) ----
+
+    [RelayCommand]
+    private async Task ExportProfileAsync()
+    {
+        if (SelectedProfile is null)
+        {
+            return;
+        }
+
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "Export profile",
+            Filter = "FG Scanner profile|*.fgprofile",
+            FileName = SelectedProfile.Name + ".fgprofile",
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        try
+        {
+            var json = await _profileService.ExportProfileJsonAsync(SelectedProfile.Id);
+            await System.IO.File.WriteAllTextAsync(dialog.FileName, json);
+            StatusText = $"Profile exported to {dialog.FileName}.";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Exporting profile");
+            StatusText = $"Export failed: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task ImportProfileAsync()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Import profile",
+            Filter = "FG Scanner profile|*.fgprofile|All files|*.*",
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        try
+        {
+            var profile = await _profileService.ImportProfileJsonAsync(
+                await System.IO.File.ReadAllTextAsync(dialog.FileName));
+            await ReloadAsync();
+            SelectedProfile = Profiles.FirstOrDefault(p => p.Id == profile.Id);
+            ProfilesChanged?.Invoke();
+            StatusText = $"Profile \"{profile.Name}\" imported.";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Importing profile");
+            StatusText = $"Import failed: {ex.Message}";
+        }
+    }
+
     /// <summary>Notifies other views (Groups) that profiles changed.</summary>
     public event Action? ProfilesChanged;
 
@@ -341,6 +440,15 @@ public sealed partial class SettingsViewModel : ObservableObject
             await _appSettings.SetAsync(
                 AppSettingsService.OcrLanguagesKey,
                 string.IsNullOrWhiteSpace(OcrLanguages) ? "eng" : OcrLanguages.Trim());
+
+            var shortcutMap = FgScanner.Core.ShortcutMap.CreateDefault();
+            foreach (var row in Shortcuts)
+            {
+                shortcutMap.Set(row.Action, row.Gesture);
+            }
+
+            await _appSettings.SetAsync(ShortcutsSettingKey, shortcutMap.ToJson());
+            ShortcutsChanged?.Invoke(shortcutMap);
             StatusText = $"Saved as schema version {schema.Version}. New groups use it; existing groups keep theirs.";
             ProfilesChanged?.Invoke();
         }
@@ -395,4 +503,12 @@ public sealed partial class FieldRow : ObservableObject
             ? JsonSerializer.Serialize(Choices.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
             : null,
     };
+}
+
+public sealed partial class ShortcutRow : ObservableObject
+{
+    public required string Action { get; init; }
+
+    [ObservableProperty]
+    private string _gesture = "";
 }

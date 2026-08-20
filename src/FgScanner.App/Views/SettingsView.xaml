@@ -97,6 +97,33 @@
                 <TextBlock Text="days before permanent deletion." VerticalAlignment="Center" Margin="6,0,0,0" />
             </WrapPanel>
 
+            <TextBlock Text="Profile files" FontWeight="SemiBold" Margin="0,0,0,4" />
+            <WrapPanel Margin="0,0,0,12">
+                <Button Content="Export selected profile…" Command="{Binding ExportProfileCommand}" Margin="0,0,6,0" />
+                <Button Content="Import profile…" Command="{Binding ImportProfileCommand}" />
+            </WrapPanel>
+
+            <TextBlock Text="Keyboard shortcuts" FontWeight="SemiBold" Margin="0,0,0,4" />
+            <TextBlock Opacity="0.6" FontSize="11" Margin="0,0,0,4"
+                       Text="Gestures like Ctrl+Enter, Ctrl+Shift+Left, F5. Clear a box to unbind. Saved with the button below." />
+            <ItemsControl ItemsSource="{Binding Shortcuts}" Margin="0,0,0,4">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,14,4">
+                            <TextBlock Text="{Binding Action}" Width="90" VerticalAlignment="Center" FontSize="11" />
+                            <TextBox Text="{Binding Gesture, UpdateSourceTrigger=PropertyChanged}" Width="110" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Button Content="Reset shortcuts to defaults" Command="{Binding ResetShortcutsCommand}"
+                    HorizontalAlignment="Left" Margin="0,0,0,12" />
+
             <Button Content="Save profile &amp; settings" Command="{Binding SaveCommand}"
                     FontWeight="SemiBold" Padding="12,8" HorizontalAlignment="Left" />
             <TextBlock Text="{Binding StatusText}" Opacity="0.8" Margin="0,8,0,0" TextWrapping="Wrap" />

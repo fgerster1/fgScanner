@@ -12,13 +12,58 @@ using Serilog;
 
 namespace FgScanner.App;
 
+// CA1001: WPF owns the Application lifetime; the mutex and signal are released in OnExit.
+#pragma warning disable CA1001
 public partial class App : Application
 {
     private IHost? _host;
+    private Mutex? _singleInstanceMutex;
+    private EventWaitHandle? _activateSignal;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // Single instance (PLAN §5.8): a second launch activates the running window and exits.
+        _singleInstanceMutex = new Mutex(initiallyOwned: true, "FGScanner.SingleInstance", out var isFirstInstance);
+        if (!isFirstInstance)
+        {
+            try
+            {
+                using var signal = EventWaitHandle.OpenExisting("FGScanner.Activate");
+                signal.Set();
+            }
+            catch (WaitHandleCannotBeOpenedException)
+            {
+            }
+
+            Shutdown();
+            return;
+        }
+
+        _activateSignal = new EventWaitHandle(false, EventResetMode.AutoReset, "FGScanner.Activate");
+        var listener = new Thread(() =>
+        {
+            while (_activateSignal.WaitOne())
+            {
+                Dispatcher.BeginInvoke(() =>
+                {
+                    if (MainWindow is { } window)
+                    {
+                        if (window.WindowState == WindowState.Minimized)
+                        {
+                            window.WindowState = WindowState.Normal;
+                        }
+
+                        window.Activate();
+                    }
+                });
+            }
+        })
+        {
+            IsBackground = true,
+        };
+        listener.Start();
 
         var logDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -66,7 +111,7 @@ public partial class App : Application
                 services.AddSingleton(sp => new FgScanner.Ai.CredentialStore());
                 services.AddSingleton<AiWorker>();
                 services.AddSingleton(sp => new FgScanner.Scanning.Import.FileImportService());
-                services.AddSingleton<FgScanner.Core.IPdfRenderer>(sp => new Naps2PdfRenderer(
+                services.AddSingleton<FgScanner.Core.IPdfRenderer>(sp => new FgScanner.Scanning.Import.Naps2PdfRenderer(
                     sp.GetRequiredService<FgScanner.Scanning.Import.FileImportService>()));
                 services.AddSingleton(sp => new RetroProcessService(
                     sp.GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<FgScannerDbContext>>(),
@@ -168,6 +213,8 @@ public partial class App : Application
         Log.Information("FG Scanner exiting");
         _host?.StopAsync().GetAwaiter().GetResult();
         _host?.Dispose();
+        _singleInstanceMutex?.Dispose();
+        _activateSignal?.Dispose();
         Log.CloseAndFlush();
         base.OnExit(e);
     }

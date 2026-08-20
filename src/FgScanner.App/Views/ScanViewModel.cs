@@ -127,43 +127,118 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 
     private bool CanScan() => SelectedDevice is not null && !IsScanning;
 
+    private ScanProfileOptions BuildOptions() => new()
+    {
+        Device = SelectedDevice,
+        Source = Source,
+        Dpi = Dpi,
+        BitDepth = BitDepth,
+        PageSize = PageSize,
+        Brightness = Brightness,
+        Contrast = Contrast,
+    };
+
+    /// <summary>One scanner pass streaming pages into the session; shared by Scan and Batch.</summary>
+    private async Task<int> RunScanPassAsync(CancellationToken cancellationToken)
+    {
+        var pagesBefore = Pages.Count;
+        await foreach (var page in _scanService.ScanAsync(BuildOptions(), _sessionService.Session, cancellationToken))
+        {
+            Pages.Add(page);
+            StatusText = $"Scanned page {Pages.Count - pagesBefore}…";
+        }
+
+        return Pages.Count - pagesBefore;
+    }
+
     [RelayCommand(CanExecute = nameof(CanScan))]
     private async Task ScanAsync()
     {
-        var options = new ScanProfileOptions
-        {
-            Device = SelectedDevice,
-            Source = Source,
-            Dpi = Dpi,
-            BitDepth = BitDepth,
-            PageSize = PageSize,
-            Brightness = Brightness,
-            Contrast = Contrast,
-        };
-
         IsScanning = true;
         _scanCts = new CancellationTokenSource();
-        var pagesBefore = Pages.Count;
         try
         {
-            await foreach (var page in _scanService.ScanAsync(options, _sessionService.Session, _scanCts.Token))
-            {
-                Pages.Add(page);
-                StatusText = $"Scanned page {Pages.Count - pagesBefore}…";
-            }
-
+            var scanned = await RunScanPassAsync(_scanCts.Token);
             _sessionService.Session.Flush();
-            StatusText = $"Scan complete — {Pages.Count - pagesBefore} page(s).";
+            StatusText = $"Scan complete — {scanned} page(s).";
         }
         catch (OperationCanceledException)
         {
-            StatusText = $"Scan canceled after {Pages.Count - pagesBefore} page(s).";
+            StatusText = "Scan canceled.";
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Scan failed");
             _sessionService.Session.Flush();
-            StatusText = $"Scan failed after {Pages.Count - pagesBefore} page(s): {ex.Message}";
+            StatusText = $"Scan failed: {ex.Message}";
+        }
+        finally
+        {
+            IsScanning = false;
+            _scanCts.Dispose();
+            _scanCts = null;
+        }
+    }
+
+    /// <summary>Batch scanning (PLAN §5.8): several passes with a prompt or delay between them,
+    /// then straight into the save-to-group/commit flow.</summary>
+    [RelayCommand(CanExecute = nameof(CanScan))]
+    private async Task BatchScanAsync()
+    {
+        var dialog = new Dialogs.BatchDialog { Owner = System.Windows.Application.Current.MainWindow };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        IsScanning = true;
+        _scanCts = new CancellationTokenSource();
+        var total = 0;
+        try
+        {
+            for (var pass = 1; pass <= dialog.Count; pass++)
+            {
+                if (pass > 1)
+                {
+                    if (dialog.Mode == Dialogs.BatchMode.MultipleWithPrompt)
+                    {
+                        var answer = System.Windows.MessageBox.Show(
+                            $"Pass {pass} of {dialog.Count}: load the next batch, then continue.",
+                            "Batch scan",
+                            System.Windows.MessageBoxButton.OKCancel,
+                            System.Windows.MessageBoxImage.Information);
+                        if (answer != System.Windows.MessageBoxResult.OK)
+                        {
+                            break;
+                        }
+                    }
+                    else if (dialog.Mode == Dialogs.BatchMode.MultipleWithDelay)
+                    {
+                        StatusText = $"Waiting {dialog.DelaySeconds}s before pass {pass}…";
+                        await Task.Delay(TimeSpan.FromSeconds(dialog.DelaySeconds), _scanCts.Token);
+                    }
+                }
+
+                total += await RunScanPassAsync(_scanCts.Token);
+                _sessionService.Session.Flush();
+                StatusText = $"Batch pass {pass}/{dialog.Count} done — {total} page(s) so far.";
+            }
+
+            StatusText = $"Batch complete — {total} page(s).";
+            if (_activeGroup.Current is not null && Pages.Count > 0)
+            {
+                await SaveToGroupAsync();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText = $"Batch canceled after {total} page(s).";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Batch scan failed");
+            _sessionService.Session.Flush();
+            StatusText = $"Batch failed after {total} page(s): {ex.Message}";
         }
         finally
         {

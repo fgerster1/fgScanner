@@ -1,10 +1,10 @@
 using System.Globalization;
-using System.IO;
-using FgScanner.Core;
-using FgScanner.Scanning;
-using FgScanner.Scanning.Import;
 
-namespace FgScanner.App.Services;
+using FgScanner.Core;
+
+
+
+namespace FgScanner.Scanning.Import;
 
 /// <summary>IPdfRenderer over the same Pdfium import path scanning uses (PLAN §5.7).</summary>
 public sealed class Naps2PdfRenderer(FileImportService fileImport) : IPdfRenderer

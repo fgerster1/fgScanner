@@ -51,6 +51,9 @@
                     <Button Content="Cancel" Command="{Binding CancelScanCommand}"
                             Padding="0,8" Margin="3,0,0,0" />
                 </UniformGrid>
+                <Button Content="Batch scan…" Command="{Binding BatchScanCommand}"
+                        Padding="0,8" Margin="0,6,0,0"
+                        ToolTip="Several scan passes with a prompt or delay between them" />
 
                 <Button Content="{Binding SaveTargetText}" Command="{Binding SaveToGroupCommand}"
                         Padding="0,8" Margin="0,8,0,0" />
