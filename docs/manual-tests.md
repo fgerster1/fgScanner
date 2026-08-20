@@ -92,3 +92,10 @@ Run before each release, and after any change to FgScanner.Scanning. Automated t
 - [ ] Portable ZIP: runs from an extracted folder without install.
 - [ ] After keys exist (docs/release.md): publish a test release, old build offers the update, /VERYSILENT upgrade succeeds.
 - [ ] Local installer build (needs admin once for Inno Setup): choco install innosetup, then ISCC per CLAUDE.md.
+
+## Phase 10 — differentiators (manual checks)
+
+- [ ] Settings → Features: enable Patch-T; Scan section shows "Separator sheet…" — save the PDF, print it, scan a stack with the sheet between documents on a profile with detection on: the sheet is dropped and journal.txt records it; with "Keep separator pages" it stays.
+- [ ] Blank-page policy on a real feeder scan: Drop removes the empty back sides (journal.txt lists them), Flag keeps them visible as "Blank — excluded" and out of index.csv/OCR/AI.
+- [ ] Search: after OCR, find a word from a scanned page; the snippet highlights it; double-click opens the group with the page selected. Field values and AI descriptions are also found. Turn the feature off: section is gone on next launch.
+- [ ] Commit hook: set command `echo %date% >> committed.txt` and a webhook (e.g. webhook.site); commit a group: file appears in the group folder, webhook receives the index.json payload, journal.txt records both.

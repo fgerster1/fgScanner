@@ -22,10 +22,12 @@ public partial class ShellWindow : Window
         {
             ["Scan"] = new ScanView { DataContext = viewModel.ScanViewModel },
             ["Groups"] = new GroupsView { DataContext = viewModel.GroupsViewModel },
+            ["Search"] = new SearchView { DataContext = viewModel.SearchViewModel },
             ["Trash"] = new TrashView { DataContext = viewModel.TrashViewModel },
             ["Settings"] = new SettingsView { DataContext = viewModel.SettingsViewModel },
         };
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
+        viewModel.SearchViewModel.OpenRequested += OpenSearchHit;
         viewModel.SettingsViewModel.ShortcutsChanged += map => ApplyShortcuts(map);
         ShowSection(viewModel.SelectedSection);
         Loaded += async (_, _) =>
@@ -35,6 +37,21 @@ public partial class ShellWindow : Window
             await RestoreSessionAsync();
         };
         Closing += (_, _) => SaveSession();
+    }
+
+    /// <summary>Search-result navigation: jump to the Groups section and select the hit's page.</summary>
+    private void OpenSearchHit(FgScanner.Data.SearchHit hit)
+    {
+        _viewModel.SelectedSection = "Groups";
+        var groups = _viewModel.GroupsViewModel;
+        if (groups.SelectedGroup?.Id == hit.GroupId)
+        {
+            groups.Detail?.SelectDocument(hit.DocumentId);
+            return;
+        }
+
+        groups.PendingSelectDocument = hit.DocumentId;
+        groups.TrySelectGroup(hit.GroupId);
     }
 
     // ---- rebindable shortcuts (PLAN §5.8, NAPS2 defaults) ----

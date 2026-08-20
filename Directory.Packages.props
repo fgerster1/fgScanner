@@ -35,6 +35,10 @@
     <!-- Index export (PLAN §5.2) -->
     <PackageVersion Include="ClosedXML" Version="0.105.0" />
 
+    <!-- Patch-T separator detection (Apache-2.0), PLAN prompt 10 / research-5 C1 -->
+    <PackageVersion Include="ZXing.Net" Version="0.16.11" />
+    <PackageVersion Include="ZXing.Net.Bindings.Windows.Compatibility" Version="0.16.14" />
+
     <!-- Testing -->
     <PackageVersion Include="xunit.v3" Version="4.0.0" />
     <PackageVersion Include="Verify.XunitV3" Version="31.28.0" />

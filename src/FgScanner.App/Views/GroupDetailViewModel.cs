@@ -132,9 +132,14 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         StatusText = $"{Rows.Count} page(s). State: {Group.State}.";
     }
 
+    /// <summary>Selects the row for a document (used by search-result navigation).</summary>
+    public void SelectDocument(Guid documentId) =>
+        SelectedRow = Rows.FirstOrDefault(r => r.DocumentId == documentId) ?? SelectedRow;
+
     /// <summary>Mean word confidence below 65 flags the page for review (PLAN §5.5).</summary>
     private static string FormatOcrStatus(Page page) => page.OcrStatus switch
     {
+        _ when page.IsBlank => "Blank — excluded",
         OcrStatus.Yes when page.OcrMeanConfidence is { } c && c < OcrPipeline.LowConfidenceThreshold =>
             string.Create(
                 System.Globalization.CultureInfo.InvariantCulture, $"Yes ⚠ {c:0}% — review"),

@@ -97,6 +97,12 @@ public partial class App : Application
                     o.UseSqlite($"Data Source={DbBootstrapper.DefaultDbPath}"));
                 services.AddSingleton<GroupService>();
                 services.AddSingleton<ProfileService>();
+                services.AddSingleton(sp => new FgScanner.Core.Hooks.CommitHookService());
+                services.AddSingleton<CommitHookRunner>();
+                services.AddSingleton<FgScanner.Core.Capture.IPageClassifier>(
+                    new FgScanner.Scanning.Capture.PageClassifier());
+                services.AddSingleton<CaptureTriageService>();
+                services.AddSingleton<SearchService>();
                 services.AddSingleton(sp => new FgScanner.Core.Index.IndexExporter());
                 services.AddSingleton<IndexingService>();
                 services.AddSingleton(sp => new TrashService(
@@ -128,7 +134,8 @@ public partial class App : Application
                     sp.GetRequiredService<AiQueueService>(),
                     sp.GetRequiredService<RetroProcessService>(),
                     sp.GetRequiredService<FgScanner.Ai.CredentialStore>(),
-                    sp.GetRequiredService<AppSettingsService>()));
+                    sp.GetRequiredService<AppSettingsService>(),
+                    sp.GetRequiredService<CaptureTriageService>()));
                 services.AddSingleton(sp => new FgScanner.Ocr.LanguageManager());
                 services.AddSingleton(sp => new FgScanner.Ocr.TesseractRunner(
                     tessdataDir: sp.GetRequiredService<FgScanner.Ocr.LanguageManager>().TessdataDir));
@@ -139,6 +146,7 @@ public partial class App : Application
                 services.AddSingleton<UpdateService>();
                 services.AddSingleton<ActiveGroupStore>();
                 services.AddSingleton<GroupsViewModel>();
+                services.AddSingleton<SearchViewModel>();
                 services.AddSingleton<TrashViewModel>();
                 services.AddSingleton<SettingsViewModel>();
                 services.AddSingleton<ScanViewModel>();

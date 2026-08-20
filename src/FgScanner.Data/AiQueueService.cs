@@ -24,6 +24,7 @@ public sealed class AiQueueService(IDbContextFactory<FgScannerDbContext> dbFacto
         var pages = await db.Pages
             .Where(p => p.Document!.GroupId == groupId)
             .Where(p => force || p.AiStatus == AiStatus.Off || p.AiStatus == AiStatus.Failed)
+            .Where(p => !p.IsBlank)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
         var alreadyQueued = (await db.Jobs
                 .Where(j => j.Type == JobType.AiDescription
@@ -168,6 +169,7 @@ public sealed class AiQueueService(IDbContextFactory<FgScannerDbContext> dbFacto
         return await db.Pages
             .Where(p => p.Document!.GroupId == groupId)
             .Where(p => force || p.AiStatus == AiStatus.Off || p.AiStatus == AiStatus.Failed)
+            .Where(p => !p.IsBlank)
             .CountAsync(cancellationToken).ConfigureAwait(false);
     }
 }

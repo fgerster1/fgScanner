@@ -182,31 +182,9 @@ internal sealed class XmlFormatWriter : IFormatWriter
 /// <summary>JSON with the manifest embedded, for scripts and web tools.</summary>
 internal sealed class JsonFormatWriter : IFormatWriter
 {
-    private static readonly JsonSerializerOptions Options = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
-
     public string FileName(IndexExportData data) => "index.json";
 
-    public async Task WriteAsync(Stream stream, IndexExportData data)
-    {
-        var payload = new
-        {
-            Manifest = ManifestBuilder.Build(data),
-            Rows = data.Rows.Select(r => new
-            {
-                Group = data.GroupName,
-                r.ImageName,
-                OCRed = r.Ocred,
-                AiDescription = r.AiDescription ?? "",
-                r.AiStatus,
-                Fields = data.Fields.ToDictionary(f => f.Name, f => r.CustomValues.GetValueOrDefault(f.Name) ?? ""),
-            }),
-        };
-        await JsonSerializer.SerializeAsync(stream, payload, Options).ConfigureAwait(false);
-    }
+    public Task WriteAsync(Stream stream, IndexExportData data) => IndexPayload.WriteAsync(stream, data);
 }
 
 internal static class ManifestBuilder

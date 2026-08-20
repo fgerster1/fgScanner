@@ -74,8 +74,14 @@ public sealed class GroupService(IDbContextFactory<FgScannerDbContext> dbFactory
     /// Moves scanned files into the group directory and records them: one page = one document (v1,
     /// PLAN decision #2). Files whose content is already in the group are skipped as duplicates.
     /// </summary>
+    public Task<AdoptResult> AdoptPagesAsync(
+        Guid groupId, IEnumerable<string> sourceFiles, CancellationToken cancellationToken = default) =>
+        AdoptPagesAsync(groupId, sourceFiles, isBlank: null, cancellationToken);
+
+    /// <summary>Capture triage passes <paramref name="isBlank"/> so flag-policy blanks are marked on adoption.</summary>
     public async Task<AdoptResult> AdoptPagesAsync(
-        Guid groupId, IEnumerable<string> sourceFiles, CancellationToken cancellationToken = default)
+        Guid groupId, IEnumerable<string> sourceFiles, Func<string, bool>? isBlank,
+        CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         var group = await db.Groups.FirstAsync(g => g.Id == groupId, cancellationToken).ConfigureAwait(false);
@@ -118,6 +124,7 @@ public sealed class GroupService(IDbContextFactory<FgScannerDbContext> dbFactory
                 FileName = fileName,
                 Checksum = checksum,
                 Sequence = 1,
+                IsBlank = isBlank?.Invoke(sourceFile) ?? false,
                 CreatedUtc = DateTime.UtcNow,
             };
             db.Documents.Add(document);

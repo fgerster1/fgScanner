@@ -27,6 +27,12 @@ searchable PDFs, and optional AI page descriptions with your own Gemini key.
 - **Trash** with 30-day restore for every deletion; **SQLite database** as a
   first-class asset with stable `v_*` query views ([docs/db-schema.md](docs/db-schema.md)).
 - **CLI**: `fgscanner scan|process|export|list-devices` for scheduled tasks — no UI needed.
+- **v1.1 extras** (each behind its own switch in Settings): Patch-T separator
+  sheets (printable, NAPS2/Paperless-compatible) with per-profile drop/keep,
+  blank-page policy (drop / flag / treat-as-separator, always journaled),
+  full-text **search** over OCR text, index fields, and AI descriptions (SQLite
+  FTS5 with highlighted snippets), and a **commit hook** that runs a command
+  and/or POSTs the index payload to a webhook when a group is committed.
 
 ## Install
 

@@ -20,6 +20,7 @@ treat drift as a review item.
 | Google.GenAI | Apache-2.0 | Gemini API client (BYO-key, optional feature) |
 | NetSparkleUpdater.SparkleUpdater | MIT | Auto-update (Ed25519-signed appcast) |
 | System.CommandLine | MIT | fgscanner CLI |
+| ZXing.Net (+ Windows.Compatibility binding) | Apache-2.0 | Patch-T separator detection + separator sheets |
 | System.Security.Cryptography.ProtectedData | MIT | DPAPI fallback for key storage |
 | Microsoft.Extensions.Hosting | MIT | DI / app lifetime |
 | CommunityToolkit.Mvvm | MIT | MVVM |
@@ -36,11 +37,6 @@ treat drift as a review item.
 | Microsoft.Extensions.TimeProvider.Testing | MIT |
 | System.Drawing.Common | MIT |
 
-## Planned (later phases, per docs/PLAN.md)
-
-| Component | License | Note |
-|---|---|---|
-| ZXing.Net | Apache-2.0 | Barcode / Patch-T separators (phase 10) |
 
 Excluded by policy (docs/PLAN.md §3 avoid-list): iText (AGPL),
 FluentAssertions ≥8, NAPS2.Images.ImageSharp, EPPlus ≥5, Emgu.CV,

@@ -37,6 +37,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _ = LoadAiSettingsAsync();
         _ = LoadShortcutsAsync();
         _ = LoadUpdatePreferenceAsync();
+        _ = LoadFeatureSettingsAsync();
     }
 
     public ObservableCollection<Profile> Profiles { get; } = [];
@@ -71,6 +72,58 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private string _statusText = "";
+
+    // ---- capture policy per profile (PLAN prompt 10) ----
+
+    [ObservableProperty]
+    private bool _separatorDetectionEnabled;
+
+    [ObservableProperty]
+    private bool _keepSeparatorPages;
+
+    public IReadOnlyList<FgScanner.Core.Capture.BlankPagePolicy> BlankPolicies { get; } =
+        Enum.GetValues<FgScanner.Core.Capture.BlankPagePolicy>();
+
+    [ObservableProperty]
+    private FgScanner.Core.Capture.BlankPagePolicy _blankPolicy;
+
+    // ---- feature flags + commit hook (PLAN prompt 10) ----
+
+    [ObservableProperty]
+    private bool _featurePatchT;
+
+    [ObservableProperty]
+    private bool _featureBlankPolicy;
+
+    /// <summary>Applies on next launch — the section list is built at startup.</summary>
+    [ObservableProperty]
+    private bool _featureSearch = true;
+
+    [ObservableProperty]
+    private bool _featureCommitHook;
+
+    [ObservableProperty]
+    private string _hookCommandLine = "";
+
+    [ObservableProperty]
+    private string _hookWebhookUrl = "";
+
+    private async Task LoadFeatureSettingsAsync()
+    {
+        try
+        {
+            FeaturePatchT = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.PatchT);
+            FeatureBlankPolicy = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.BlankPolicy);
+            FeatureSearch = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.Search);
+            FeatureCommitHook = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.CommitHook);
+            HookCommandLine = await _appSettings.GetAsync(CommitHookRunner.CommandKey, "");
+            HookWebhookUrl = await _appSettings.GetAsync(CommitHookRunner.WebhookUrlKey, "");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Loading feature settings");
+        }
+    }
 
     // ---- OCR (PLAN §5.5) ----
 
@@ -391,6 +444,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         ExportJson = value.ExportJson;
         CsvDelimiter = value.CsvDelimiter;
         OcrEnabled = value.OcrEnabled;
+        SeparatorDetectionEnabled = value.SeparatorDetectionEnabled;
+        KeepSeparatorPages = value.KeepSeparatorPages;
+        BlankPolicy = value.BlankPolicy;
         try
         {
             var schema = await _profileService.GetLatestSchemaAsync(value.Id);
@@ -466,6 +522,17 @@ public sealed partial class SettingsViewModel : ObservableObject
                 SelectedProfile.Id, ExportCsv, ExportXlsx, ExportXml, ExportJson, CsvDelimiter);
             await _profileService.UpdateOcrEnabledAsync(SelectedProfile.Id, OcrEnabled);
             SelectedProfile.OcrEnabled = OcrEnabled;
+            await _profileService.UpdateCapturePolicyAsync(
+                SelectedProfile.Id, SeparatorDetectionEnabled, KeepSeparatorPages, BlankPolicy);
+            SelectedProfile.SeparatorDetectionEnabled = SeparatorDetectionEnabled;
+            SelectedProfile.KeepSeparatorPages = KeepSeparatorPages;
+            SelectedProfile.BlankPolicy = BlankPolicy;
+            await _appSettings.SetAsync(FeatureFlags.PatchT, FeaturePatchT ? "true" : "false");
+            await _appSettings.SetAsync(FeatureFlags.BlankPolicy, FeatureBlankPolicy ? "true" : "false");
+            await _appSettings.SetAsync(FeatureFlags.Search, FeatureSearch ? "true" : "false");
+            await _appSettings.SetAsync(FeatureFlags.CommitHook, FeatureCommitHook ? "true" : "false");
+            await _appSettings.SetAsync(CommitHookRunner.CommandKey, HookCommandLine.Trim());
+            await _appSettings.SetAsync(CommitHookRunner.WebhookUrlKey, HookWebhookUrl.Trim());
             await _trashService.SetRetentionDaysAsync(Math.Max(1, RetentionDays));
             await _appSettings.SetAsync(
                 AppSettingsService.OcrLanguagesKey,

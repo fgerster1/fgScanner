@@ -12,6 +12,9 @@
     <PackageReference Include="NAPS2.Sdk.Worker.Win32" />
     <PackageReference Include="NAPS2.Images.Gdi" />
     <PackageReference Include="NAPS2.Pdfium.Binaries" />
+    <!-- Patch-T separator detection over System.Drawing bitmaps (Apache-2.0). -->
+    <PackageReference Include="ZXing.Net" />
+    <PackageReference Include="ZXing.Net.Bindings.Windows.Compatibility" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\FgScanner.Core\FgScanner.Core.csproj" />

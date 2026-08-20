@@ -107,16 +107,19 @@ is taken automatically before every schema migration).
 |---|---|---|---|
 | Id | TEXT | no | PK |
 | AiDescriptionEnabled | INTEGER | no |  |
+| BlankPolicy | INTEGER | no | enum: 0=Keep, 1=Drop, 2=Flag, 3=Separator |
 | CreatedUtc | TEXT | no |  |
 | CsvDelimiter | TEXT | no |  |
 | ExportCsv | INTEGER | no |  |
 | ExportJson | INTEGER | no |  |
 | ExportXlsx | INTEGER | no |  |
 | ExportXml | INTEGER | no |  |
+| KeepSeparatorPages | INTEGER | no |  |
 | Name | TEXT | no |  |
 | OcrEnabled | INTEGER | no |  |
 | OcrLanguages | TEXT | no |  |
 | ScanSettingsJson | TEXT | no |  |
+| SeparatorDetectionEnabled | INTEGER | no |  |
 
 - Index (unique): Name
 
