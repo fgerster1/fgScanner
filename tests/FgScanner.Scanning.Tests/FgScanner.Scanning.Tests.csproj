@@ -12,5 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\FgScanner.Scanning\FgScanner.Scanning.csproj" />
+    <!-- Supplies tesseract.exe + bundled eng.traineddata for searchable-PDF tests. -->
+    <ProjectReference Include="..\..\src\FgScanner.Ocr\FgScanner.Ocr.csproj" />
   </ItemGroup>
 </Project>

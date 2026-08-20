@@ -240,6 +240,17 @@ public sealed class IndexingService(
         return await exporter.ExportAsync(data, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Background flows (OCR/AI) refresh index files only once a group is committed.</summary>
+    public async Task<ExportResult?> ReexportIfCommittedAsync(Guid groupId, CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var state = await db.Groups.Where(g => g.Id == groupId).Select(g => g.State)
+            .FirstAsync(cancellationToken).ConfigureAwait(false);
+        return state == GroupState.Committed
+            ? await ReexportAsync(groupId, cancellationToken).ConfigureAwait(false)
+            : null;
+    }
+
     // ---- missed page ----
 
     /// <summary>

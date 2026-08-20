@@ -3,6 +3,7 @@ using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FgScanner.Data;
+using FgScanner.Ocr;
 using Serilog;
 
 namespace FgScanner.App.Views;
@@ -12,12 +13,22 @@ public sealed partial class SettingsViewModel : ObservableObject
 {
     private readonly ProfileService _profileService;
     private readonly TrashService _trashService;
+    private readonly AppSettingsService _appSettings;
+    private readonly LanguageManager _languageManager;
 
-    public SettingsViewModel(ProfileService profileService, TrashService trashService)
+    public SettingsViewModel(
+        ProfileService profileService,
+        TrashService trashService,
+        AppSettingsService appSettings,
+        LanguageManager languageManager)
     {
         _profileService = profileService;
         _trashService = trashService;
+        _appSettings = appSettings;
+        _languageManager = languageManager;
+        DownloadableLanguages = [.. LanguageManager.KnownLanguages.Where(l => l.Code != "eng")];
         _ = ReloadAsync();
+        _ = LoadOcrSettingsAsync();
     }
 
     public ObservableCollection<Profile> Profiles { get; } = [];
@@ -53,6 +64,66 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _statusText = "";
 
+    // ---- OCR (PLAN §5.5) ----
+
+    [ObservableProperty]
+    private bool _ocrEnabled;
+
+    /// <summary>Tesseract language string, e.g. "eng" or "eng+deu".</summary>
+    [ObservableProperty]
+    private string _ocrLanguages = "eng";
+
+    public ObservableCollection<string> InstalledLanguages { get; } = [];
+
+    public IReadOnlyList<OcrLanguage> DownloadableLanguages { get; }
+
+    [ObservableProperty]
+    private OcrLanguage? _languageToInstall;
+
+    private async Task LoadOcrSettingsAsync()
+    {
+        try
+        {
+            OcrLanguages = await _appSettings.GetAsync(AppSettingsService.OcrLanguagesKey, "eng");
+            RefreshInstalledLanguages();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Loading OCR settings");
+        }
+    }
+
+    private void RefreshInstalledLanguages()
+    {
+        InstalledLanguages.Clear();
+        foreach (var code in _languageManager.InstalledCodes())
+        {
+            InstalledLanguages.Add(code);
+        }
+    }
+
+    [RelayCommand]
+    private async Task InstallLanguageAsync()
+    {
+        if (LanguageToInstall is not { } language)
+        {
+            return;
+        }
+
+        try
+        {
+            StatusText = $"Downloading {language.DisplayName}…";
+            await _languageManager.InstallAsync(language.Code);
+            RefreshInstalledLanguages();
+            StatusText = $"{language.DisplayName} installed. Add \"{language.Code}\" to the language string to use it.";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Installing language {Code}", language.Code);
+            StatusText = $"Download failed: {ex.Message}";
+        }
+    }
+
     /// <summary>Notifies other views (Groups) that profiles changed.</summary>
     public event Action? ProfilesChanged;
 
@@ -81,6 +152,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         ExportXml = value.ExportXml;
         ExportJson = value.ExportJson;
         CsvDelimiter = value.CsvDelimiter;
+        OcrEnabled = value.OcrEnabled;
         try
         {
             var schema = await _profileService.GetLatestSchemaAsync(value.Id);
@@ -154,7 +226,12 @@ public sealed partial class SettingsViewModel : ObservableObject
                 SelectedProfile.Id, [.. Fields.Select(f => f.ToDefinition())]);
             await _profileService.UpdateExportSettingsAsync(
                 SelectedProfile.Id, ExportCsv, ExportXlsx, ExportXml, ExportJson, CsvDelimiter);
+            await _profileService.UpdateOcrEnabledAsync(SelectedProfile.Id, OcrEnabled);
+            SelectedProfile.OcrEnabled = OcrEnabled;
             await _trashService.SetRetentionDaysAsync(Math.Max(1, RetentionDays));
+            await _appSettings.SetAsync(
+                AppSettingsService.OcrLanguagesKey,
+                string.IsNullOrWhiteSpace(OcrLanguages) ? "eng" : OcrLanguages.Trim());
             StatusText = $"Saved as schema version {schema.Version}. New groups use it; existing groups keep theirs.";
             ProfilesChanged?.Invoke();
         }

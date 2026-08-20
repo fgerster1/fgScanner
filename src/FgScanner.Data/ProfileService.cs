@@ -120,6 +120,15 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
         return schema;
     }
 
+    public async Task UpdateOcrEnabledAsync(
+        Guid profileId, bool ocrEnabled, CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var profile = await db.Profiles.FirstAsync(p => p.Id == profileId, cancellationToken).ConfigureAwait(false);
+        profile.OcrEnabled = ocrEnabled;
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task UpdateExportSettingsAsync(
         Guid profileId, bool csv, bool xlsx, bool xml, bool json, string delimiter,
         CancellationToken cancellationToken = default)

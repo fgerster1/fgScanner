@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 using FgScanner.App.Services;
 using FgScanner.Core.Index;
 using FgScanner.Data;
+using FgScanner.Ocr;
 using Microsoft.Win32;
 using Serilog;
 
@@ -113,7 +114,7 @@ public sealed partial class GroupDetailViewModel : ObservableObject
                 Sequence = sequence,
                 ImageName = page.FileName,
                 ImagePath = Path.Combine(Group.DirectoryPath, page.FileName),
-                OcrStatus = page.OcrStatus.ToString(),
+                OcrStatus = FormatOcrStatus(page),
                 AiStatus = page.AiStatus.ToString(),
                 Values = values,
             };
@@ -122,6 +123,51 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         }
 
         StatusText = $"{Rows.Count} page(s). State: {Group.State}.";
+    }
+
+    /// <summary>Mean word confidence below 65 flags the page for review (PLAN §5.5).</summary>
+    private static string FormatOcrStatus(Page page) => page.OcrStatus switch
+    {
+        OcrStatus.Yes when page.OcrMeanConfidence is { } c && c < OcrPipeline.LowConfidenceThreshold =>
+            string.Create(
+                System.Globalization.CultureInfo.InvariantCulture, $"Yes ⚠ {c:0}% — review"),
+        OcrStatus.Yes when page.OcrMeanConfidence is { } c =>
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Yes ({c:0}%)"),
+        var status => status.ToString(),
+    };
+
+    [RelayCommand]
+    private async Task OcrPagesAsync()
+    {
+        try
+        {
+            var queued = await _toolset.OcrQueue.EnqueueGroupAsync(Group.Id);
+            await ReloadRowsAsync();
+            StatusText = queued == 0
+                ? "All pages are already OCRed or queued."
+                : $"{queued} page(s) queued for OCR — text lands in .md sidecars and the index.";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Queueing OCR");
+            StatusText = $"OCR queueing failed: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task ReOcrAllAsync()
+    {
+        try
+        {
+            var queued = await _toolset.OcrQueue.EnqueueGroupAsync(Group.Id, force: true);
+            await ReloadRowsAsync();
+            StatusText = $"{queued} page(s) queued for re-OCR; replaced .md files go to Trash.";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Queueing re-OCR");
+            StatusText = $"Re-OCR queueing failed: {ex.Message}";
+        }
     }
 
     private async Task PersistRowAsync(DocumentRow row)

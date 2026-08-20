@@ -15,6 +15,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     private readonly GroupService _groupService;
     private readonly IndexingService _indexingService;
     private readonly ActiveGroupStore _activeGroup;
+    private readonly ProfileOcrTrigger _ocrTrigger;
     private CancellationTokenSource? _scanCts;
 
     public ScanViewModel(
@@ -22,13 +23,15 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         ScanSessionService sessionService,
         GroupService groupService,
         IndexingService indexingService,
-        ActiveGroupStore activeGroup)
+        ActiveGroupStore activeGroup,
+        ProfileOcrTrigger ocrTrigger)
     {
         _scanService = scanService;
         _sessionService = sessionService;
         _groupService = groupService;
         _indexingService = indexingService;
         _activeGroup = activeGroup;
+        _ocrTrigger = ocrTrigger;
         Drivers = [.. scanService.AvailableDrivers];
         _selectedDriver = Drivers[0];
         activeGroup.PropertyChanged += (_, _) =>
@@ -193,6 +196,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
                 await _indexingService.ReexportAsync(group.Id);
             }
 
+            await _ocrTrigger.EnqueueIfProfileEnabledAsync(group);
             _activeGroup.NotifyGroupContentChanged();
             Pages.Clear();
             _sessionService.ResetSession();

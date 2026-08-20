@@ -385,6 +385,12 @@ public sealed partial class GroupDetailViewModel
             var result = await _groupService.AdoptPagesAsync(Group.Id, imported);
             await _indexingService.ApplyInitialValuesAsync(
                 Group.Id, [.. result.Adopted.Select(p => p.DocumentId)], _activeGroup.PendingValues);
+            if (Group.ProfileId is { } profileId
+                && (await _profileService.ListAsync()).FirstOrDefault(p => p.Id == profileId)?.OcrEnabled == true)
+            {
+                await _toolset.OcrQueue.EnqueueGroupAsync(Group.Id);
+            }
+
             await ReloadRowsAsync();
             if (Group.State == GroupState.Committed)
             {

@@ -2,4 +2,16 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="NAPS2.Tesseract.Binaries" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FgScanner.Core\FgScanner.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- English ships with the app (PLAN §5.5); other languages download on demand. -->
+    <Content Include="tessdata\eng.traineddata">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 </Project>
