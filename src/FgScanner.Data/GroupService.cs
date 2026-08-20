@@ -12,18 +12,21 @@ public sealed class GroupService(IDbContextFactory<FgScannerDbContext> dbFactory
 {
     /// <summary>Creates a group as a new subdirectory of <paramref name="parentDirectory"/> (name sanitized).</summary>
     public async Task<Group> CreateGroupAsync(
-        string parentDirectory, string name, CancellationToken cancellationToken = default)
+        string parentDirectory, string name, (Guid ProfileId, int SchemaVersion)? profile = null,
+        CancellationToken cancellationToken = default)
     {
         var safeName = GroupNameSanitizer.Sanitize(name);
         var directory = Path.Combine(parentDirectory, safeName);
-        return await AdoptDirectoryAsync(directory, cancellationToken).ConfigureAwait(false);
+        return await AdoptDirectoryAsync(directory, profile, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
     /// Opens the group for an existing directory, or registers the directory as a new group.
     /// The directory name IS the group name (PLAN §5.1).
     /// </summary>
-    public async Task<Group> AdoptDirectoryAsync(string directory, CancellationToken cancellationToken = default)
+    public async Task<Group> AdoptDirectoryAsync(
+        string directory, (Guid ProfileId, int SchemaVersion)? profile = null,
+        CancellationToken cancellationToken = default)
     {
         var fullPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
@@ -42,6 +45,8 @@ public sealed class GroupService(IDbContextFactory<FgScannerDbContext> dbFactory
             Name = Path.GetFileName(fullPath),
             DirectoryPath = fullPath,
             State = GroupState.Scanning,
+            ProfileId = profile?.ProfileId,
+            SchemaVersion = profile?.SchemaVersion ?? 0,
             CreatedUtc = DateTime.UtcNow,
             UpdatedUtc = DateTime.UtcNow,
         };

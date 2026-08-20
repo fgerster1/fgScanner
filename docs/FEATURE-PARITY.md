@@ -6,9 +6,9 @@ Tracks FG Scanner against the NAPS2 8.3.2 inventory (docs/research/research-1-na
 |---|---|---|---|
 | WIA / TWAIN / eSCL scanning | [F] | ◐ (logic done; hardware smoke pending) | 1 |
 | Profiles (full NAPS2 settings surface) | [F] | ◐ (core: source/dpi/depth/size/brightness/contrast) | 1,4 |
-| Groups + index schema + entry grid | FG core | ☐ | 2,3 |
-| Index export CSV/XLSX/XML/JSON | FG core | ☐ | 3 |
-| Trash w/ 30-day retention | FG core | ☐ | 3 |
+| Groups + index schema + entry grid | FG core | ☑ | 2,3 |
+| Index export CSV/XLSX/XML/JSON | FG core | ☑ (incl. manifest.json + XSD) | 3 |
+| Trash w/ 30-day retention | FG core | ☑ | 3 |
 | Editing transforms + undo/redo | [F] | ☐ | 4 |
 | PDF (PDF/A, metadata, encryption) + images export | [F] | ☐ | 4 |
 | Import PDF/images; file associations | [F] | ☐ | 4,9 |

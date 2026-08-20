@@ -11,55 +11,87 @@ namespace FgScanner.App.Views;
 public sealed partial class GroupsViewModel : ObservableObject
 {
     private readonly GroupService _groupService;
+    private readonly ProfileService _profileService;
+    private readonly IndexingService _indexingService;
+    private readonly TrashService _trashService;
     private readonly ActiveGroupStore _activeGroup;
 
-    public GroupsViewModel(GroupService groupService, ActiveGroupStore activeGroup)
+    public GroupsViewModel(
+        GroupService groupService,
+        ProfileService profileService,
+        IndexingService indexingService,
+        TrashService trashService,
+        ActiveGroupStore activeGroup)
     {
         _groupService = groupService;
+        _profileService = profileService;
+        _indexingService = indexingService;
+        _trashService = trashService;
         _activeGroup = activeGroup;
-        _ = RefreshAsync();
+        activeGroup.GroupContentChanged += () => _ = Detail?.ReloadRowsAsync();
+        _ = InitializeAsync();
     }
 
     public ObservableCollection<Group> Groups { get; } = [];
 
-    public ObservableCollection<Page> SelectedGroupPages { get; } = [];
+    public ObservableCollection<Profile> Profiles { get; } = [];
+
+    [ObservableProperty]
+    private Profile? _selectedProfile;
 
     [ObservableProperty]
     private Group? _selectedGroup;
 
     [ObservableProperty]
-    private string _newGroupName = "";
+    private GroupDetailViewModel? _detail;
 
     [ObservableProperty]
-    private string _statusText = "";
+    private string _newGroupName = "";
+
+    private async Task InitializeAsync()
+    {
+        await _profileService.EnsureDefaultAsync();
+        await ReloadProfilesAsync();
+        await RefreshAsync();
+    }
+
+    public async Task ReloadProfilesAsync()
+    {
+        var selectedId = SelectedProfile?.Id;
+        Profiles.Clear();
+        foreach (var profile in await _profileService.ListAsync())
+        {
+            Profiles.Add(profile);
+        }
+
+        SelectedProfile = Profiles.FirstOrDefault(p => p.Id == selectedId) ?? Profiles.FirstOrDefault();
+    }
 
     partial void OnSelectedGroupChanged(Group? value)
     {
         _activeGroup.Current = value;
-        _ = LoadPagesAsync(value);
+        _activeGroup.PendingValues = null;
+        _ = LoadDetailAsync(value);
     }
 
-    private async Task LoadPagesAsync(Group? group)
+    private async Task LoadDetailAsync(Group? group)
     {
-        SelectedGroupPages.Clear();
         if (group is null)
         {
+            Detail = null;
             return;
         }
 
         try
         {
-            foreach (var page in await _groupService.GetPagesAsync(group.Id))
-            {
-                SelectedGroupPages.Add(page);
-            }
-
-            StatusText = $"{group.Name}: {SelectedGroupPages.Count} page(s). New scans will be saved here.";
+            var detail = new GroupDetailViewModel(
+                group, _groupService, _profileService, _indexingService, _trashService, _activeGroup);
+            await detail.LoadAsync();
+            Detail = detail;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Loading pages for group {Group}", group.Name);
-            StatusText = $"Could not load pages: {ex.Message}";
+            Log.Error(ex, "Loading group {Group}", group.Name);
         }
     }
 
@@ -76,13 +108,22 @@ public sealed partial class GroupsViewModel : ObservableObject
         SelectedGroup = Groups.FirstOrDefault(g => g.Id == selectedId) ?? Groups.FirstOrDefault();
     }
 
-    /// <summary>Creates a new directory (named after the sanitized group name) under a chosen parent.</summary>
+    private async Task<(Guid, int)?> ResolveProfileRefAsync()
+    {
+        if (SelectedProfile is null)
+        {
+            return null;
+        }
+
+        var schema = await _profileService.GetLatestSchemaAsync(SelectedProfile.Id);
+        return (SelectedProfile.Id, schema.Version);
+    }
+
     [RelayCommand]
     private async Task CreateGroupAsync()
     {
         if (string.IsNullOrWhiteSpace(NewGroupName))
         {
-            StatusText = "Enter a name for the new group first.";
             return;
         }
 
@@ -94,7 +135,8 @@ public sealed partial class GroupsViewModel : ObservableObject
 
         try
         {
-            var group = await _groupService.CreateGroupAsync(dialog.FolderName, NewGroupName);
+            var group = await _groupService.CreateGroupAsync(
+                dialog.FolderName, NewGroupName, await ResolveProfileRefAsync());
             NewGroupName = "";
             await RefreshAsync();
             SelectedGroup = Groups.First(g => g.Id == group.Id);
@@ -102,11 +144,9 @@ public sealed partial class GroupsViewModel : ObservableObject
         catch (Exception ex)
         {
             Log.Error(ex, "Creating group");
-            StatusText = $"Could not create group: {ex.Message}";
         }
     }
 
-    /// <summary>Picks an existing directory; its name becomes the group.</summary>
     [RelayCommand]
     private async Task OpenFolderAsGroupAsync()
     {
@@ -118,14 +158,13 @@ public sealed partial class GroupsViewModel : ObservableObject
 
         try
         {
-            var group = await _groupService.AdoptDirectoryAsync(dialog.FolderName);
+            var group = await _groupService.AdoptDirectoryAsync(dialog.FolderName, await ResolveProfileRefAsync());
             await RefreshAsync();
             SelectedGroup = Groups.First(g => g.Id == group.Id);
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Adopting folder as group");
-            StatusText = $"Could not open folder as group: {ex.Message}";
         }
     }
 }

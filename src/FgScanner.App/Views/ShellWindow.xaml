@@ -7,11 +7,11 @@
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=views:ShellViewModel}"
         Title="FG Scanner"
-        Width="1100" Height="720"
+        Width="1200" Height="760"
         WindowStartupLocation="CenterScreen">
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="180" />
+            <ColumnDefinition Width="160" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
@@ -27,50 +27,7 @@
         </ListBox>
 
         <Grid Grid.Column="1" Margin="8">
-            <views:ScanView DataContext="{Binding ScanViewModel}">
-                <views:ScanView.Style>
-                    <Style TargetType="views:ScanView">
-                        <Setter Property="Visibility" Value="Collapsed" />
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding DataContext.SelectedSection, RelativeSource={RelativeSource AncestorType=Window}}" Value="Scan">
-                                <Setter Property="Visibility" Value="Visible" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </views:ScanView.Style>
-            </views:ScanView>
-            <views:GroupsView DataContext="{Binding GroupsViewModel}">
-                <views:GroupsView.Style>
-                    <Style TargetType="views:GroupsView">
-                        <Setter Property="Visibility" Value="Collapsed" />
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding DataContext.SelectedSection, RelativeSource={RelativeSource AncestorType=Window}}" Value="Groups">
-                                <Setter Property="Visibility" Value="Visible" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </views:GroupsView.Style>
-            </views:GroupsView>
-            <TextBlock HorizontalAlignment="Center"
-                       VerticalAlignment="Center"
-                       FontSize="20"
-                       Opacity="0.6">
-                <TextBlock.Style>
-                    <Style TargetType="TextBlock">
-                        <Setter Property="Visibility" Value="Visible" />
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding SelectedSection}" Value="Scan">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                            </DataTrigger>
-                            <DataTrigger Binding="{Binding SelectedSection}" Value="Groups">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </TextBlock.Style>
-                <Run Text="{Binding SelectedSection}" />
-                <Run Text=" — coming in a later phase" />
-            </TextBlock>
+            <ContentControl x:Name="SectionHost" />
         </Grid>
     </Grid>
 </Window>

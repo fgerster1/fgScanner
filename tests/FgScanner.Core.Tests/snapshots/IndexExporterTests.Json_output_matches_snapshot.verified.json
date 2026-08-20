@@ -1,0 +1,88 @@
+﻿{
+  "manifest": {
+    "group": "Invoices 2026",
+    "profile": "Accounting",
+    "schemaVersion": 3,
+    "appVersion": "1.2.3",
+    "generatedUtc": "2026-08-20T12:00:00.0000000Z",
+    "formats": [
+      "json"
+    ],
+    "fields": [
+      {
+        "name": "Vendor",
+        "type": "text",
+        "required": true
+      },
+      {
+        "name": "InvoiceDate",
+        "type": "date",
+        "required": false
+      },
+      {
+        "name": "Amount",
+        "type": "number",
+        "required": false
+      },
+      {
+        "name": "Category",
+        "type": "list",
+        "required": false
+      }
+    ]
+  },
+  "rows": [
+    {
+      "group": "Invoices 2026",
+      "imageName": "scan_00001.png",
+      "ocRed": "Yes",
+      "aiDescription": "A plain description.",
+      "aiStatus": "Done",
+      "fields": {
+        "Vendor": "Acme Corp",
+        "InvoiceDate": "2026-08-19",
+        "Amount": "1234.5",
+        "Category": "Utilities"
+      }
+    },
+    {
+      "group": "Invoices 2026",
+      "imageName": "scan_00002.png",
+      "ocRed": "Failed",
+      "aiDescription": "Comma, \u0022quotes\u0022 and\r\na new line.",
+      "aiStatus": "Pending",
+      "fields": {
+        "Vendor": "M\u00FCller \u0026 S\u00F6hne GmbH \u2014 \u65E5\u672C\u8A9E",
+        "InvoiceDate": "",
+        "Amount": "-42.75",
+        "Category": ""
+      }
+    },
+    {
+      "group": "Invoices 2026",
+      "imageName": "scan_00003.png",
+      "ocRed": "No",
+      "aiDescription": "=1\u002B2\u002Bcmd|\u0027 /C calc\u0027!A0",
+      "aiStatus": "Skipped",
+      "fields": {
+        "Vendor": "@SUM(A1:A9)",
+        "InvoiceDate": "2026-01-02",
+        "Amount": "0",
+        "Category": "Other"
+      }
+    },
+    {
+      "group": "Invoices 2026",
+      "imageName": "scan_00004.png",
+      "ocRed": "Yes",
+      "aiDescription": "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+      "aiStatus": "Done",
+      "fields": {
+        "Vendor": "Long Description Test",
+        "InvoiceDate": "2026-12-31",
+        "Amount": "99999.99",
+        "Category": "Archive"
+      }
+    }
+  ]
+}

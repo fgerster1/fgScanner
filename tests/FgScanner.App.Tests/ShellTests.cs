@@ -13,6 +13,9 @@ public sealed class ShellTests : IDisposable
     private readonly string _root = Path.Combine(Path.GetTempPath(), "fgscanner-tests", Guid.NewGuid().ToString("N"));
     private readonly ScanSessionService _sessionService;
     private readonly GroupService _groupService;
+    private readonly ProfileService _profileService;
+    private readonly IndexingService _indexingService;
+    private readonly TrashService _trashService;
     private readonly ActiveGroupStore _activeGroup = new();
     private readonly string _dbPath;
 
@@ -26,7 +29,11 @@ public sealed class ShellTests : IDisposable
         }
 
         _sessionService = new ScanSessionService(Path.Combine(_root, "recovery"));
-        _groupService = new GroupService(new TestFactory(_dbPath));
+        var factory = new TestFactory(_dbPath);
+        _groupService = new GroupService(factory);
+        _profileService = new ProfileService(factory);
+        _indexingService = new IndexingService(factory, _profileService, new FgScanner.Core.Index.IndexExporter());
+        _trashService = new TrashService(factory, Path.Combine(_root, "trash"));
     }
 
     public void Dispose()
@@ -48,15 +55,17 @@ public sealed class ShellTests : IDisposable
     }
 
     private ScanViewModel CreateScanViewModel(FakeScanService? service = null) =>
-        new(service ?? new FakeScanService(), _sessionService, _groupService, _activeGroup);
+        new(service ?? new FakeScanService(), _sessionService, _groupService, _indexingService, _activeGroup);
 
     [Fact]
     public void Shell_starts_on_scan_section()
     {
         var shell = new ShellViewModel(
             CreateScanViewModel(),
-            new GroupsViewModel(_groupService, _activeGroup));
-        Assert.Equal(["Scan", "Groups", "Settings"], shell.Sections);
+            new GroupsViewModel(_groupService, _profileService, _indexingService, _trashService, _activeGroup),
+            new TrashViewModel(_trashService, _activeGroup),
+            new SettingsViewModel(_profileService, _trashService));
+        Assert.Equal(["Scan", "Groups", "Trash", "Settings"], shell.Sections);
         Assert.Equal("Scan", shell.SelectedSection);
     }
 
@@ -98,7 +107,7 @@ public sealed class ShellTests : IDisposable
     [Fact]
     public async Task Scan_then_save_to_group_moves_pages_into_group_and_survives_reload()
     {
-        var group = await _groupService.CreateGroupAsync(_root, "Taxes", TestContext.Current.CancellationToken);
+        var group = await _groupService.CreateGroupAsync(_root, "Taxes", null, TestContext.Current.CancellationToken);
         _activeGroup.Current = group;
         var vm = CreateScanViewModel(new FakeScanService { PageCount = 2 });
         await vm.RefreshDevicesCommand.ExecuteAsync(null);

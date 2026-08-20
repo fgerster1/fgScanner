@@ -108,12 +108,40 @@ is taken automatically before every schema migration).
 | Id | TEXT | no | PK |
 | AiDescriptionEnabled | INTEGER | no |  |
 | CreatedUtc | TEXT | no |  |
+| CsvDelimiter | TEXT | no |  |
+| ExportCsv | INTEGER | no |  |
+| ExportJson | INTEGER | no |  |
+| ExportXlsx | INTEGER | no |  |
+| ExportXml | INTEGER | no |  |
 | Name | TEXT | no |  |
 | OcrEnabled | INTEGER | no |  |
 | OcrLanguages | TEXT | no |  |
 | ScanSettingsJson | TEXT | no |  |
 
 - Index (unique): Name
+
+### Settings
+
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| Key | TEXT | no | PK |
+| Value | TEXT | no |  |
+
+### TrashItems
+
+| Column | Type | Nullable | Notes |
+|---|---|---|---|
+| Id | TEXT | no | PK |
+| DeletedUtc | TEXT | no |  |
+| DocumentSequence | INTEGER | no |  |
+| FilesJson | TEXT | no |  |
+| GroupDirectoryPath | TEXT | no |  |
+| GroupName | TEXT | no |  |
+| OriginalGroupId | TEXT | no |  |
+| PayloadJson | TEXT | no |  |
+| TrashFolderPath | TEXT | no |  |
+
+- Index: DeletedUtc
 
 ## Raw-SQL objects (FTS + stable views)
 

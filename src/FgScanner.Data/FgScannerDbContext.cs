@@ -19,6 +19,10 @@ public class FgScannerDbContext(DbContextOptions<FgScannerDbContext> options) : 
 
     public DbSet<QueuedJob> Jobs => Set<QueuedJob>();
 
+    public DbSet<TrashItem> TrashItems => Set<TrashItem>();
+
+    public DbSet<Setting> Settings => Set<Setting>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Profile>(e =>
@@ -55,6 +59,16 @@ public class FgScannerDbContext(DbContextOptions<FgScannerDbContext> options) : 
         modelBuilder.Entity<QueuedJob>(e =>
         {
             e.HasIndex(j => new { j.State, j.Type });
+        });
+
+        modelBuilder.Entity<TrashItem>(e =>
+        {
+            e.HasIndex(t => t.DeletedUtc);
+        });
+
+        modelBuilder.Entity<Setting>(e =>
+        {
+            e.HasKey(x => x.Key);
         });
     }
 }

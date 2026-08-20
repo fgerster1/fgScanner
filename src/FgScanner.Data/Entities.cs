@@ -63,6 +63,18 @@ public class Profile
 
     public bool AiDescriptionEnabled { get; set; }
 
+    // Index export formats (PLAN §5.2): any combination, CSV on by default.
+    public bool ExportCsv { get; set; } = true;
+
+    public bool ExportXlsx { get; set; }
+
+    public bool ExportXml { get; set; }
+
+    public bool ExportJson { get; set; }
+
+    /// <summary>"," default; ";" for European Excel locales.</summary>
+    public string CsvDelimiter { get; set; } = ",";
+
     public DateTime CreatedUtc { get; set; }
 
     public List<IndexSchema> Schemas { get; set; } = [];
@@ -205,4 +217,36 @@ public class QueuedJob
     public DateTime CreatedUtc { get; set; }
 
     public DateTime UpdatedUtc { get; set; }
+}
+
+/// <summary>A deleted page (image + sidecars) held restorable for the retention period (PLAN §5.2).</summary>
+public class TrashItem
+{
+    public Guid Id { get; set; }
+
+    public Guid OriginalGroupId { get; set; }
+
+    public required string GroupName { get; set; }
+
+    public required string GroupDirectoryPath { get; set; }
+
+    public int DocumentSequence { get; set; }
+
+    /// <summary>Serialized document + page rows, sufficient to restore them exactly.</summary>
+    public required string PayloadJson { get; set; }
+
+    /// <summary>JSON array of file names moved into the trash folder (image first, then sidecars).</summary>
+    public required string FilesJson { get; set; }
+
+    public required string TrashFolderPath { get; set; }
+
+    public DateTime DeletedUtc { get; set; }
+}
+
+/// <summary>App settings as key/value (retention days, etc.).</summary>
+public class Setting
+{
+    public required string Key { get; set; }
+
+    public required string Value { get; set; }
 }

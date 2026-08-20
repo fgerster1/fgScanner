@@ -1,0 +1,32 @@
+﻿{
+  "group": "Invoices 2026",
+  "profile": "Accounting",
+  "schemaVersion": 3,
+  "appVersion": "1.2.3",
+  "generatedUtc": "2026-08-20T12:00:00.0000000Z",
+  "formats": [
+    "csv"
+  ],
+  "fields": [
+    {
+      "name": "Vendor",
+      "type": "text",
+      "required": true
+    },
+    {
+      "name": "InvoiceDate",
+      "type": "date",
+      "required": false
+    },
+    {
+      "name": "Amount",
+      "type": "number",
+      "required": false
+    },
+    {
+      "name": "Category",
+      "type": "list",
+      "required": false
+    }
+  ]
+}
