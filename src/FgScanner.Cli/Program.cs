@@ -1,13 +1,10 @@
 using System.Reflection;
+using FgScanner.Cli;
 
-var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
-
-if (args is ["--version"] or ["-v"])
+if (args is ["--version"])
 {
-    Console.WriteLine(version);
+    Console.WriteLine(Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0");
     return 0;
 }
 
-Console.WriteLine($"FG Scanner CLI {version}");
-Console.WriteLine("Commands arrive in phase 8 (scan, process, export, list-devices).");
-return 0;
+return await CliRunner.RunAsync(args);

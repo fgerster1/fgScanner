@@ -66,7 +66,7 @@ public sealed class RetroPdfIntegrationTests : IDisposable
         var groups = new GroupService(factory);
         var retro = new RetroProcessService(
             factory, groups, new TrashService(factory, Path.Combine(_root, "trash")),
-            new Naps2PdfRenderer(_fileImport));
+            new FgScanner.Scanning.Import.Naps2PdfRenderer(_fileImport));
 
         // A real 2-page PDF via the phase-4 exporter.
         var folder = Path.Combine(_root, "OldRecords");

@@ -102,6 +102,15 @@ public sealed partial class GroupsViewModel : ObservableObject
         }
     }
 
+    /// <summary>Session restore: reselect the group from the last run when it still exists.</summary>
+    public void TrySelectGroup(Guid groupId)
+    {
+        if (Groups.FirstOrDefault(g => g.Id == groupId) is { } group)
+        {
+            SelectedGroup = group;
+        }
+    }
+
     [RelayCommand]
     private async Task RefreshAsync()
     {

@@ -70,3 +70,13 @@ Run before each release, and after any change to FgScanner.Scanning. Automated t
 - [ ] Delete an image in Explorer, Reconcile: offered removal moves the row to Trash, restorable.
 - [ ] A folder with someone else's index.csv: warning appears; commit only replaces after the warning.
 - [ ] "Re-process…" with "Redo everything": .md files land in Trash, OCR/AI redo (AI shows estimate first).
+
+## Phase 8 — batch & CLI (manual checks)
+
+- [ ] Batch scan (multiple-with-prompt, 3 passes) on the real feeder; pages accumulate and auto-save to the active group.
+- [ ] `fgscanner scan --group C:\Scans\Test --source feeder` from a real scanner in Task Scheduler; index appears with `fgscanner process C:\Scans\Test --ocr --write-index`.
+- [ ] `fgscanner list-devices` shows the real scanner.
+- [ ] Rebind Scan to F5 in Settings, save: F5 scans immediately, Ctrl+Enter no longer does; reset restores defaults.
+- [ ] F2 selects the first profile.
+- [ ] Export a profile, re-import it: "Name (2)" appears with identical fields/formats.
+- [ ] Launch the app twice: the second launch focuses the existing window; closing and reopening restores the last section and group.

@@ -27,7 +27,7 @@ FgScanner.Scanning (IScanService → NAPS2.Sdk; FakeScanService for tests)
 FgScanner.Ocr  (TesseractRunner, MarkdownReconstructor)
 FgScanner.Ai   (IDescriptionProvider → Gemini via IChatClient)
 FgScanner.Data (EF Core + SQLite; JSONB custom fields; FTS5)
-FgScanner.Cli  (headless; references Core/Scanning only, never App)
+FgScanner.Cli  (headless fgscanner.exe; Core/Scanning/Data/Ocr/Ai — never App/WPF)
 ```
 
 ## Hard rules

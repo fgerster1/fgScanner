@@ -142,4 +142,74 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
         profile.CsvDelimiter = string.IsNullOrEmpty(delimiter) ? "," : delimiter[..1];
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    // ---- .fgprofile import/export (PLAN §5.8) ----
+
+    private static readonly System.Text.Json.JsonSerializerOptions FgProfileJsonOptions =
+        new() { WriteIndented = true };
+
+    private sealed record FgProfileFile(
+        int FormatVersion, string Name, bool OcrEnabled,
+        bool ExportCsv, bool ExportXlsx, bool ExportXml, bool ExportJson, string CsvDelimiter,
+        List<FgProfileField> Fields);
+
+    private sealed record FgProfileField(
+        string Name, string Type, bool Required, bool Sticky, string? DefaultValue, string? ListChoicesJson);
+
+    /// <summary>Serializes a profile + its latest schema as schema-versioned JSON (.fgprofile).</summary>
+    public async Task<string> ExportProfileJsonAsync(Guid profileId, CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var profile = await db.Profiles.FirstAsync(p => p.Id == profileId, cancellationToken).ConfigureAwait(false);
+        var schema = await GetLatestSchemaAsync(profileId, cancellationToken).ConfigureAwait(false);
+        var file = new FgProfileFile(
+            1, profile.Name, profile.OcrEnabled,
+            profile.ExportCsv, profile.ExportXlsx, profile.ExportXml, profile.ExportJson, profile.CsvDelimiter,
+            [.. schema.Fields.Select(f => new FgProfileField(
+                f.Name, f.Type.ToString(), f.Required, f.Sticky, f.DefaultValue, f.ListChoicesJson))]);
+        return System.Text.Json.JsonSerializer.Serialize(file, FgProfileJsonOptions);
+    }
+
+    /// <summary>Creates a new profile from .fgprofile JSON; a taken name gets a numeric suffix.</summary>
+    public async Task<Profile> ImportProfileJsonAsync(string json, CancellationToken cancellationToken = default)
+    {
+        var file = System.Text.Json.JsonSerializer.Deserialize<FgProfileFile>(json)
+            ?? throw new InvalidOperationException("Not a valid .fgprofile file.");
+        if (file.FormatVersion != 1)
+        {
+            throw new InvalidOperationException(
+                $"Unsupported .fgprofile format version {file.FormatVersion} (this build reads version 1).");
+        }
+
+        var existing = (await ListAsync(cancellationToken).ConfigureAwait(false)).Select(p => p.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var name = file.Name;
+        for (var suffix = 2; existing.Contains(name); suffix++)
+        {
+            name = $"{file.Name} ({suffix.ToString(System.Globalization.CultureInfo.InvariantCulture)})";
+        }
+
+        var profile = await CreateAsync(name, cancellationToken).ConfigureAwait(false);
+        if (file.Fields.Count > 0)
+        {
+            await SaveSchemaAsync(
+                profile.Id,
+                [.. file.Fields.Select(f => new FieldDefinition
+                {
+                    Name = f.Name,
+                    Type = Enum.Parse<FieldType>(f.Type),
+                    Required = f.Required,
+                    Sticky = f.Sticky,
+                    DefaultValue = f.DefaultValue,
+                    ListChoicesJson = f.ListChoicesJson,
+                })],
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        await UpdateExportSettingsAsync(
+            profile.Id, file.ExportCsv, file.ExportXlsx, file.ExportXml, file.ExportJson, file.CsvDelimiter,
+            cancellationToken).ConfigureAwait(false);
+        await UpdateOcrEnabledAsync(profile.Id, file.OcrEnabled, cancellationToken).ConfigureAwait(false);
+        return profile;
+    }
 }
