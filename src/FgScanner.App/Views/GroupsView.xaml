@@ -28,6 +28,8 @@
                     <Button Content="Open folder…" Command="{Binding OpenFolderAsGroupCommand}" Margin="0,0,3,0" />
                     <Button Content="Refresh" Command="{Binding RefreshCommand}" Margin="3,0,0,0" />
                 </UniformGrid>
+                <Button Content="Process existing folder…" Command="{Binding ProcessExistingFolderCommand}" Margin="0,0,0,8"
+                        ToolTip="Register a folder full of images and PDFs as a group (PLAN §5.7)" />
             </StackPanel>
             <ListBox ItemsSource="{Binding Groups}" SelectedItem="{Binding SelectedGroup}">
                 <ListBox.ItemTemplate>
@@ -93,6 +95,8 @@
                     <Button Content="Re-export index files" Command="{Binding ReexportCommand}" Padding="10,6" Margin="0,0,6,0" />
                     <Button Content="Add missed page…" Command="{Binding AddMissedPageCommand}" Padding="10,6" Margin="0,0,6,0" />
                     <Button Content="Import PDF/images…" Command="{Binding ImportFilesCommand}" Padding="10,6" Margin="0,0,6,0" />
+                    <Button Content="Reconcile" Command="{Binding ReconcileCommand}" Padding="10,6" Margin="0,0,6,0" ToolTip="Re-match renamed files by checksum; report rows whose files vanished" />
+                    <Button Content="Re-process…" Command="{Binding ReprocessCommand}" Padding="10,6" Margin="0,0,6,0" ToolTip="Selective OCR/AI re-run" />
                     <Button Content="OCR pages" Command="{Binding OcrPagesCommand}" Padding="10,6" Margin="0,0,6,0" ToolTip="Recognize text on pages not yet OCRed" />
                     <Button Content="Re-OCR all" Command="{Binding ReOcrAllCommand}" Padding="10,6" Margin="0,0,6,0" ToolTip="Redo OCR on every page (old .md files go to Trash)" />
                     <Button Content="AI describe" Command="{Binding DescribePagesCommand}" Padding="10,6" Margin="0,0,6,0" ToolTip="Generate AI descriptions with your Gemini key (cost estimate shown first)" Visibility="{Binding AiAvailable, Converter={x:Static views:BoolToVisibilityConverter.Instance}}" />

@@ -16,6 +16,7 @@ public sealed partial class GroupsViewModel : ObservableObject
     private readonly TrashService _trashService;
     private readonly ActiveGroupStore _activeGroup;
     private readonly PageEditingToolset _toolset;
+    private readonly RetroProcessService _retroService;
 
     public GroupsViewModel(
         GroupService groupService,
@@ -23,7 +24,8 @@ public sealed partial class GroupsViewModel : ObservableObject
         IndexingService indexingService,
         TrashService trashService,
         ActiveGroupStore activeGroup,
-        PageEditingToolset toolset)
+        PageEditingToolset toolset,
+        RetroProcessService retroService)
     {
         _groupService = groupService;
         _profileService = profileService;
@@ -31,6 +33,7 @@ public sealed partial class GroupsViewModel : ObservableObject
         _trashService = trashService;
         _activeGroup = activeGroup;
         _toolset = toolset;
+        _retroService = retroService;
         activeGroup.GroupContentChanged += () => _ = Detail?.ReloadRowsAsync();
         _ = InitializeAsync();
     }
@@ -148,6 +151,64 @@ public sealed partial class GroupsViewModel : ObservableObject
         catch (Exception ex)
         {
             Log.Error(ex, "Creating group");
+        }
+    }
+
+    /// <summary>Retro-processing (PLAN §5.7): register an existing folder's images and PDFs.</summary>
+    [RelayCommand]
+    private async Task ProcessExistingFolderAsync()
+    {
+        var dialog = new OpenFolderDialog { Title = "Choose the folder to process (its images and PDFs become pages)" };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        try
+        {
+            var report = await _retroService.ProcessFolderAsync(dialog.FolderName, await ResolveProfileRefAsync());
+            await RefreshAsync();
+            SelectedGroup = Groups.FirstOrDefault(g => g.Id == report.GroupId);
+
+            var lines = new List<string>
+            {
+                $"Images registered: {report.AdoptedImages}",
+                $"PDF pages rendered and registered: {report.AdoptedPdfPages}",
+            };
+            if (report.RematchedByChecksum.Count > 0)
+            {
+                lines.Add($"Renamed files re-matched by checksum: {report.RematchedByChecksum.Count}");
+            }
+
+            if (report.DuplicateFiles.Count > 0)
+            {
+                lines.Add($"Duplicates skipped (same content already registered): {string.Join(", ", report.DuplicateFiles.Take(8))}");
+            }
+
+            if (report.RowsWithoutFiles.Count > 0)
+            {
+                lines.Add($"Rows whose files are missing: {string.Join(", ", report.RowsWithoutFiles.Take(8))} — use Reconcile to fix.");
+            }
+
+            if (report.ForeignIndexFiles.Count > 0)
+            {
+                lines.Add($"⚠ This folder already has {string.Join(", ", report.ForeignIndexFiles)} not written by FG Scanner. " +
+                    "Committing this group will replace them.");
+            }
+
+            System.Windows.MessageBox.Show(
+                string.Join("\n", lines), "Process existing folder — report",
+                System.Windows.MessageBoxButton.OK,
+                report.ForeignIndexFiles.Count > 0
+                    ? System.Windows.MessageBoxImage.Warning
+                    : System.Windows.MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Retro-processing folder");
+            System.Windows.MessageBox.Show(
+                $"Processing failed: {ex.Message}", "Process existing folder",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
         }
     }
 

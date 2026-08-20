@@ -14,7 +14,7 @@ Tracks FG Scanner against the NAPS2 8.3.2 inventory (docs/research/research-1-na
 | Import PDF/images; file associations | [F] | ◐ (import incl. PDF passwords done; file associations in 9) | 4,9 |
 | OCR → .md + searchable PDF + languages | [F]+ | ☑ (Tesseract 5.5 fast; geometric Markdown; durable queue; 9 languages w/ SHA-256 downloads; text layer via exporter) | 5 |
 | AI descriptions (Gemini, BYO-key, queue, cost) | FG core | ☑ (gemini-2.5-flash-lite; CredMan key; durable queue; estimate + spend tracking; blank-page skip) | 6 |
-| Retro-process existing folder + reconcile | FG core | ☐ | 7 |
+| Retro-process existing folder + reconcile | FG core | ☑ (in-place adoption, PDF render, checksum re-match, foreign-index warn, selective re-run; idempotent) | 7 |
 | Batch dialog + CLI + shortcuts + profiles import/export | [P] | ☐ | 8 |
 | Installer, auto-update, signing, winget | [F] | ◐ | 0,9 |
 | Email (MAPI) / print / clipboard | [P] | ◐ (print + clipboard + drag-out done; MAPI email in 9) | 4,9 |

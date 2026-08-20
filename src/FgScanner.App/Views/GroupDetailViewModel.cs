@@ -157,6 +157,104 @@ public sealed partial class GroupDetailViewModel : ObservableObject
     /// <summary>The AI feature stays hidden until a key is stored (PLAN §5.6).</summary>
     public bool AiAvailable => _toolset.Credentials.HasKey;
 
+    /// <summary>Reconcile (PLAN §5.7): re-match renames by checksum, report vanished files.</summary>
+    [RelayCommand]
+    private async Task ReconcileAsync()
+    {
+        try
+        {
+            var report = await _toolset.Retro.ReconcileAsync(Group.Id);
+            await ReloadRowsAsync();
+            if (report.RematchedByChecksum.Count > 0)
+            {
+                StatusText = $"Re-matched {report.RematchedByChecksum.Count} renamed file(s) by checksum.";
+            }
+
+            if (report.RowsWithoutFiles.Count == 0)
+            {
+                StatusText = report.RematchedByChecksum.Count > 0
+                    ? StatusText
+                    : "Reconcile: rows and files match.";
+                return;
+            }
+
+            var answer = System.Windows.MessageBox.Show(
+                $"{report.RowsWithoutFiles.Count} row(s) have no file on disk:\n" +
+                string.Join("\n", report.RowsWithoutFiles.Take(10)) +
+                "\n\nMove these rows to the Trash (restorable)?",
+                "Reconcile",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Question);
+            if (answer == System.Windows.MessageBoxResult.Yes)
+            {
+                var removed = await _toolset.Retro.RemoveRowsWithoutFilesAsync(Group.Id);
+                await ReloadRowsAsync();
+                if (Group.State == GroupState.Committed)
+                {
+                    await _indexingService.ReexportAsync(Group.Id);
+                }
+
+                StatusText = $"{removed} row(s) moved to Trash.";
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Reconcile");
+            StatusText = $"Reconcile failed: {ex.Message}";
+        }
+    }
+
+    /// <summary>Selective re-run (PLAN §5.7): apply a better model or fixed setting to a subset.</summary>
+    [RelayCommand]
+    private async Task ReprocessAsync()
+    {
+        var dialog = new Dialogs.ReprocessDialog { Owner = System.Windows.Application.Current.MainWindow };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        try
+        {
+            var ocrQueued = 0;
+            var aiQueued = 0;
+            switch (dialog.Scope)
+            {
+                case Dialogs.ReprocessScope.OcrOnly:
+                    ocrQueued = await _toolset.OcrQueue.EnqueueGroupAsync(Group.Id);
+                    break;
+                case Dialogs.ReprocessScope.AiOnly when AiAvailable:
+                    aiQueued = await _toolset.AiQueue.EnqueueGroupAsync(Group.Id);
+                    break;
+                case Dialogs.ReprocessScope.RedoEverything:
+                    ocrQueued = await _toolset.OcrQueue.EnqueueGroupAsync(Group.Id, force: true);
+                    if (AiAvailable)
+                    {
+                        aiQueued = await _toolset.AiQueue.EnqueueGroupAsync(Group.Id, force: true);
+                    }
+
+                    break;
+                default:
+                    ocrQueued = await _toolset.OcrQueue.EnqueueGroupAsync(Group.Id);
+                    if (AiAvailable)
+                    {
+                        aiQueued = await _toolset.AiQueue.EnqueueGroupAsync(Group.Id);
+                    }
+
+                    break;
+            }
+
+            await ReloadRowsAsync();
+            StatusText = $"Queued: {ocrQueued} OCR, {aiQueued} AI page(s)." +
+                (AiAvailable ? "" : " (AI skipped — no key stored.)");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Re-process");
+            StatusText = $"Re-process failed: {ex.Message}";
+        }
+    }
+
     [RelayCommand]
     private async Task DescribePagesAsync()
     {

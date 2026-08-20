@@ -54,6 +54,9 @@ public sealed class ShellTests : IDisposable
         public FgScannerDbContext CreateDbContext() => new(DbBootstrapper.BuildOptions(dbPath));
     }
 
+    private RetroProcessService CreateRetroService() => new(
+        new TestFactory(_dbPath), _groupService, _trashService);
+
     private PageEditingToolset CreateToolset() => new(
         new FgScanner.Scanning.Editing.ImageEditor(),
         new FgScanner.Scanning.Export.PdfExportService(),
@@ -62,6 +65,7 @@ public sealed class ShellTests : IDisposable
         new ReorderService(new TestFactory(_dbPath)),
         new OcrQueueService(new TestFactory(_dbPath)),
         new AiQueueService(new TestFactory(_dbPath)),
+        CreateRetroService(),
         new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false),
         new AppSettingsService(new TestFactory(_dbPath)));
 
@@ -74,7 +78,7 @@ public sealed class ShellTests : IDisposable
     {
         var shell = new ShellViewModel(
             CreateScanViewModel(),
-            new GroupsViewModel(_groupService, _profileService, _indexingService, _trashService, _activeGroup, CreateToolset()),
+            new GroupsViewModel(_groupService, _profileService, _indexingService, _trashService, _activeGroup, CreateToolset(), CreateRetroService()),
             new TrashViewModel(_trashService, _activeGroup),
             new SettingsViewModel(
                 _profileService, _trashService,

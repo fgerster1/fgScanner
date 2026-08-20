@@ -15,5 +15,6 @@ public sealed record PageEditingToolset(
     ReorderService Reorder,
     OcrQueueService OcrQueue,
     AiQueueService AiQueue,
+    RetroProcessService Retro,
     CredentialStore Credentials,
     AppSettingsService Settings);

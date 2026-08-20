@@ -65,14 +65,23 @@ public partial class App : Application
                 services.AddSingleton<AiQueueService>();
                 services.AddSingleton(sp => new FgScanner.Ai.CredentialStore());
                 services.AddSingleton<AiWorker>();
+                services.AddSingleton(sp => new FgScanner.Scanning.Import.FileImportService());
+                services.AddSingleton<FgScanner.Core.IPdfRenderer>(sp => new Naps2PdfRenderer(
+                    sp.GetRequiredService<FgScanner.Scanning.Import.FileImportService>()));
+                services.AddSingleton(sp => new RetroProcessService(
+                    sp.GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<FgScannerDbContext>>(),
+                    sp.GetRequiredService<GroupService>(),
+                    sp.GetRequiredService<TrashService>(),
+                    sp.GetRequiredService<FgScanner.Core.IPdfRenderer>()));
                 services.AddSingleton(sp => new PageEditingToolset(
                     new FgScanner.Scanning.Editing.ImageEditor(),
                     new FgScanner.Scanning.Export.PdfExportService(),
                     new FgScanner.Scanning.Export.ImageExportService(),
-                    new FgScanner.Scanning.Import.FileImportService(),
+                    sp.GetRequiredService<FgScanner.Scanning.Import.FileImportService>(),
                     sp.GetRequiredService<ReorderService>(),
                     sp.GetRequiredService<OcrQueueService>(),
                     sp.GetRequiredService<AiQueueService>(),
+                    sp.GetRequiredService<RetroProcessService>(),
                     sp.GetRequiredService<FgScanner.Ai.CredentialStore>(),
                     sp.GetRequiredService<AppSettingsService>()));
                 services.AddSingleton(sp => new FgScanner.Ocr.LanguageManager());
