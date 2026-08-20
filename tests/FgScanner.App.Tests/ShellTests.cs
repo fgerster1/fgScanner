@@ -1,7 +1,9 @@
 using System.IO;
 using FgScanner.App.Services;
 using FgScanner.App.Views;
+using FgScanner.Data;
 using FgScanner.Scanning;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace FgScanner.App.Tests;
@@ -10,15 +12,27 @@ public sealed class ShellTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "fgscanner-tests", Guid.NewGuid().ToString("N"));
     private readonly ScanSessionService _sessionService;
+    private readonly GroupService _groupService;
+    private readonly ActiveGroupStore _activeGroup = new();
+    private readonly string _dbPath;
 
     public ShellTests()
     {
-        _sessionService = new ScanSessionService(_root);
+        Directory.CreateDirectory(_root);
+        _dbPath = Path.Combine(_root, "test.db");
+        using (var db = new FgScannerDbContext(DbBootstrapper.BuildOptions(_dbPath)))
+        {
+            db.Database.Migrate();
+        }
+
+        _sessionService = new ScanSessionService(Path.Combine(_root, "recovery"));
+        _groupService = new GroupService(new TestFactory(_dbPath));
     }
 
     public void Dispose()
     {
         _sessionService.Dispose();
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try
         {
             Directory.Delete(_root, recursive: true);
@@ -28,13 +42,20 @@ public sealed class ShellTests : IDisposable
         }
     }
 
+    private sealed class TestFactory(string dbPath) : IDbContextFactory<FgScannerDbContext>
+    {
+        public FgScannerDbContext CreateDbContext() => new(DbBootstrapper.BuildOptions(dbPath));
+    }
+
     private ScanViewModel CreateScanViewModel(FakeScanService? service = null) =>
-        new(service ?? new FakeScanService(), _sessionService);
+        new(service ?? new FakeScanService(), _sessionService, _groupService, _activeGroup);
 
     [Fact]
     public void Shell_starts_on_scan_section()
     {
-        var shell = new ShellViewModel(CreateScanViewModel());
+        var shell = new ShellViewModel(
+            CreateScanViewModel(),
+            new GroupsViewModel(_groupService, _activeGroup));
         Assert.Equal(["Scan", "Groups", "Settings"], shell.Sections);
         Assert.Equal("Scan", shell.SelectedSection);
     }
@@ -75,11 +96,34 @@ public sealed class ShellTests : IDisposable
     }
 
     [Fact]
+    public async Task Scan_then_save_to_group_moves_pages_into_group_and_survives_reload()
+    {
+        var group = await _groupService.CreateGroupAsync(_root, "Taxes", TestContext.Current.CancellationToken);
+        _activeGroup.Current = group;
+        var vm = CreateScanViewModel(new FakeScanService { PageCount = 2 });
+        await vm.RefreshDevicesCommand.ExecuteAsync(null);
+        vm.Source = ScanSource.Feeder;
+        await vm.ScanCommand.ExecuteAsync(null);
+        var sessionFolder = _sessionService.Session.FolderPath;
+
+        await vm.SaveToGroupCommand.ExecuteAsync(null);
+
+        Assert.Empty(vm.Pages);
+        Assert.NotEqual(sessionFolder, _sessionService.Session.FolderPath); // fresh session
+        Assert.True(File.Exists(Path.Combine(group.DirectoryPath, "scan_00001.png")));
+        Assert.True(File.Exists(Path.Combine(group.DirectoryPath, "scan_00002.png")));
+
+        // "Restart": a brand-new service over the same DB sees the group and its pages.
+        var reloaded = new GroupService(new TestFactory(_dbPath));
+        var groups = await reloaded.ListGroupsAsync(TestContext.Current.CancellationToken);
+        var pages = await reloaded.GetPagesAsync(Assert.Single(groups).Id, TestContext.Current.CancellationToken);
+        Assert.Equal(2, pages.Count);
+    }
+
+    [Fact]
     public void Recovered_pages_appear_in_the_list_at_startup()
     {
-        // A crashed session with two pages…
-        var crashedRoot = _root; // same recovery root the service watches
-        var crashed = FgScanner.Scanning.Recovery.RecoverySession.Create(crashedRoot);
+        var crashed = FgScanner.Scanning.Recovery.RecoverySession.Create(Path.Combine(_root, "recovery"));
         File.WriteAllBytes(crashed.ReserveNextPagePath("png"), [1]);
         crashed.CommitPage(new ScannedPage(Path.Combine(crashed.FolderPath, "page-00001.png"), 1));
         crashed.Flush();

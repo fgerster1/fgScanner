@@ -20,13 +20,23 @@ public sealed class ScanSessionService : IDisposable
     {
     }
 
+    private readonly string _recoveryRoot;
+
     public ScanSessionService(string recoveryRoot)
     {
+        _recoveryRoot = recoveryRoot;
         _recoveryManager = new RecoveryManager(recoveryRoot);
         Session = RecoverySession.Create(recoveryRoot);
     }
 
-    public RecoverySession Session { get; }
+    public RecoverySession Session { get; private set; }
+
+    /// <summary>After pages were adopted into a group (moved out), start a fresh session folder.</summary>
+    public void ResetSession()
+    {
+        Session.DiscardAndDelete();
+        Session = RecoverySession.Create(_recoveryRoot);
+    }
 
     public IReadOnlyList<OrphanedSession> FindOrphanedSessions() => _recoveryManager.FindOrphanedSessions();
 

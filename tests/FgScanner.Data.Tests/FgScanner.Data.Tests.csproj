@@ -10,4 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\FgScanner.Data\FgScanner.Data.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

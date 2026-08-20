@@ -3,7 +3,9 @@ using System.IO;
 using System.Windows;
 using FgScanner.App.Services;
 using FgScanner.App.Views;
+using FgScanner.Data;
 using FgScanner.Scanning;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
@@ -26,6 +28,7 @@ public partial class App : Application
         _host = Host.CreateDefaultBuilder(e.Args)
             .UseSerilog((_, config) => config
                 .MinimumLevel.Debug()
+                .MinimumLevel.Override("Microsoft.EntityFrameworkCore", Serilog.Events.LogEventLevel.Warning)
                 .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture)
                 .WriteTo.File(
                     Path.Combine(logDir, "app-.log"),
@@ -45,6 +48,11 @@ public partial class App : Application
                 }
 
                 services.AddSingleton<ScanSessionService>();
+                services.AddDbContextFactory<FgScannerDbContext>(o =>
+                    o.UseSqlite($"Data Source={DbBootstrapper.DefaultDbPath}"));
+                services.AddSingleton<GroupService>();
+                services.AddSingleton<ActiveGroupStore>();
+                services.AddSingleton<GroupsViewModel>();
                 services.AddSingleton<ScanViewModel>();
                 services.AddSingleton<ShellViewModel>();
                 services.AddSingleton<ShellWindow>();
@@ -53,6 +61,13 @@ public partial class App : Application
 
         _host.Start();
         Log.Information("FG Scanner starting");
+
+        var appVersion = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+        var backup = DbBootstrapper.MigrateWithBackup(DbBootstrapper.DefaultDbPath, appVersion);
+        if (backup is not null)
+        {
+            Log.Information("Database migrated; pre-migration backup at {Backup}", backup);
+        }
 
         OfferCrashRecovery(_host.Services.GetRequiredService<ScanSessionService>());
 

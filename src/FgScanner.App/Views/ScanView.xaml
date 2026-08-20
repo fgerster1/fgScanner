@@ -52,6 +52,9 @@
                             Padding="0,8" Margin="3,0,0,0" />
                 </UniformGrid>
 
+                <Button Content="{Binding SaveTargetText}" Command="{Binding SaveToGroupCommand}"
+                        Padding="0,8" Margin="0,8,0,0" />
+
                 <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Margin="0,10,0,0" Opacity="0.8" />
             </StackPanel>
         </ScrollViewer>
