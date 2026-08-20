@@ -1,11 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- Windows TFM: fixture pages are drawn with System.Drawing, then OCRed by real Tesseract. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
     <OutputType>Exe</OutputType>
+    <UseWindowsForms>false</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="System.Drawing.Common" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\FgScanner.Ocr\FgScanner.Ocr.csproj" />

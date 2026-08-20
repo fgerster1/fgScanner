@@ -44,3 +44,12 @@ Run before each release, and after any change to FgScanner.Scanning. Automated t
 - [ ] Print… sends pages to a real printer / Microsoft Print to PDF at full page size.
 - [ ] Copy puts the page image on the clipboard (paste into Paint).
 - [ ] Drag the preview thumbnail into Explorer: file copy lands.
+
+## Phase 5 — OCR (manual checks)
+
+- [ ] Scan into a group with an OCR-enabled profile: pages go Pending → Yes automatically; .md sidecars appear beside images with YAML front matter.
+- [ ] Kill the app mid-OCR (Task Manager), restart: queued pages resume without re-doing finished ones.
+- [ ] Export PDF with OCR from a text page; open in a viewer: text is selectable and aligned over the ink.
+- [ ] "Re-OCR all": previous .md files appear in Trash and are restorable.
+- [ ] Low-quality page (crumpled/skewed photo) shows "Yes ⚠ nn% — review" in the grid.
+- [ ] Settings → download German; OCR a German page with languages "eng+deu".

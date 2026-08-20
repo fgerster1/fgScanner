@@ -60,12 +60,22 @@ public partial class App : Application
                         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                         "FGScanner", "trash")));
                 services.AddSingleton<ReorderService>();
+                services.AddSingleton<AppSettingsService>();
+                services.AddSingleton<OcrQueueService>();
                 services.AddSingleton(sp => new PageEditingToolset(
                     new FgScanner.Scanning.Editing.ImageEditor(),
                     new FgScanner.Scanning.Export.PdfExportService(),
                     new FgScanner.Scanning.Export.ImageExportService(),
                     new FgScanner.Scanning.Import.FileImportService(),
-                    sp.GetRequiredService<ReorderService>()));
+                    sp.GetRequiredService<ReorderService>(),
+                    sp.GetRequiredService<OcrQueueService>()));
+                services.AddSingleton(sp => new FgScanner.Ocr.LanguageManager());
+                services.AddSingleton(sp => new FgScanner.Ocr.TesseractRunner(
+                    tessdataDir: sp.GetRequiredService<FgScanner.Ocr.LanguageManager>().TessdataDir));
+                services.AddSingleton(sp => new FgScanner.Ocr.OcrPipeline(
+                    sp.GetRequiredService<FgScanner.Ocr.TesseractRunner>()));
+                services.AddSingleton<ProfileOcrTrigger>();
+                services.AddSingleton<OcrWorker>();
                 services.AddSingleton<ActiveGroupStore>();
                 services.AddSingleton<GroupsViewModel>();
                 services.AddSingleton<TrashViewModel>();
@@ -88,6 +98,10 @@ public partial class App : Application
         }
 
         OfferCrashRecovery(_host.Services.GetRequiredService<ScanSessionService>());
+
+        // Bundled English lands in the writable tessdata dir; then the durable queue drains.
+        _host.Services.GetRequiredService<FgScanner.Ocr.LanguageManager>().EnsureBundledEnglish();
+        _host.Services.GetRequiredService<OcrWorker>().Start();
 
         MainWindow = _host.Services.GetRequiredService<ShellWindow>();
         MainWindow.Show();

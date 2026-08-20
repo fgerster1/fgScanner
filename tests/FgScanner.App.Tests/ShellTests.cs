@@ -59,10 +59,12 @@ public sealed class ShellTests : IDisposable
         new FgScanner.Scanning.Export.PdfExportService(),
         new FgScanner.Scanning.Export.ImageExportService(),
         new FgScanner.Scanning.Import.FileImportService(),
-        new ReorderService(new TestFactory(_dbPath)));
+        new ReorderService(new TestFactory(_dbPath)),
+        new OcrQueueService(new TestFactory(_dbPath)));
 
     private ScanViewModel CreateScanViewModel(FakeScanService? service = null) =>
-        new(service ?? new FakeScanService(), _sessionService, _groupService, _indexingService, _activeGroup);
+        new(service ?? new FakeScanService(), _sessionService, _groupService, _indexingService, _activeGroup,
+            new ProfileOcrTrigger(_profileService, new OcrQueueService(new TestFactory(_dbPath))));
 
     [Fact]
     public void Shell_starts_on_scan_section()
@@ -71,7 +73,10 @@ public sealed class ShellTests : IDisposable
             CreateScanViewModel(),
             new GroupsViewModel(_groupService, _profileService, _indexingService, _trashService, _activeGroup, CreateToolset()),
             new TrashViewModel(_trashService, _activeGroup),
-            new SettingsViewModel(_profileService, _trashService));
+            new SettingsViewModel(
+                _profileService, _trashService,
+                new AppSettingsService(new TestFactory(_dbPath)),
+                new FgScanner.Ocr.LanguageManager(Path.Combine(_root, "tessdata"))));
         Assert.Equal(["Scan", "Groups", "Trash", "Settings"], shell.Sections);
         Assert.Equal("Scan", shell.SelectedSection);
     }

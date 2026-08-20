@@ -31,6 +31,13 @@ public sealed record PdfSecurity
     public bool AllowFormFilling { get; init; } = true;
 }
 
+/// <summary>
+/// Tesseract wiring for the searchable text layer (paths supplied by FgScanner.Ocr so this
+/// project stays decoupled from it).
+/// </summary>
+public sealed record PdfOcrSettings(
+    string TesseractExePath, string TessdataDir, string Languages = "eng", double TimeoutSeconds = 120);
+
 public sealed record PdfExportOptions
 {
     public string Title { get; init; } = "";
@@ -39,6 +46,9 @@ public sealed record PdfExportOptions
     public string Keywords { get; init; } = "";
     public PdfCompatLevel Compat { get; init; } = PdfCompatLevel.Default;
     public PdfSecurity? Security { get; init; }
+
+    /// <summary>When set, the export runs OCR and embeds an invisible, selectable text layer.</summary>
+    public PdfOcrSettings? Ocr { get; init; }
 }
 
 /// <summary>
@@ -85,10 +95,21 @@ public sealed class PdfExportService : IDisposable
                     _ => PdfCompat.Default,
                 });
 
+            NAPS2.Ocr.OcrParams? ocrParams = null;
+            if (options.Ocr is { } ocr)
+            {
+                // NAPS2's exporter runs Tesseract per page and draws the invisible text layer at
+                // the image's true DPI — the alignment bug class of NAPS2 issue #843 is covered
+                // by a regression test on the page box.
+                _scanningContext.OcrEngine = NAPS2.Ocr.TesseractOcrEngine.Custom(
+                    ocr.TesseractExePath, ocr.TessdataDir);
+                ocrParams = new NAPS2.Ocr.OcrParams(ocr.Languages, TimeoutInSeconds: ocr.TimeoutSeconds);
+            }
+
             var exporter = new PdfExporter(_scanningContext);
             var (outcome, message) = await _writer.WriteAsync(
                 outputPath,
-                stream => exporter.Export(stream, images, exportParams, progress: cancellationToken),
+                stream => exporter.Export(stream, images, exportParams, ocrParams, progress: cancellationToken),
                 cancellationToken).ConfigureAwait(false);
             if (outcome != ExportOutcome.Success)
             {

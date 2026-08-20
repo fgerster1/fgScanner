@@ -45,6 +45,35 @@
                 <TextBox Width="30" Text="{Binding CsvDelimiter}" MaxLength="1" />
             </WrapPanel>
 
+            <TextBlock Text="OCR" FontWeight="SemiBold" Margin="0,0,0,4" />
+            <WrapPanel Margin="0,0,0,4">
+                <CheckBox Content="Run OCR automatically on pages saved with this profile"
+                          IsChecked="{Binding OcrEnabled}" Margin="0,0,12,0" />
+            </WrapPanel>
+            <WrapPanel Margin="0,0,0,4">
+                <TextBlock Text="Languages (e.g. eng or eng+deu):" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <TextBox Width="120" Text="{Binding OcrLanguages}" />
+                <TextBlock Text="Installed:" VerticalAlignment="Center" Margin="16,0,4,0" Opacity="0.7" />
+                <ItemsControl ItemsSource="{Binding InstalledLanguages}" VerticalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" Margin="0,0,6,0" FontFamily="Consolas" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </WrapPanel>
+            <WrapPanel Margin="0,0,0,12">
+                <TextBlock Text="Download language:" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <ComboBox Width="140" ItemsSource="{Binding DownloadableLanguages}"
+                          SelectedItem="{Binding LanguageToInstall}" DisplayMemberPath="DisplayName" />
+                <Button Content="Download" Command="{Binding InstallLanguageCommand}" Margin="6,0,0,0" />
+            </WrapPanel>
+
             <TextBlock Text="Trash" FontWeight="SemiBold" Margin="0,0,0,4" />
             <WrapPanel Margin="0,0,0,12">
                 <TextBlock Text="Keep deleted pages for" VerticalAlignment="Center" Margin="0,0,6,0" />

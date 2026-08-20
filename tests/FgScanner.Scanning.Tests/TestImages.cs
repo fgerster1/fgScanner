@@ -28,6 +28,25 @@ internal static class TestImages
         return path;
     }
 
+    /// <summary>A page with real words at a declared DPI (searchable-PDF tests need true text).</summary>
+    public static string CreateTextPage(string directory, string name = "text.png", float dpi = 300)
+    {
+        using var bitmap = new Bitmap(1700, 2200);
+        bitmap.SetResolution(dpi, dpi);
+        using (var graphics = Graphics.FromImage(bitmap))
+        {
+            graphics.Clear(Color.White);
+            graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+            using var font = new Font("Arial", 26, FontStyle.Regular, GraphicsUnit.Pixel);
+            graphics.DrawString("The quick brown fox jumps over the lazy dog.", font, Brushes.Black, 150, 300);
+            graphics.DrawString("Pack my box with five dozen liquor jugs.", font, Brushes.Black, 150, 350);
+        }
+
+        var path = Path.Combine(directory, name);
+        bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        return path;
+    }
+
     /// <summary>A solid-color image for pixel-level assertions.</summary>
     public static string CreateSolidPage(string directory, string name, Color color, int width = 200, int height = 100)
     {
