@@ -154,6 +154,54 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         }
     }
 
+    /// <summary>The AI feature stays hidden until a key is stored (PLAN §5.6).</summary>
+    public bool AiAvailable => _toolset.Credentials.HasKey;
+
+    [RelayCommand]
+    private async Task DescribePagesAsync()
+    {
+        if (!AiAvailable)
+        {
+            StatusText = "Add your Gemini API key in Settings first.";
+            return;
+        }
+
+        try
+        {
+            var billablePages = await _toolset.AiQueue.CountBillablePagesAsync(Group.Id);
+            if (billablePages == 0)
+            {
+                StatusText = "All pages already have descriptions or are queued.";
+                return;
+            }
+
+            var model = await _toolset.Settings.GetAsync(
+                AiWorker.ModelSettingKey, Ai.GeminiDescriptionProvider.DefaultModel);
+            var estimate = Ai.CostEstimator.EstimateUsd(billablePages, model);
+            var estimateText = estimate.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+            var answer = System.Windows.MessageBox.Show(
+                $"Describe {billablePages} page(s) with {model}?\n\n" +
+                $"Estimated cost: ${estimateText} (billed to your own Google account).\n" +
+                "Blank pages are skipped locally without an API call.",
+                "AI descriptions — estimate",
+                System.Windows.MessageBoxButton.OKCancel,
+                System.Windows.MessageBoxImage.Information);
+            if (answer != System.Windows.MessageBoxResult.OK)
+            {
+                return;
+            }
+
+            var queued = await _toolset.AiQueue.EnqueueGroupAsync(Group.Id);
+            await ReloadRowsAsync();
+            StatusText = $"{queued} page(s) queued for AI description.";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Queueing AI descriptions");
+            StatusText = $"AI queueing failed: {ex.Message}";
+        }
+    }
+
     [RelayCommand]
     private async Task ReOcrAllAsync()
     {

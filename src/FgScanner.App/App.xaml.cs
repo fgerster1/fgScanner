@@ -62,13 +62,19 @@ public partial class App : Application
                 services.AddSingleton<ReorderService>();
                 services.AddSingleton<AppSettingsService>();
                 services.AddSingleton<OcrQueueService>();
+                services.AddSingleton<AiQueueService>();
+                services.AddSingleton(sp => new FgScanner.Ai.CredentialStore());
+                services.AddSingleton<AiWorker>();
                 services.AddSingleton(sp => new PageEditingToolset(
                     new FgScanner.Scanning.Editing.ImageEditor(),
                     new FgScanner.Scanning.Export.PdfExportService(),
                     new FgScanner.Scanning.Export.ImageExportService(),
                     new FgScanner.Scanning.Import.FileImportService(),
                     sp.GetRequiredService<ReorderService>(),
-                    sp.GetRequiredService<OcrQueueService>()));
+                    sp.GetRequiredService<OcrQueueService>(),
+                    sp.GetRequiredService<AiQueueService>(),
+                    sp.GetRequiredService<FgScanner.Ai.CredentialStore>(),
+                    sp.GetRequiredService<AppSettingsService>()));
                 services.AddSingleton(sp => new FgScanner.Ocr.LanguageManager());
                 services.AddSingleton(sp => new FgScanner.Ocr.TesseractRunner(
                     tessdataDir: sp.GetRequiredService<FgScanner.Ocr.LanguageManager>().TessdataDir));
@@ -102,6 +108,7 @@ public partial class App : Application
         // Bundled English lands in the writable tessdata dir; then the durable queue drains.
         _host.Services.GetRequiredService<FgScanner.Ocr.LanguageManager>().EnsureBundledEnglish();
         _host.Services.GetRequiredService<OcrWorker>().Start();
+        _host.Services.GetRequiredService<AiWorker>().Start();
 
         MainWindow = _host.Services.GetRequiredService<ShellWindow>();
         MainWindow.Show();

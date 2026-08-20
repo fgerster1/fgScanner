@@ -60,7 +60,10 @@ public sealed class ShellTests : IDisposable
         new FgScanner.Scanning.Export.ImageExportService(),
         new FgScanner.Scanning.Import.FileImportService(),
         new ReorderService(new TestFactory(_dbPath)),
-        new OcrQueueService(new TestFactory(_dbPath)));
+        new OcrQueueService(new TestFactory(_dbPath)),
+        new AiQueueService(new TestFactory(_dbPath)),
+        new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false),
+        new AppSettingsService(new TestFactory(_dbPath)));
 
     private ScanViewModel CreateScanViewModel(FakeScanService? service = null) =>
         new(service ?? new FakeScanService(), _sessionService, _groupService, _indexingService, _activeGroup,
@@ -76,7 +79,8 @@ public sealed class ShellTests : IDisposable
             new SettingsViewModel(
                 _profileService, _trashService,
                 new AppSettingsService(new TestFactory(_dbPath)),
-                new FgScanner.Ocr.LanguageManager(Path.Combine(_root, "tessdata"))));
+                new FgScanner.Ocr.LanguageManager(Path.Combine(_root, "tessdata")),
+                new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false)));
         Assert.Equal(["Scan", "Groups", "Trash", "Settings"], shell.Sections);
         Assert.Equal("Scan", shell.SelectedSection);
     }
