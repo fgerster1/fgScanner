@@ -28,3 +28,8 @@ Run before each release, and after any change to FgScanner.Scanning. Automated t
 ## TWAIN specifics
 - [ ] TWAIN scan works with a 32-bit-only vendor driver (e.g. older Canon/HP)
 - [ ] Unplugging device mid-scan → error in status, no app crash
+
+## Known issues to watch
+- [ ] After force-killing FgScanner.exe, verify no NAPS2.Worker.exe processes linger
+      (observed once during phase 1 when killing seconds after startup — likely a race
+      before Job-object assignment; workers are normally tied to the parent's lifetime).
