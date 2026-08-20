@@ -108,8 +108,11 @@ public sealed partial class TesseractRunner(
                 try
                 {
                     process.Kill(entireProcessTree: true);
+                    // Kill is asynchronous — wait for the exit so the child's output-file
+                    // handles are released before callers clean up the work directory.
+                    process.WaitForExit(5000);
                 }
-                catch (InvalidOperationException)
+                catch (SystemException)
                 {
                 }
 
