@@ -9,7 +9,7 @@ namespace FgScanner.App.Services;
 /// <summary>
 /// Auto-update over an Ed25519-signed appcast on GitHub Releases (PLAN prompt 9). Quiet check on
 /// startup, honoring the NoUpdatePrompt setting; on accept the Inno installer runs
-/// /VERYSILENT /NORESTART. Until a real public key ships (docs/release.md), the check is skipped.
+/// /VERYSILENT /NORESTART. Strict Ed25519 verification: an unsigned appcast is never accepted.
 /// </summary>
 public sealed class UpdateService(AppSettingsService settings) : IDisposable
 {
@@ -17,8 +17,9 @@ public sealed class UpdateService(AppSettingsService settings) : IDisposable
     public const string AppcastUrl =
         "https://github.com/fgerster1/fgScanner/releases/latest/download/appcast.xml";
 
-    /// <summary>Ed25519 public key (base64) — generated per docs/release.md; placeholder disables checks.</summary>
-    public const string Ed25519PublicKey = "REPLACE_WITH_ED25519_PUBLIC_KEY";
+    /// <summary>Ed25519 public key (base64) — generated 2026-08-20 per docs/release.md; the matching
+    /// private key lives only in the SPARKLE_ED25519_PRIVATE_KEY GitHub secret.</summary>
+    public const string Ed25519PublicKey = "AYGJKjx0kHdK1dPayOwD71kSEa4yS7j0iVMofJ9RVm4=";
 
     private SparkleUpdater? _sparkle;
 
