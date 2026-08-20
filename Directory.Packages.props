@@ -24,6 +24,8 @@
     <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.11" />
     <PackageVersion Include="RichardSzalay.MockHttp" Version="7.1.0" />
     <PackageVersion Include="System.CommandLine" Version="2.0.11" />
+    <!-- Auto-update with Ed25519-signed appcast (MIT). -->
+    <PackageVersion Include="NetSparkleUpdater.SparkleUpdater" Version="3.1.0" />
 
     <!-- Data (PLAN §5.1: SQLite is a first-class deliverable) -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.2" />

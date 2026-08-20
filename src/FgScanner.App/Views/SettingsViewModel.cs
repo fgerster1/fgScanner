@@ -36,6 +36,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _ = LoadOcrSettingsAsync();
         _ = LoadAiSettingsAsync();
         _ = LoadShortcutsAsync();
+        _ = LoadUpdatePreferenceAsync();
     }
 
     public ObservableCollection<Profile> Profiles { get; } = [];
@@ -174,10 +175,22 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
 
+    /// <summary>False when the installer's machine-wide privacy opt-out disabled AI (PLAN §4).
+    /// Instance property so XAML can bind it.</summary>
+#pragma warning disable CA1822
+    public bool AiFeatureEnabled => !AiOptOutPolicy.IsOptedOut;
+#pragma warning restore CA1822
+
     [RelayCommand]
     private async Task SaveApiKeyAsync()
     {
         var key = ApiKeyInput.Trim();
+        if (!AiFeatureEnabled)
+        {
+            StatusText = "The AI feature was disabled machine-wide during installation.";
+            return;
+        }
+
         if (key.Length == 0)
         {
             StatusText = "Paste your Google AI Studio API key first.";
@@ -232,6 +245,23 @@ public sealed partial class SettingsViewModel : ObservableObject
         _credentials.ClearKey();
         HasStoredKey = false;
         StatusText = "Stored API key cleared.";
+    }
+
+    // ---- updates ----
+
+    [ObservableProperty]
+    private bool _checkForUpdates = true;
+
+    private async Task LoadUpdatePreferenceAsync()
+    {
+        try
+        {
+            CheckForUpdates = await _appSettings.GetAsync(UpdateService.NoUpdatePromptKey, "false") != "true";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Loading update preference");
+        }
     }
 
     // ---- keyboard shortcuts (PLAN §5.8) ----
@@ -447,6 +477,8 @@ public sealed partial class SettingsViewModel : ObservableObject
                 shortcutMap.Set(row.Action, row.Gesture);
             }
 
+            await _appSettings.SetAsync(
+                UpdateService.NoUpdatePromptKey, CheckForUpdates ? "false" : "true");
             await _appSettings.SetAsync(ShortcutsSettingKey, shortcutMap.ToJson());
             ShortcutsChanged?.Invoke(shortcutMap);
             StatusText = $"Saved as schema version {schema.Version}. New groups use it; existing groups keep theirs.";

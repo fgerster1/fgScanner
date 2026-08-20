@@ -29,10 +29,33 @@ jobs:
           -p:PublishProfile=win-x64
           -p:Version=${{ steps.ver.outputs.version }}
 
-      # --- Code signing (payload) — enable when SignPath / Azure Artifact Signing is configured.
-      #     See docs/PLAN.md §4. Sign publish/win-x64 exe+dll BEFORE packing the installer.
-      # - name: Sign payload (stub)
-      #   run: echo "signing not yet configured"
+      - name: Publish CLI
+        run: >
+          dotnet publish src/FgScanner.Cli/FgScanner.Cli.csproj -c Release
+          -r win-x64 --self-contained false
+          -o publish/win-x64
+          -p:Version=${{ steps.ver.outputs.version }}
+
+      # --- Payload signing via SignPath (enable by setting the repo variable SIGNPATH_ENABLED=true
+      #     and the secrets documented in docs/release.md). Runs BEFORE the installer is packed.
+      - name: Sign payload (SignPath)
+        if: vars.SIGNPATH_ENABLED == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORG_ID }}
+          project-slug: fgScanner
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: publish-payload
+          github-artifact-id: ''
+          wait-for-completion: true
+
+      - name: Portable ZIP (config beside exe)
+        shell: pwsh
+        run: |
+          New-Item dist -ItemType Directory -Force | Out-Null
+          Copy-Item build/installer/portable-readme.txt publish/win-x64/README-PORTABLE.txt
+          Compress-Archive -Path publish/win-x64/* -DestinationPath dist/fgscanner-${{ steps.ver.outputs.version }}-win-x64-portable.zip
 
       - name: Install Inno Setup 7
         shell: pwsh
@@ -44,24 +67,50 @@ jobs:
           $iscc = Get-ChildItem "$env:ProgramFiles(x86)\Inno Setup*","$env:ProgramFiles\Inno Setup*" -Filter ISCC.exe -Recurse | Select-Object -First 1
           & $iscc.FullName /DAppVersion=${{ steps.ver.outputs.version }} build\installer\setup.iss
 
-      # - name: Sign installer (stub)
-      #   run: echo "signing not yet configured"
+      - name: Sign installer (SignPath)
+        if: vars.SIGNPATH_ENABLED == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORG_ID }}
+          project-slug: fgScanner
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: installer
+          github-artifact-id: ''
+          wait-for-completion: true
+
+      # Appcast for auto-update: generated + Ed25519-signed per docs/release.md, then uploaded
+      # with the release so NetSparkle finds it at releases/latest/download/appcast.xml.
+      - name: Generate appcast (if key configured)
+        if: vars.APPCAST_ENABLED == 'true'
+        shell: pwsh
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
+        run: |
+          dotnet tool install --global NetSparkleUpdater.Tools.AppCastGenerator
+          netsparkle-generate-appcast -a dist -e exe -o windows `
+            --key-path-override env --description "FG Scanner" `
+            -u https://github.com/fgerster1/fgScanner/releases/latest/download/
 
       - name: Checksums
         shell: pwsh
         run: |
-          Get-ChildItem dist\*.exe | ForEach-Object {
+          Get-ChildItem dist\* -Include *.exe,*.zip | ForEach-Object {
             "$((Get-FileHash $_ -Algorithm SHA256).Hash) *$($_.Name)"
           } | Out-File dist\SHA256SUMS.txt -Encoding ascii
 
       - uses: actions/attest-build-provenance@v4
         with:
-          subject-path: 'dist/*.exe'
+          subject-path: |
+            dist/*.exe
+            dist/*.zip
 
       - uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/*.exe
+            dist/*.zip
             dist/SHA256SUMS.txt
+            dist/appcast.xml
           generate_release_notes: true
           draft: true

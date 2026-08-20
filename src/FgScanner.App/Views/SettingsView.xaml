@@ -74,6 +74,7 @@
                 <Button Content="Download" Command="{Binding InstallLanguageCommand}" Margin="6,0,0,0" />
             </WrapPanel>
 
+            <StackPanel Visibility="{Binding AiFeatureEnabled, Converter={x:Static views:BoolToVisibilityConverter.Instance}}">
             <TextBlock Text="AI descriptions (Gemini, your own key)" FontWeight="SemiBold" Margin="0,0,0,4" />
             <WrapPanel Margin="0,0,0,4">
                 <TextBlock Text="API key:" VerticalAlignment="Center" Margin="0,0,6,0" />
@@ -89,6 +90,9 @@
             </WrapPanel>
             <TextBlock Opacity="0.6" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"
                        Text="Key stored in Windows Credential Manager, never logged. Use a paid-tier key — Google's free tier may train on submitted content." />
+            </StackPanel>
+
+            <CheckBox Content="Check for updates at startup" IsChecked="{Binding CheckForUpdates}" Margin="0,0,0,12" />
 
             <TextBlock Text="Trash" FontWeight="SemiBold" Margin="0,0,0,4" />
             <WrapPanel Margin="0,0,0,12">

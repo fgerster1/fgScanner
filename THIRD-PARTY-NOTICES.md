@@ -1,31 +1,47 @@
 # Third-Party Notices
 
-FG Scanner is MIT-licensed (see LICENSE). It uses the following third-party components. This file is updated whenever `Directory.Packages.props` changes; CI treats drift as a review item.
+FG Scanner is MIT-licensed (see LICENSE). It ships or references the
+components below. This list is kept in sync with `Directory.Packages.props`;
+treat drift as a review item.
 
-## Referenced today
+## Shipped with the application
 
 | Component | License | Use |
 |---|---|---|
+| NAPS2.Sdk, NAPS2.Sdk.Worker.Win32, NAPS2.Images.Gdi | LGPL-2.1-or-later | Scanning (WIA/TWAIN/eSCL). Shipped as separate, unmodified assemblies; the LGPL text accompanies the app; any SDK modifications would be published under LGPL |
+| NAPS2.Tesseract.Binaries (Tesseract 5.5) | Apache-2.0 | OCR engine, run as a child process |
+| Leptonica (inside Tesseract) | BSD-2-Clause | Image processing within Tesseract |
+| NAPS2.Pdfium.Binaries (PDFium) | BSD-3-Clause | PDF rendering/import |
+| PDFsharp (via NAPS2.Sdk) | MIT | PDF assembly and text layer |
+| tessdata_fast language models | Apache-2.0 | OCR languages (eng bundled, others downloaded) |
+| Microsoft.EntityFrameworkCore.Sqlite | MIT | Data access |
+| SQLitePCLRaw.bundle_e_sqlite3 / SQLite | Apache-2.0 / Public Domain | Database engine |
+| ClosedXML | MIT | XLSX index export |
+| Google.GenAI | Apache-2.0 | Gemini API client (BYO-key, optional feature) |
+| NetSparkleUpdater.SparkleUpdater | MIT | Auto-update (Ed25519-signed appcast) |
+| System.CommandLine | MIT | fgscanner CLI |
+| System.Security.Cryptography.ProtectedData | MIT | DPAPI fallback for key storage |
 | Microsoft.Extensions.Hosting | MIT | DI / app lifetime |
 | CommunityToolkit.Mvvm | MIT | MVVM |
 | Serilog (+ Extensions.Hosting, Sinks.Console, Sinks.File) | Apache-2.0 | Logging |
-| xunit.v3, xunit.runner.visualstudio | Apache-2.0 | Testing |
 | .NET Runtime / WPF | MIT | Framework |
 
-## Planned (added in later phases, per docs/PLAN.md §3)
+## Test-only (never shipped)
+
+| Component | License |
+|---|---|
+| xunit.v3, xunit.runner.visualstudio | Apache-2.0 |
+| Verify.XunitV3 | MIT |
+| RichardSzalay.MockHttp | MIT |
+| Microsoft.Extensions.TimeProvider.Testing | MIT |
+| System.Drawing.Common | MIT |
+
+## Planned (later phases, per docs/PLAN.md)
 
 | Component | License | Note |
 |---|---|---|
-| NAPS2.Sdk, NAPS2.Sdk.Worker.Win32, NAPS2.Images.Gdi, NAPS2.Escl | LGPL-2.1-or-later | Scanning. Shipped as separate, unmodified assemblies; LGPL text will be included; modifications to the SDK (if any) will be published under LGPL |
-| NAPS2.Tesseract.Binaries (Tesseract 5.5) | Apache-2.0 | OCR engine, run as a child process |
-| Leptonica (bundled with Tesseract) | BSD-2-Clause | Image processing inside Tesseract |
-| PDFsharp | MIT | PDF assembly |
-| PDFium (via PDFtoImage) | BSD-3-Clause | PDF rendering |
-| Microsoft.EntityFrameworkCore.Sqlite / SQLitePCLRaw / SQLite | MIT / Apache-2.0 / Public Domain | Data store |
-| CsvHelper | MS-PL / Apache-2.0 | CSV export |
-| ClosedXML | MIT | XLSX export |
-| Google.GenAI | Apache-2.0 | Gemini API client |
-| ZXing.Net | Apache-2.0 | Barcode / Patch-T (phase 10) |
-| NSubstitute, AwesomeAssertions, Verify, FlaUI, RichardSzalay.MockHttp | BSD/Apache/MIT | Testing |
+| ZXing.Net | Apache-2.0 | Barcode / Patch-T separators (phase 10) |
 
-Excluded by policy (docs/PLAN.md §3 avoid-list): iText (AGPL), FluentAssertions ≥8, NAPS2.Images.ImageSharp, EPPlus ≥5, Emgu.CV, System.Data.SQLite.
+Excluded by policy (docs/PLAN.md §3 avoid-list): iText (AGPL),
+FluentAssertions ≥8, NAPS2.Images.ImageSharp, EPPlus ≥5, Emgu.CV,
+System.Data.SQLite.

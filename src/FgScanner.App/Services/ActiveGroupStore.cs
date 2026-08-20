@@ -12,6 +12,9 @@ public sealed partial class ActiveGroupStore : ObservableObject
     /// <summary>Field values entered before scanning; applied to the next adopted documents (PLAN §5.4).</summary>
     public IReadOnlyDictionary<string, string?>? PendingValues { get; set; }
 
+    /// <summary>Files handed over by "Open with FG Scanner"; imported into the next opened group.</summary>
+    public IReadOnlyList<string>? PendingOpenFiles { get; set; }
+
     /// <summary>Raised after scans were saved into the current group so open views refresh.</summary>
     public event Action? GroupContentChanged;
 
