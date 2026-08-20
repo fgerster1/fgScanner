@@ -4,8 +4,8 @@ Tracks FG Scanner against the NAPS2 8.3.2 inventory (docs/research/research-1-na
 
 | Area | Target | Status | Phase |
 |---|---|---|---|
-| WIA / TWAIN / eSCL scanning | [F] | ☐ | 1 |
-| Profiles (full NAPS2 settings surface) | [F] | ☐ | 1,4 |
+| WIA / TWAIN / eSCL scanning | [F] | ◐ (logic done; hardware smoke pending) | 1 |
+| Profiles (full NAPS2 settings surface) | [F] | ◐ (core: source/dpi/depth/size/brightness/contrast) | 1,4 |
 | Groups + index schema + entry grid | FG core | ☐ | 2,3 |
 | Index export CSV/XLSX/XML/JSON | FG core | ☐ | 3 |
 | Trash w/ 30-day retention | FG core | ☐ | 3 |
@@ -18,6 +18,6 @@ Tracks FG Scanner against the NAPS2 8.3.2 inventory (docs/research/research-1-na
 | Batch dialog + CLI + shortcuts + profiles import/export | [P] | ☐ | 8 |
 | Installer, auto-update, signing, winget | [F] | ◐ | 0,9 |
 | Email (MAPI) / print / clipboard | [P] | ☐ | 4,9 |
-| Crash recovery + session restore + single instance | [F] | ☐ | 1,8 |
+| Crash recovery + session restore + single instance | [F] | ◐ (crash recovery done) | 1,8 |
 | Dark/light theme | [F] | ☑ | 0 |
 | Walking skeleton (solution, CI, installer stub) | — | ☑ | 0 |

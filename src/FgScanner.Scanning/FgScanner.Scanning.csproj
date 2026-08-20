@@ -1,5 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- CA2252: NAPS2.Sdk 1.x marks its API [RequiresPreviewFeatures] as an api-stability signal.
+         We suppress at this boundary project only, rather than marking our own assembly preview. -->
+    <NoWarn>$(NoWarn);CA2252</NoWarn>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="NAPS2.Sdk" />
+    <PackageReference Include="NAPS2.Sdk.Worker.Win32" />
+    <PackageReference Include="NAPS2.Images.Gdi" />
+  </ItemGroup>
 </Project>
