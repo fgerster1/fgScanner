@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FG Scanner index.xml schema (PLAN §5.2). Validated in CI by IndexExporterTests. -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+
+  <xs:element name="fgIndex">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="document" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="aiDescription" type="xs:string" minOccurs="0" />
+              <xs:element name="field" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:simpleContent>
+                    <xs:extension base="xs:string">
+                      <xs:attribute name="name" type="xs:string" use="required" />
+                      <xs:attribute name="type" use="required">
+                        <xs:simpleType>
+                          <xs:restriction base="xs:string">
+                            <xs:enumeration value="text" />
+                            <xs:enumeration value="date" />
+                            <xs:enumeration value="number" />
+                            <xs:enumeration value="list" />
+                          </xs:restriction>
+                        </xs:simpleType>
+                      </xs:attribute>
+                    </xs:extension>
+                  </xs:simpleContent>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="sequence" type="xs:positiveInteger" use="required" />
+            <xs:attribute name="image" type="xs:string" use="required" />
+            <xs:attribute name="ocred" use="required">
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="Yes" />
+                  <xs:enumeration value="No" />
+                  <xs:enumeration value="Failed" />
+                  <xs:enumeration value="Pending" />
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:attribute>
+            <xs:attribute name="aiStatus" use="required">
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="Off" />
+                  <xs:enumeration value="Pending" />
+                  <xs:enumeration value="Done" />
+                  <xs:enumeration value="Failed" />
+                  <xs:enumeration value="Skipped" />
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:attribute>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+      <xs:attribute name="group" type="xs:string" use="required" />
+      <xs:attribute name="profile" type="xs:string" use="required" />
+      <xs:attribute name="schemaVersion" type="xs:nonNegativeInteger" use="required" />
+      <xs:attribute name="appVersion" type="xs:string" use="required" />
+      <xs:attribute name="generatedUtc" type="xs:dateTime" use="required" />
+    </xs:complexType>
+  </xs:element>
+
+</xs:schema>

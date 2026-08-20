@@ -13,6 +13,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     private readonly IScanService _scanService;
     private readonly ScanSessionService _sessionService;
     private readonly GroupService _groupService;
+    private readonly IndexingService _indexingService;
     private readonly ActiveGroupStore _activeGroup;
     private CancellationTokenSource? _scanCts;
 
@@ -20,11 +21,13 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         IScanService scanService,
         ScanSessionService sessionService,
         GroupService groupService,
+        IndexingService indexingService,
         ActiveGroupStore activeGroup)
     {
         _scanService = scanService;
         _sessionService = sessionService;
         _groupService = groupService;
+        _indexingService = indexingService;
         _activeGroup = activeGroup;
         Drivers = [.. scanService.AvailableDrivers];
         _selectedDriver = Drivers[0];
@@ -183,6 +186,14 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         {
             var result = await _groupService.AdoptPagesAsync(
                 group.Id, Pages.OrderBy(p => p.SequenceNumber).Select(p => p.FilePath));
+            await _indexingService.ApplyInitialValuesAsync(
+                group.Id, [.. result.Adopted.Select(p => p.DocumentId)], _activeGroup.PendingValues);
+            if (group.State == GroupState.Committed)
+            {
+                await _indexingService.ReexportAsync(group.Id);
+            }
+
+            _activeGroup.NotifyGroupContentChanged();
             Pages.Clear();
             _sessionService.ResetSession();
             StatusText = result.DuplicateSourceFiles.Count == 0

@@ -32,7 +32,7 @@ public sealed class GroupServiceTests : IDisposable
     [Fact]
     public async Task Create_group_makes_directory_named_after_sanitized_name()
     {
-        var group = await _service.CreateGroupAsync(_groupsRoot, "Q1: Invoices?", TestContext.Current.CancellationToken);
+        var group = await _service.CreateGroupAsync(_groupsRoot, "Q1: Invoices?", null, TestContext.Current.CancellationToken);
 
         Assert.Equal("Q1- Invoices", group.Name);
         Assert.True(Directory.Exists(group.DirectoryPath));
@@ -42,8 +42,8 @@ public sealed class GroupServiceTests : IDisposable
     public async Task Adopting_the_same_directory_twice_returns_the_same_group()
     {
         var dir = Path.Combine(_groupsRoot, "Receipts");
-        var first = await _service.AdoptDirectoryAsync(dir, TestContext.Current.CancellationToken);
-        var second = await _service.AdoptDirectoryAsync(dir, TestContext.Current.CancellationToken);
+        var first = await _service.AdoptDirectoryAsync(dir, null, TestContext.Current.CancellationToken);
+        var second = await _service.AdoptDirectoryAsync(dir, null, TestContext.Current.CancellationToken);
 
         Assert.Equal(first.Id, second.Id);
     }
@@ -51,7 +51,7 @@ public sealed class GroupServiceTests : IDisposable
     [Fact]
     public async Task Adopt_pages_moves_files_and_creates_one_document_per_page()
     {
-        var group = await _service.CreateGroupAsync(_groupsRoot, "Batch", TestContext.Current.CancellationToken);
+        var group = await _service.CreateGroupAsync(_groupsRoot, "Batch", null, TestContext.Current.CancellationToken);
         var a = NewIncomingFile("page-00001.png", [1, 2, 3]);
         var b = NewIncomingFile("page-00002.png", [4, 5, 6]);
 
@@ -71,7 +71,7 @@ public sealed class GroupServiceTests : IDisposable
     [Fact]
     public async Task Duplicate_content_is_skipped_and_reported()
     {
-        var group = await _service.CreateGroupAsync(_groupsRoot, "Dedupe", TestContext.Current.CancellationToken);
+        var group = await _service.CreateGroupAsync(_groupsRoot, "Dedupe", null, TestContext.Current.CancellationToken);
         var original = NewIncomingFile("first.png", [9, 9, 9]);
         await _service.AdoptPagesAsync(group.Id, [original], TestContext.Current.CancellationToken);
         var duplicate = NewIncomingFile("second.png", [9, 9, 9]); // same bytes, different name
@@ -86,7 +86,7 @@ public sealed class GroupServiceTests : IDisposable
     [Fact]
     public async Task Later_adoption_continues_the_sequence()
     {
-        var group = await _service.CreateGroupAsync(_groupsRoot, "Append", TestContext.Current.CancellationToken);
+        var group = await _service.CreateGroupAsync(_groupsRoot, "Append", null, TestContext.Current.CancellationToken);
         await _service.AdoptPagesAsync(
             group.Id, [NewIncomingFile("a.png", [1])], TestContext.Current.CancellationToken);
 

@@ -51,8 +51,18 @@ public partial class App : Application
                 services.AddDbContextFactory<FgScannerDbContext>(o =>
                     o.UseSqlite($"Data Source={DbBootstrapper.DefaultDbPath}"));
                 services.AddSingleton<GroupService>();
+                services.AddSingleton<ProfileService>();
+                services.AddSingleton(sp => new FgScanner.Core.Index.IndexExporter());
+                services.AddSingleton<IndexingService>();
+                services.AddSingleton(sp => new TrashService(
+                    sp.GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<FgScannerDbContext>>(),
+                    Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                        "FGScanner", "trash")));
                 services.AddSingleton<ActiveGroupStore>();
                 services.AddSingleton<GroupsViewModel>();
+                services.AddSingleton<TrashViewModel>();
+                services.AddSingleton<SettingsViewModel>();
                 services.AddSingleton<ScanViewModel>();
                 services.AddSingleton<ShellViewModel>();
                 services.AddSingleton<ShellWindow>();
@@ -63,6 +73,7 @@ public partial class App : Application
         Log.Information("FG Scanner starting");
 
         var appVersion = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+        IndexingService.AppVersion = appVersion;
         var backup = DbBootstrapper.MigrateWithBackup(DbBootstrapper.DefaultDbPath, appVersion);
         if (backup is not null)
         {
@@ -73,6 +84,24 @@ public partial class App : Application
 
         MainWindow = _host.Services.GetRequiredService<ShellWindow>();
         MainWindow.Show();
+
+        // Background purge of expired trash items (30-day default, configurable).
+        var trash = _host.Services.GetRequiredService<TrashService>();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var purged = await trash.PurgeExpiredAsync();
+                if (purged > 0)
+                {
+                    Log.Information("Purged {Count} expired trash item(s)", purged);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Trash purge failed");
+            }
+        });
     }
 
     /// <summary>If a previous instance died mid-scan, offer to pull its pages into this session.</summary>

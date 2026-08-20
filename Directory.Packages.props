@@ -20,8 +20,13 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.2" />
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
 
+    <!-- Index export (PLAN §5.2) -->
+    <PackageVersion Include="ClosedXML" Version="0.105.0" />
+
     <!-- Testing -->
     <PackageVersion Include="xunit.v3" Version="4.0.0" />
+    <PackageVersion Include="Verify.XunitV3" Version="31.28.0" />
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.8.0" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
   <!--

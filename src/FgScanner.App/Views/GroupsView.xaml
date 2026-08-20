@@ -8,13 +8,17 @@
              d:DataContext="{d:DesignInstance Type=views:GroupsViewModel}">
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="320" />
+            <ColumnDefinition Width="270" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
+        <!-- Group list -->
         <DockPanel Grid.Column="0" Margin="0,0,12,0">
             <StackPanel DockPanel.Dock="Top">
                 <TextBlock Text="Groups" FontWeight="SemiBold" Margin="0,0,0,6" />
+                <TextBlock Text="Profile for new groups" Opacity="0.7" />
+                <ComboBox ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}"
+                          DisplayMemberPath="Name" Margin="0,2,0,6" />
                 <DockPanel Margin="0,0,0,6">
                     <Button DockPanel.Dock="Right" Content="Create…"
                             Command="{Binding CreateGroupCommand}" Margin="6,0,0,0" />
@@ -30,28 +34,103 @@
                     <DataTemplate>
                         <StackPanel Margin="2">
                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                            <TextBlock Text="{Binding DirectoryPath}" Opacity="0.6" FontSize="11"
-                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding State}" Opacity="0.6" FontSize="11" />
                         </StackPanel>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
         </DockPanel>
 
-        <DockPanel Grid.Column="1">
-            <TextBlock DockPanel.Dock="Top" Text="{Binding StatusText}" Opacity="0.8" Margin="0,0,0,6" />
-            <ListBox ItemsSource="{Binding SelectedGroupPages}"
-                     VirtualizingPanel.IsVirtualizing="True">
-                <ListBox.ItemTemplate>
-                    <DataTemplate>
-                        <StackPanel Orientation="Horizontal" Margin="2">
-                            <TextBlock Text="{Binding FileName}" FontFamily="Consolas" />
-                            <TextBlock Text="{Binding OcrStatus, StringFormat='   OCR: {0}'}" Opacity="0.6" />
-                            <TextBlock Text="{Binding AiStatus, StringFormat='   AI: {0}'}" Opacity="0.6" />
-                        </StackPanel>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
+        <!-- Detail: pending values, entry grid, commit -->
+        <DockPanel Grid.Column="1" DataContext="{Binding Detail}">
+            <StackPanel DockPanel.Dock="Top">
+                <Expander Header="Values for the next scan (applied to newly scanned pages)"
+                          IsExpanded="False" Margin="0,0,0,6"
+                          Visibility="{Binding PendingFields.Count, Converter={x:Static views:CountToVisibilityConverter.Instance}}">
+                    <ItemsControl ItemsSource="{Binding PendingFields}" Margin="4">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,0,12,4" Width="160">
+                                    <TextBlock Text="{Binding Field.Name}" Opacity="0.7" FontSize="11" />
+                                    <ContentControl Content="{Binding}">
+                                        <ContentControl.Style>
+                                            <Style TargetType="ContentControl">
+                                                <Setter Property="ContentTemplate">
+                                                    <Setter.Value>
+                                                        <DataTemplate>
+                                                            <TextBox Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}" />
+                                                        </DataTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsList}" Value="True">
+                                                        <Setter Property="ContentTemplate">
+                                                            <Setter.Value>
+                                                                <DataTemplate>
+                                                                    <ComboBox ItemsSource="{Binding Choices}"
+                                                                              SelectedItem="{Binding Value}" IsEditable="False" />
+                                                                </DataTemplate>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ContentControl.Style>
+                                    </ContentControl>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Expander>
+                <WrapPanel Margin="0,0,0,6">
+                    <Button Content="Review &amp; Commit" Command="{Binding CommitCommand}" FontWeight="SemiBold"
+                            Padding="10,6" Margin="0,0,6,0" />
+                    <Button Content="Re-export index files" Command="{Binding ReexportCommand}" Padding="10,6" Margin="0,0,6,0" />
+                    <Button Content="Add missed page…" Command="{Binding AddMissedPageCommand}" Padding="10,6" Margin="0,0,6,0" />
+                    <Button Content="Delete page (to Trash)" Command="{Binding DeleteSelectedCommand}" Padding="10,6" />
+                </WrapPanel>
+                <TextBlock Text="{Binding ValidationSummary}" Foreground="IndianRed"
+                           TextWrapping="Wrap" Margin="0,0,0,4"
+                           Visibility="{Binding ValidationSummary.Length, Converter={x:Static views:CountToVisibilityConverter.Instance}}" />
+                <TextBlock Text="{Binding StatusText}" Opacity="0.8" Margin="0,0,0,6" />
+            </StackPanel>
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="170" />
+                </Grid.ColumnDefinitions>
+                <DataGrid x:Name="EntryGrid" Grid.Column="0"
+                          ItemsSource="{Binding Rows}"
+                          SelectedItem="{Binding SelectedRow}"
+                          AutoGenerateColumns="False"
+                          CanUserAddRows="False" CanUserDeleteRows="False"
+                          HeadersVisibility="Column"
+                          EnableRowVirtualization="True"
+                          SelectionUnit="FullRow" SelectionMode="Single">
+                    <DataGrid.CellStyle>
+                        <Style TargetType="DataGridCell">
+                            <Style.Triggers>
+                                <Trigger Property="Validation.HasError" Value="True">
+                                    <Setter Property="BorderBrush" Value="IndianRed" />
+                                    <Setter Property="BorderThickness" Value="2" />
+                                    <Setter Property="ToolTip"
+                                            Value="{Binding RelativeSource={RelativeSource Self}, Path=(Validation.Errors)[0].ErrorContent}" />
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DataGrid.CellStyle>
+                </DataGrid>
+                <Border Grid.Column="1" Margin="8,0,0,0" BorderBrush="Gray" BorderThickness="1">
+                    <Image Source="{Binding SelectedRow.ImagePath, Converter={x:Static views:ThumbnailConverter.Instance}}"
+                           Stretch="Uniform" />
+                </Border>
+            </Grid>
         </DockPanel>
     </Grid>
 </UserControl>
