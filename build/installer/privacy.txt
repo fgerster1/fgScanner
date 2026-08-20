@@ -1,0 +1,30 @@
+FG Scanner — Privacy Summary
+============================
+
+FG Scanner processes your documents ON THIS COMPUTER. Scanning, OCR (text
+recognition), indexing, and PDF export never send anything anywhere.
+
+The ONE optional cloud feature — AI page descriptions
+-----------------------------------------------------
+If (and only if) you later enable "AI descriptions" and paste your own
+Google AI Studio API key, each page image you choose to describe is sent to
+Google's Gemini API under YOUR Google account and YOUR agreement with Google.
+
+  * The feature is OFF by default and stays hidden until you add a key.
+  * You will see this notice again, with a cost estimate, before any AI run.
+  * Google's FREE tier may use submitted content for model training and
+    allows human review. Use a PAID-tier key for real documents.
+  * Users in the EEA, UK, and Switzerland are contractually required by
+    Google to use the paid tier.
+  * Your key is stored in Windows Credential Manager and is never logged.
+
+Tick the checkbox on the next page to disable the AI feature entirely on
+this computer (it can only be re-enabled by reinstalling without the
+checkbox).
+
+Everything else
+---------------
+  * No telemetry, no analytics, no account, no ads.
+  * The optional update check downloads a version manifest from GitHub and
+    nothing else; disable it in Settings at any time.
+  * Full policy: PRIVACY.md in the installation folder and on GitHub.

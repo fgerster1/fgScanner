@@ -1,7 +1,11 @@
-; FG Scanner — Inno Setup script (phase 0 stub)
+; FG Scanner — Inno Setup script (phase 9: complete)
 ; Packages the publish output (created by: dotnet publish src/FgScanner.App -p:PublishProfile=win-x64)
-; Later phases add: file associations, WIA AutoPlay + StillImage registration, privacy/consent page.
 ; Build:  ISCC.exe /DAppVersion=0.1.0 build\installer\setup.iss   (run from repo root)
+;
+; Silent install (documented per PLAN prompt 9):
+;   fgscanner-<ver>-win-x64.exe /VERYSILENT /NORESTART /SUPPRESSMSGBOXES
+;   add /MERGETASKS="!desktopicon" to skip the desktop icon, /TASKS="aioptout" to disable AI.
+;   /LOG="path" writes a setup log. Uninstall: "unins000.exe" /VERYSILENT.
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -10,6 +14,7 @@
 #define Publisher "Franz Gerster"
 #define ExeName "FgScanner.exe"
 #define PublishDir "..\..\publish\win-x64"
+#define ProgId "FGScanner.Document"
 
 [Setup]
 AppId={{77A2D51A-B7C2-452F-A125-84191C2ABA38}
@@ -21,6 +26,7 @@ DefaultDirName={commonpf}\FGScanner
 DefaultGroupName={#AppName}
 OutputDir=..\..\dist
 OutputBaseFilename=fgscanner-{#AppVersion}-win-x64
+SetupIconFile=fgscanner.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
 ; Windows 10 1607+ (matches .NET 10 / NAPS2 floor)
@@ -31,16 +37,53 @@ WizardStyle=modern
 PrivilegesRequired=admin
 UninstallDisplayIcon={app}\{#ExeName}
 LicenseFile=..\..\LICENSE
-
-[Files]
-Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
-
-[Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\{#ExeName}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#ExeName}"; Tasks: desktopicon
+; Privacy summary shown before install (SignPath requirement, PLAN §4)
+InfoBeforeFile=privacy.txt
+; Close a running FG Scanner on upgrade instead of failing on locked files
+CloseApplications=yes
+RestartApplications=no
+ChangesAssociations=yes
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "aioptout"; Description: "Disable the optional AI description feature (nothing can be sent to Google on this computer)"; GroupDescription: "Privacy:"; Flags: unchecked
+
+[Files]
+Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
+Source: "..\..\PRIVACY.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\THIRD-PARTY-NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
+
+[Icons]
+Name: "{group}\{#AppName}"; Filename: "{app}\{#ExeName}"
+Name: "{group}\FG Scanner user guide"; Filename: "https://github.com/fgerster1/fgScanner/blob/main/docs/user-guide.md"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#ExeName}"; Tasks: desktopicon
+
+[Registry]
+; ---- Machine-wide AI opt-out (privacy task above; the app hides the AI feature when set) ----
+Root: HKLM; Subkey: "SOFTWARE\FGScanner"; ValueType: dword; ValueName: "AiOptOut"; ValueData: 1; Tasks: aioptout; Flags: uninsdeletekeyifempty uninsdeletevalue
+
+; ---- "Open with FG Scanner" for the formats the app imports (OpenWithProgids, NAPS2 pattern) ----
+Root: HKLM; Subkey: "SOFTWARE\Classes\{#ProgId}"; ValueType: string; ValueData: "FG Scanner document"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "SOFTWARE\Classes\{#ProgId}\DefaultIcon"; ValueType: string; ValueData: """{app}\{#ExeName}"",0"
+Root: HKLM; Subkey: "SOFTWARE\Classes\{#ProgId}\shell\open\command"; ValueType: string; ValueData: """{app}\{#ExeName}"" ""%1"""
+Root: HKLM; Subkey: "SOFTWARE\Classes\.pdf\OpenWithProgids"; ValueType: string; ValueName: "{#ProgId}"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKLM; Subkey: "SOFTWARE\Classes\.jpg\OpenWithProgids"; ValueType: string; ValueName: "{#ProgId}"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKLM; Subkey: "SOFTWARE\Classes\.jpeg\OpenWithProgids"; ValueType: string; ValueName: "{#ProgId}"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKLM; Subkey: "SOFTWARE\Classes\.png\OpenWithProgids"; ValueType: string; ValueName: "{#ProgId}"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKLM; Subkey: "SOFTWARE\Classes\.tiff\OpenWithProgids"; ValueType: string; ValueName: "{#ProgId}"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKLM; Subkey: "SOFTWARE\Classes\.tif\OpenWithProgids"; ValueType: string; ValueName: "{#ProgId}"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKLM; Subkey: "SOFTWARE\Classes\.bmp\OpenWithProgids"; ValueType: string; ValueName: "{#ProgId}"; ValueData: ""; Flags: uninsdeletevalue
+
+; ---- StillImage registration: scanner hardware button / "Scan with FG Scanner" (NAPS2 pattern) ----
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\StillImage\Registered Applications"; ValueType: string; ValueName: "{#AppName}"; ValueData: """{app}\{#ExeName}"" /StiDevice:%1 /StiEvent:%2"; Flags: uninsdeletevalue
+
+; ---- WIA AutoPlay handler ("Scan with FG Scanner" when a scanner is connected) ----
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers\Handlers\FGScannerScanHandler"; ValueType: string; ValueName: "Action"; ValueData: "Scan with {#AppName}"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers\Handlers\FGScannerScanHandler"; ValueType: string; ValueName: "Provider"; ValueData: "{#AppName}"
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers\Handlers\FGScannerScanHandler"; ValueType: string; ValueName: "InvokeProgID"; ValueData: "{#ProgId}"
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers\Handlers\FGScannerScanHandler"; ValueType: string; ValueName: "InvokeVerb"; ValueData: "open"
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers\Handlers\FGScannerScanHandler"; ValueType: string; ValueName: "DefaultIcon"; ValueData: """{app}\{#ExeName}"",0"
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers\EventHandlers\WiaDeviceArrived"; ValueType: string; ValueName: "FGScannerScanHandler"; ValueData: ""; Flags: uninsdeletevalue
 
 [Run]
 Filename: "{app}\{#ExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
@@ -48,3 +91,7 @@ Filename: "{app}\{#ExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flag
 [InstallDelete]
 ; Purge stale files from previous versions on upgrade (NAPS2 pattern)
 Type: filesandordirs; Name: "{app}\*.dll"
+Type: filesandordirs; Name: "{app}\_win64"
+Type: filesandordirs; Name: "{app}\_win32"
+Type: filesandordirs; Name: "{app}\_winarm"
+Type: filesandordirs; Name: "{app}\tessdata"

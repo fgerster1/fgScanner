@@ -89,6 +89,13 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         await ReloadRowsAsync();
         SchemaLoaded?.Invoke();
         PushPendingValues();
+
+        // Files from an "Open with FG Scanner" launch land in the first group the user opens.
+        if (_activeGroup.PendingOpenFiles is { Count: > 0 } openFiles)
+        {
+            _activeGroup.PendingOpenFiles = null;
+            await ImportFilePathsAsync(openFiles);
+        }
     }
 
     public async Task ReloadRowsAsync()
@@ -155,7 +162,7 @@ public sealed partial class GroupDetailViewModel : ObservableObject
     }
 
     /// <summary>The AI feature stays hidden until a key is stored (PLAN §5.6).</summary>
-    public bool AiAvailable => _toolset.Credentials.HasKey;
+    public bool AiAvailable => !AiOptOutPolicy.IsOptedOut && _toolset.Credentials.HasKey;
 
     /// <summary>Reconcile (PLAN §5.7): re-match renames by checksum, report vanished files.</summary>
     [RelayCommand]

@@ -80,3 +80,15 @@ Run before each release, and after any change to FgScanner.Scanning. Automated t
 - [ ] F2 selects the first profile.
 - [ ] Export a profile, re-import it: "Name (2)" appears with identical fields/formats.
 - [ ] Launch the app twice: the second launch focuses the existing window; closing and reopening restores the last section and group.
+
+## Phase 9 — ship it (manual checks, per release)
+
+- [ ] Clean Win11 VM: download installer → SmartScreen "Run anyway" path works as documented → install → scan → commit → index.csv correct.
+- [ ] Upgrade install over the previous version: groups, database, settings, and stored AI key survive; stale binaries purged.
+- [ ] Installer privacy page shows; ticking the AI opt-out hides the AI pane and button after install.
+- [ ] "Open with FG Scanner" on a JPG/PDF: appears in Open-with list; file imports into the group you open.
+- [ ] Scanner hardware button / AutoPlay offers "Scan with FG Scanner".
+- [ ] First-run wizard on a fresh profile: theme choice applies (incl. dark), custom profile created.
+- [ ] Portable ZIP: runs from an extracted folder without install.
+- [ ] After keys exist (docs/release.md): publish a test release, old build offers the update, /VERYSILENT upgrade succeeds.
+- [ ] Local installer build (needs admin once for Inno Setup): choco install innosetup, then ISCC per CLAUDE.md.

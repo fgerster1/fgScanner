@@ -136,6 +136,7 @@ public partial class App : Application
                     sp.GetRequiredService<FgScanner.Ocr.TesseractRunner>()));
                 services.AddSingleton<ProfileOcrTrigger>();
                 services.AddSingleton<OcrWorker>();
+                services.AddSingleton<UpdateService>();
                 services.AddSingleton<ActiveGroupStore>();
                 services.AddSingleton<GroupsViewModel>();
                 services.AddSingleton<TrashViewModel>();
@@ -164,8 +165,26 @@ public partial class App : Application
         _host.Services.GetRequiredService<OcrWorker>().Start();
         _host.Services.GetRequiredService<AiWorker>().Start();
 
+        var appSettings = _host.Services.GetRequiredService<AppSettingsService>();
+        ApplyTheme(appSettings.GetAsync("Ui.Theme", "system").GetAwaiter().GetResult());
+
+        // Files passed by "Open with FG Scanner" import into the group the user selects.
+        var openFiles = e.Args
+            .Where(a => !a.StartsWith('-') && !a.StartsWith('/') && File.Exists(a))
+            .Where(a => FgScanner.Scanning.Import.FileImportService.SupportedExtensions
+                .Contains(Path.GetExtension(a).ToLowerInvariant()))
+            .ToList();
+        if (openFiles.Count > 0)
+        {
+            _host.Services.GetRequiredService<ActiveGroupStore>().PendingOpenFiles = openFiles;
+        }
+
         MainWindow = _host.Services.GetRequiredService<ShellWindow>();
         MainWindow.Show();
+
+        RunFirstRunWizard(appSettings);
+        _ = Dispatcher.BeginInvoke(() =>
+            _ = _host.Services.GetRequiredService<UpdateService>().CheckOnStartupAsync());
 
         // Background purge of expired trash items (30-day default, configurable).
         var trash = _host.Services.GetRequiredService<TrashService>();
@@ -184,6 +203,46 @@ public partial class App : Application
                 Log.Error(ex, "Trash purge failed");
             }
         });
+    }
+
+    private static void ApplyTheme(string theme) =>
+        Current.ThemeMode = theme switch
+        {
+            "light" => ThemeMode.Light,
+            "dark" => ThemeMode.Dark,
+            _ => ThemeMode.System,
+        };
+
+    /// <summary>First launch only (PLAN prompt 9): language, theme, first profile, optional AI setup.</summary>
+    private void RunFirstRunWizard(AppSettingsService appSettings)
+    {
+        if (appSettings.GetAsync("FirstRun.Done", "").GetAwaiter().GetResult() == "true")
+        {
+            return;
+        }
+
+        var dialog = new Views.Dialogs.FirstRunDialog(!AiOptOutPolicy.IsOptedOut) { Owner = MainWindow };
+        dialog.ShowDialog();
+        ApplyTheme(dialog.Theme);
+        appSettings.SetAsync("Ui.Theme", dialog.Theme).GetAwaiter().GetResult();
+        appSettings.SetAsync("FirstRun.Done", "true").GetAwaiter().GetResult();
+        if (dialog.NewProfileName is { } profileName)
+        {
+            try
+            {
+                _host!.Services.GetRequiredService<ProfileService>()
+                    .CreateAsync(profileName).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Creating first-run profile");
+            }
+        }
+
+        if (dialog.WantsAiSetup)
+        {
+            _host!.Services.GetRequiredService<ShellViewModel>().SelectedSection = "Settings";
+        }
     }
 
     /// <summary>If a previous instance died mid-scan, offer to pull its pages into this session.</summary>

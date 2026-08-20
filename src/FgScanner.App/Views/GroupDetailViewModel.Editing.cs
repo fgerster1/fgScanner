@@ -368,11 +368,17 @@ public sealed partial class GroupDetailViewModel
             return;
         }
 
+        await ImportFilePathsAsync(dialog.FileNames);
+    }
+
+    /// <summary>Shared by the Import button and "Open with FG Scanner" file-association launches.</summary>
+    public async Task ImportFilePathsAsync(IReadOnlyList<string> files)
+    {
         var storage = new TempPageStorage();
         try
         {
             var imported = new List<string>();
-            foreach (var file in dialog.FileNames)
+            foreach (var file in files)
             {
                 imported.AddRange(await ImportOneFileAsync(file, storage));
             }
