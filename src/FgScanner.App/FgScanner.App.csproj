@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>FgScanner</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- WPF Fluent ThemeMode is marked experimental (WPF0001) but is the supported path on .NET 9/10 -->
+    <NoWarn>$(NoWarn);WPF0001</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Serilog.Extensions.Hosting" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+    <PackageReference Include="Serilog.Sinks.File" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FgScanner.Core\FgScanner.Core.csproj" />
+    <ProjectReference Include="..\FgScanner.Scanning\FgScanner.Scanning.csproj" />
+    <ProjectReference Include="..\FgScanner.Ocr\FgScanner.Ocr.csproj" />
+    <ProjectReference Include="..\FgScanner.Ai\FgScanner.Ai.csproj" />
+    <ProjectReference Include="..\FgScanner.Data\FgScanner.Data.csproj" />
+  </ItemGroup>
+</Project>

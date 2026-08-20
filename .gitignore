@@ -33,3 +33,4 @@ build/output/
 # Local-only files
 *.log
 ss1.html
+dist/

@@ -1,0 +1,22 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- App shell -->
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
+    <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageVersion Include="Serilog.Extensions.Hosting" Version="9.0.0" />
+    <PackageVersion Include="Serilog.Sinks.Console" Version="6.0.0" />
+    <PackageVersion Include="Serilog.Sinks.File" Version="6.0.0" />
+
+    <!-- Testing -->
+    <PackageVersion Include="xunit.v3" Version="4.0.0" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+  <!--
+    Licensing guards (PLAN.md §3 avoid-list) — these packages must NEVER appear here:
+    iText* (AGPL) · FluentAssertions >= 8 (commercial) · NAPS2.Images.ImageSharp (Split License)
+    · EPPlus >= 5 (PolyForm Noncommercial) · Emgu.CV (GPL) · System.Data.SQLite (legacy)
+  -->
+</Project>

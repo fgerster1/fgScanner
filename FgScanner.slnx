@@ -1,0 +1,20 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FgScanner.Ai/FgScanner.Ai.csproj" />
+    <Project Path="src/FgScanner.App/FgScanner.App.csproj" />
+    <Project Path="src/FgScanner.Cli/FgScanner.Cli.csproj" />
+    <Project Path="src/FgScanner.Core/FgScanner.Core.csproj" />
+    <Project Path="src/FgScanner.Data/FgScanner.Data.csproj" />
+    <Project Path="src/FgScanner.Ocr/FgScanner.Ocr.csproj" />
+    <Project Path="src/FgScanner.Scanning/FgScanner.Scanning.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FgScanner.Ai.Tests/FgScanner.Ai.Tests.csproj" />
+    <Project Path="tests/FgScanner.App.Tests/FgScanner.App.Tests.csproj" />
+    <Project Path="tests/FgScanner.Cli.Tests/FgScanner.Cli.Tests.csproj" />
+    <Project Path="tests/FgScanner.Core.Tests/FgScanner.Core.Tests.csproj" />
+    <Project Path="tests/FgScanner.Data.Tests/FgScanner.Data.Tests.csproj" />
+    <Project Path="tests/FgScanner.Ocr.Tests/FgScanner.Ocr.Tests.csproj" />
+    <Project Path="tests/FgScanner.Scanning.Tests/FgScanner.Scanning.Tests.csproj" />
+  </Folder>
+</Solution>
