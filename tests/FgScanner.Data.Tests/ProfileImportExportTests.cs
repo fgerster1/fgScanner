@@ -28,6 +28,9 @@ public sealed class ProfileImportExportTests : IDisposable
         ], Ct);
         await _profiles.UpdateExportSettingsAsync(profile.Id, csv: true, xlsx: true, xml: false, json: true, ";", Ct);
         await _profiles.UpdateOcrEnabledAsync(profile.Id, true, Ct);
+        await _profiles.UpdateCapturePolicyAsync(
+            profile.Id, separatorDetection: true, keepSeparators: false,
+            FgScanner.Core.Capture.BlankPagePolicy.Flag, Ct);
         return profile;
     }
 
@@ -45,6 +48,9 @@ public sealed class ProfileImportExportTests : IDisposable
         Assert.True(reloaded.OcrEnabled);
         Assert.True(reloaded.ExportXlsx);
         Assert.False(reloaded.ExportXml);
+        Assert.True(reloaded.SeparatorDetectionEnabled);
+        Assert.False(reloaded.KeepSeparatorPages);
+        Assert.Equal(FgScanner.Core.Capture.BlankPagePolicy.Flag, reloaded.BlankPolicy);
         Assert.Equal(";", reloaded.CsvDelimiter);
 
         var schema = await _profiles.GetLatestSchemaAsync(imported.Id, Ct);

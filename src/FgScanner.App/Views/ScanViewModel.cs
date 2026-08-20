@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FgScanner.App.Services;
@@ -16,6 +17,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     private readonly IndexingService _indexingService;
     private readonly ActiveGroupStore _activeGroup;
     private readonly ProfileOcrTrigger _ocrTrigger;
+    private readonly PageEditingToolset _toolset;
     private CancellationTokenSource? _scanCts;
 
     public ScanViewModel(
@@ -24,7 +26,8 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         GroupService groupService,
         IndexingService indexingService,
         ActiveGroupStore activeGroup,
-        ProfileOcrTrigger ocrTrigger)
+        ProfileOcrTrigger ocrTrigger,
+        PageEditingToolset toolset)
     {
         _scanService = scanService;
         _sessionService = sessionService;
@@ -32,6 +35,8 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         _indexingService = indexingService;
         _activeGroup = activeGroup;
         _ocrTrigger = ocrTrigger;
+        _toolset = toolset;
+        _ = LoadFeatureFlagsAsync();
         Drivers = [.. scanService.AvailableDrivers];
         _selectedDriver = Drivers[0];
         activeGroup.PropertyChanged += (_, _) =>
@@ -262,8 +267,10 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         var group = _activeGroup.Current!;
         try
         {
+            var triage = await _toolset.Triage.TriageAsync(
+                group, [.. Pages.OrderBy(p => p.SequenceNumber).Select(p => p.FilePath)]);
             var result = await _groupService.AdoptPagesAsync(
-                group.Id, Pages.OrderBy(p => p.SequenceNumber).Select(p => p.FilePath));
+                group.Id, triage.FilesToAdopt, triage.IsBlankFlagged);
             await _indexingService.ApplyInitialValuesAsync(
                 group.Id, [.. result.Adopted.Select(p => p.DocumentId)], _activeGroup.PendingValues);
             if (group.State == GroupState.Committed)
@@ -275,14 +282,78 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             _activeGroup.NotifyGroupContentChanged();
             Pages.Clear();
             _sessionService.ResetSession();
-            StatusText = result.DuplicateSourceFiles.Count == 0
-                ? $"Saved {result.Adopted.Count} page(s) to \"{group.Name}\"."
-                : $"Saved {result.Adopted.Count} page(s) to \"{group.Name}\"; {result.DuplicateSourceFiles.Count} duplicate(s) skipped.";
+            StatusText = $"Saved {result.Adopted.Count} page(s) to \"{group.Name}\"."
+                + (result.DuplicateSourceFiles.Count > 0
+                    ? $" {result.DuplicateSourceFiles.Count} duplicate(s) skipped."
+                    : "")
+                + (triage.DroppedCount > 0
+                    ? $" {triage.DroppedCount} page(s) dropped by capture policy (see journal.txt)."
+                    : "");
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Saving pages to group {Group}", group.Name);
             StatusText = $"Saving to group failed: {ex.Message}";
+        }
+    }
+
+    // ---- Patch-T separator sheets (PLAN prompt 10) ----
+
+    [ObservableProperty]
+    private bool _separatorSheetVisible;
+
+    private async Task LoadFeatureFlagsAsync()
+    {
+        try
+        {
+            SeparatorSheetVisible = await FeatureFlags.IsEnabledAsync(_toolset.Settings, FeatureFlags.PatchT);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Loading feature flags");
+        }
+    }
+
+    /// <summary>Saves a printable Patch-T separator sheet as PDF and opens it for printing.</summary>
+    [RelayCommand]
+    private async Task SaveSeparatorSheetAsync()
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "Save separator sheet",
+            Filter = "PDF|*.pdf",
+            FileName = "FG Scanner separator sheet.pdf",
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        var tempPng = Path.Combine(Path.GetTempPath(), $"fgscanner-separator-{Guid.NewGuid():N}.png");
+        try
+        {
+            FgScanner.Scanning.Capture.SeparatorSheet.CreatePng(tempPng);
+            await _toolset.PdfExport.ExportAsync(
+                [tempPng], dialog.FileName,
+                new FgScanner.Scanning.Export.PdfExportOptions { Title = "FG Scanner separator sheet" });
+            StatusText = $"Separator sheet saved: {dialog.FileName}. Print one copy per document boundary.";
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(dialog.FileName) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Separator sheet");
+            StatusText = $"Separator sheet failed: {ex.Message}";
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(tempPng);
+            }
+            catch (IOException)
+            {
+            }
         }
     }
 

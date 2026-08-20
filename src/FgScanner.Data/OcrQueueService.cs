@@ -25,6 +25,7 @@ public sealed class OcrQueueService(IDbContextFactory<FgScannerDbContext> dbFact
         var pages = await db.Pages
             .Where(p => p.Document!.GroupId == groupId)
             .Where(p => force || p.OcrStatus == OcrStatus.No || p.OcrStatus == OcrStatus.Failed)
+            .Where(p => !p.IsBlank)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
         var alreadyQueued = (await db.Jobs
                 .Where(j => j.Type == JobType.Ocr && (j.State == JobState.Pending || j.State == JobState.InFlight))

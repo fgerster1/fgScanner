@@ -1,22 +1,44 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using FgScanner.Data;
 
 namespace FgScanner.App.Views;
 
-public sealed partial class ShellViewModel(
-    ScanViewModel scanViewModel,
-    GroupsViewModel groupsViewModel,
-    TrashViewModel trashViewModel,
-    SettingsViewModel settingsViewModel) : ObservableObject
+public sealed partial class ShellViewModel : ObservableObject
 {
-    public IReadOnlyList<string> Sections { get; } = ["Scan", "Groups", "Trash", "Settings"];
+    public ShellViewModel(
+        ScanViewModel scanViewModel,
+        GroupsViewModel groupsViewModel,
+        SearchViewModel searchViewModel,
+        TrashViewModel trashViewModel,
+        SettingsViewModel settingsViewModel,
+        AppSettingsService appSettings)
+    {
+        ScanViewModel = scanViewModel;
+        GroupsViewModel = groupsViewModel;
+        SearchViewModel = searchViewModel;
+        TrashViewModel = trashViewModel;
+        SettingsViewModel = settingsViewModel;
 
-    public ScanViewModel ScanViewModel { get; } = scanViewModel;
+        // Feature.Search flag (PLAN prompt 10): the section is hidden entirely when off.
+        // Resolved once at startup — toggling it in Settings applies on next launch.
+        var searchEnabled = FeatureFlags
+            .IsEnabledAsync(appSettings, FeatureFlags.Search).GetAwaiter().GetResult();
+        Sections = searchEnabled
+            ? ["Scan", "Groups", "Search", "Trash", "Settings"]
+            : ["Scan", "Groups", "Trash", "Settings"];
+    }
 
-    public GroupsViewModel GroupsViewModel { get; } = groupsViewModel;
+    public IReadOnlyList<string> Sections { get; }
 
-    public TrashViewModel TrashViewModel { get; } = trashViewModel;
+    public ScanViewModel ScanViewModel { get; }
 
-    public SettingsViewModel SettingsViewModel { get; } = settingsViewModel;
+    public GroupsViewModel GroupsViewModel { get; }
+
+    public SearchViewModel SearchViewModel { get; }
+
+    public TrashViewModel TrashViewModel { get; }
+
+    public SettingsViewModel SettingsViewModel { get; }
 
     [ObservableProperty]
     private string _selectedSection = "Scan";

@@ -95,12 +95,20 @@ public sealed partial class GroupsViewModel : ObservableObject
                 group, _groupService, _profileService, _indexingService, _trashService, _activeGroup, _toolset);
             await detail.LoadAsync();
             Detail = detail;
+            if (PendingSelectDocument is { } documentId)
+            {
+                PendingSelectDocument = null;
+                detail.SelectDocument(documentId);
+            }
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Loading group {Group}", group.Name);
         }
     }
+
+    /// <summary>Set before TrySelectGroup so the loaded detail selects this document's row.</summary>
+    public Guid? PendingSelectDocument { get; set; }
 
     /// <summary>Session restore: reselect the group from the last run when it still exists.</summary>
     public void TrySelectGroup(Guid groupId)

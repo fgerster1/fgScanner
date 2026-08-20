@@ -388,7 +388,9 @@ public sealed partial class GroupDetailViewModel
                 return;
             }
 
-            var result = await _groupService.AdoptPagesAsync(Group.Id, imported);
+            var triage = await _toolset.Triage.TriageAsync(Group, imported);
+            var result = await _groupService.AdoptPagesAsync(
+                Group.Id, triage.FilesToAdopt, triage.IsBlankFlagged);
             await _indexingService.ApplyInitialValuesAsync(
                 Group.Id, [.. result.Adopted.Select(p => p.DocumentId)], _activeGroup.PendingValues);
             if (Group.ProfileId is { } profileId
@@ -403,9 +405,13 @@ public sealed partial class GroupDetailViewModel
                 await _indexingService.ReexportAsync(Group.Id);
             }
 
-            StatusText = result.DuplicateSourceFiles.Count == 0
-                ? $"Imported {result.Adopted.Count} page(s)."
-                : $"Imported {result.Adopted.Count} page(s); {result.DuplicateSourceFiles.Count} duplicate(s) skipped.";
+            StatusText = $"Imported {result.Adopted.Count} page(s)."
+                + (result.DuplicateSourceFiles.Count > 0
+                    ? $" {result.DuplicateSourceFiles.Count} duplicate(s) skipped."
+                    : "")
+                + (triage.DroppedCount > 0
+                    ? $" {triage.DroppedCount} page(s) dropped by capture policy (see journal.txt)."
+                    : "");
         }
         catch (Exception ex)
         {

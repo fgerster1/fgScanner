@@ -75,6 +75,14 @@ public class Profile
     /// <summary>"," default; ";" for European Excel locales.</summary>
     public string CsvDelimiter { get; set; } = ",";
 
+    // Capture triage (PLAN prompt 10) — effective only while the matching feature flag is on.
+    public bool SeparatorDetectionEnabled { get; set; }
+
+    /// <summary>Keep detected separator sheets as pages instead of dropping them.</summary>
+    public bool KeepSeparatorPages { get; set; }
+
+    public FgScanner.Core.Capture.BlankPagePolicy BlankPolicy { get; set; }
+
     public DateTime CreatedUtc { get; set; }
 
     public List<IndexSchema> Schemas { get; set; } = [];

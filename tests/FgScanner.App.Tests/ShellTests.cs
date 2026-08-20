@@ -67,11 +67,35 @@ public sealed class ShellTests : IDisposable
         new AiQueueService(new TestFactory(_dbPath)),
         CreateRetroService(),
         new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false),
-        new AppSettingsService(new TestFactory(_dbPath)));
+        new AppSettingsService(new TestFactory(_dbPath)),
+        CreateTriageService());
+
+    private CaptureTriageService CreateTriageService() => new(
+        new TestFactory(_dbPath), new AppSettingsService(new TestFactory(_dbPath)));
 
     private ScanViewModel CreateScanViewModel(FakeScanService? service = null) =>
         new(service ?? new FakeScanService(), _sessionService, _groupService, _indexingService, _activeGroup,
-            new ProfileOcrTrigger(_profileService, new OcrQueueService(new TestFactory(_dbPath))));
+            new ProfileOcrTrigger(_profileService, new OcrQueueService(new TestFactory(_dbPath))),
+            CreateToolset());
+
+    [Fact]
+    public async Task Search_section_disappears_when_the_feature_flag_is_off()
+    {
+        var settings = new AppSettingsService(new TestFactory(_dbPath));
+        await settings.SetAsync(FeatureFlags.Search, "false", TestContext.Current.CancellationToken);
+
+        var shell = new ShellViewModel(
+            CreateScanViewModel(),
+            new GroupsViewModel(_groupService, _profileService, _indexingService, _trashService, _activeGroup, CreateToolset(), CreateRetroService()),
+            new SearchViewModel(new SearchService(new TestFactory(_dbPath))),
+            new TrashViewModel(_trashService, _activeGroup),
+            new SettingsViewModel(
+                _profileService, _trashService, settings,
+                new FgScanner.Ocr.LanguageManager(Path.Combine(_root, "tessdata")),
+                new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false)),
+            settings);
+        Assert.Equal(["Scan", "Groups", "Trash", "Settings"], shell.Sections);
+    }
 
     [Fact]
     public void Shell_starts_on_scan_section()
@@ -79,13 +103,15 @@ public sealed class ShellTests : IDisposable
         var shell = new ShellViewModel(
             CreateScanViewModel(),
             new GroupsViewModel(_groupService, _profileService, _indexingService, _trashService, _activeGroup, CreateToolset(), CreateRetroService()),
+            new SearchViewModel(new SearchService(new TestFactory(_dbPath))),
             new TrashViewModel(_trashService, _activeGroup),
             new SettingsViewModel(
                 _profileService, _trashService,
                 new AppSettingsService(new TestFactory(_dbPath)),
                 new FgScanner.Ocr.LanguageManager(Path.Combine(_root, "tessdata")),
-                new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false)));
-        Assert.Equal(["Scan", "Groups", "Trash", "Settings"], shell.Sections);
+                new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false)),
+            new AppSettingsService(new TestFactory(_dbPath)));
+        Assert.Equal(["Scan", "Groups", "Search", "Trash", "Settings"], shell.Sections);
         Assert.Equal("Scan", shell.SelectedSection);
     }
 

@@ -21,7 +21,8 @@ public sealed record GroupValidation(IReadOnlyList<DocumentValidation> Documents
 public sealed class IndexingService(
     IDbContextFactory<FgScannerDbContext> dbFactory,
     ProfileService profileService,
-    IndexExporter exporter)
+    IndexExporter exporter,
+    CommitHookRunner? commitHooks = null)
 {
     private static readonly JsonSerializerOptions JsonOptions = new();
 
@@ -229,7 +230,13 @@ public sealed class IndexingService(
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        var export = await ReexportAsync(groupId, cancellationToken).ConfigureAwait(false);
+        var data = await BuildExportDataAsync(groupId, cancellationToken).ConfigureAwait(false);
+        var export = await exporter.ExportAsync(data, cancellationToken).ConfigureAwait(false);
+        if (commitHooks is not null)
+        {
+            await commitHooks.RunAsync(data, cancellationToken).ConfigureAwait(false);
+        }
+
         return (validation, export);
     }
 
@@ -325,8 +332,11 @@ public sealed class IndexingService(
             .Where(d => d.GroupId == groupId)
             .OrderBy(d => d.Sequence)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
+        // Flag-policy blanks stay in the group and the grid but never reach validation or the
+        // index files (PLAN prompt 10: excluded from OCR/AI/index).
         return [.. documents
             .Where(d => d.Pages.Count > 0)
+            .Where(d => !d.Pages.OrderBy(p => p.Sequence).First().IsBlank)
             .Select(d => (d, d.Pages.OrderBy(p => p.Sequence).First().FileName))];
     }
 }

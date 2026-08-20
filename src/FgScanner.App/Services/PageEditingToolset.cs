@@ -17,4 +17,5 @@ public sealed record PageEditingToolset(
     AiQueueService AiQueue,
     RetroProcessService Retro,
     CredentialStore Credentials,
-    AppSettingsService Settings);
+    AppSettingsService Settings,
+    CaptureTriageService Triage);

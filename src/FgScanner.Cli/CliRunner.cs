@@ -47,7 +47,8 @@ public static class CliRunner
         GroupService Groups,
         ProfileService Profiles,
         IndexingService Indexing,
-        TrashService Trash);
+        TrashService Trash,
+        CaptureTriageService Triage);
 
     private sealed class Factory(string dbPath) : IDbContextFactory<FgScannerDbContext>
     {
@@ -65,8 +66,12 @@ public static class CliRunner
         var profiles = new ProfileService(factory);
         var trash = new TrashService(factory, Path.Combine(
             Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "trash"));
+        var settings = new AppSettingsService(factory);
+        var hooks = new CommitHookRunner(settings, new Core.Hooks.CommitHookService());
+        var triage = new CaptureTriageService(factory, settings, new Scanning.Capture.PageClassifier());
         return new Services(
-            factory, groups, profiles, new IndexingService(factory, profiles, new Core.Index.IndexExporter()), trash);
+            factory, groups, profiles,
+            new IndexingService(factory, profiles, new Core.Index.IndexExporter(), hooks), trash, triage);
     }
 
     private static IScanService CreateScanService(bool fake, CliOverrides? overrides) =>
@@ -176,7 +181,16 @@ public static class CliRunner
                             }
                         }
 
-                        var result = await services.Groups.AdoptPagesAsync(group.Id, scanned, cancellationToken)
+                        var triage = await services.Triage.TriageAsync(group, scanned, cancellationToken)
+                            .ConfigureAwait(false);
+                        if (triage.DroppedCount > 0 && parseResult.GetValue(verbose))
+                        {
+                            Console.WriteLine(
+                                $"  {triage.DroppedSeparators.Count} separator(s), {triage.DroppedBlanks.Count} blank(s) dropped (journal.txt)");
+                        }
+
+                        var result = await services.Groups.AdoptPagesAsync(
+                            group.Id, triage.FilesToAdopt, triage.IsBlankFlagged, cancellationToken)
                             .ConfigureAwait(false);
                         await services.Indexing.ApplyInitialValuesAsync(
                             group.Id, [.. result.Adopted.Select(p => p.DocumentId)], null, cancellationToken)

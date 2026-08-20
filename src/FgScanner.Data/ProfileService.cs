@@ -143,6 +143,18 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task UpdateCapturePolicyAsync(
+        Guid profileId, bool separatorDetection, bool keepSeparators,
+        FgScanner.Core.Capture.BlankPagePolicy blankPolicy, CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var profile = await db.Profiles.FirstAsync(p => p.Id == profileId, cancellationToken).ConfigureAwait(false);
+        profile.SeparatorDetectionEnabled = separatorDetection;
+        profile.KeepSeparatorPages = keepSeparators;
+        profile.BlankPolicy = blankPolicy;
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     // ---- .fgprofile import/export (PLAN §5.8) ----
 
     private static readonly System.Text.Json.JsonSerializerOptions FgProfileJsonOptions =
@@ -151,7 +163,15 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
     private sealed record FgProfileFile(
         int FormatVersion, string Name, bool OcrEnabled,
         bool ExportCsv, bool ExportXlsx, bool ExportXml, bool ExportJson, string CsvDelimiter,
-        List<FgProfileField> Fields);
+        List<FgProfileField> Fields)
+    {
+        // Capture triage (phase 10). Init-props with defaults so version-1 files without them still load.
+        public bool SeparatorDetectionEnabled { get; init; }
+
+        public bool KeepSeparatorPages { get; init; }
+
+        public string BlankPolicy { get; init; } = nameof(FgScanner.Core.Capture.BlankPagePolicy.Keep);
+    }
 
     private sealed record FgProfileField(
         string Name, string Type, bool Required, bool Sticky, string? DefaultValue, string? ListChoicesJson);
@@ -166,7 +186,12 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
             1, profile.Name, profile.OcrEnabled,
             profile.ExportCsv, profile.ExportXlsx, profile.ExportXml, profile.ExportJson, profile.CsvDelimiter,
             [.. schema.Fields.Select(f => new FgProfileField(
-                f.Name, f.Type.ToString(), f.Required, f.Sticky, f.DefaultValue, f.ListChoicesJson))]);
+                f.Name, f.Type.ToString(), f.Required, f.Sticky, f.DefaultValue, f.ListChoicesJson))])
+        {
+            SeparatorDetectionEnabled = profile.SeparatorDetectionEnabled,
+            KeepSeparatorPages = profile.KeepSeparatorPages,
+            BlankPolicy = profile.BlankPolicy.ToString(),
+        };
         return System.Text.Json.JsonSerializer.Serialize(file, FgProfileJsonOptions);
     }
 
@@ -210,6 +235,12 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
             profile.Id, file.ExportCsv, file.ExportXlsx, file.ExportXml, file.ExportJson, file.CsvDelimiter,
             cancellationToken).ConfigureAwait(false);
         await UpdateOcrEnabledAsync(profile.Id, file.OcrEnabled, cancellationToken).ConfigureAwait(false);
+        await UpdateCapturePolicyAsync(
+            profile.Id, file.SeparatorDetectionEnabled, file.KeepSeparatorPages,
+            Enum.TryParse<FgScanner.Core.Capture.BlankPagePolicy>(file.BlankPolicy, out var policy)
+                ? policy
+                : FgScanner.Core.Capture.BlankPagePolicy.Keep,
+            cancellationToken).ConfigureAwait(false);
         return profile;
     }
 }

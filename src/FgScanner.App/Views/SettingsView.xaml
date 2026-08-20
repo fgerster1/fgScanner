@@ -45,6 +45,22 @@
                 <TextBox Width="30" Text="{Binding CsvDelimiter}" MaxLength="1" />
             </WrapPanel>
 
+            <TextBlock Text="Capture policy for this profile" FontWeight="SemiBold" Margin="0,0,0,4" />
+            <WrapPanel Margin="0,0,0,4">
+                <CheckBox Content="Detect Patch-T separator sheets"
+                          IsChecked="{Binding SeparatorDetectionEnabled}" Margin="0,0,12,0" />
+                <CheckBox Content="Keep separator pages (instead of dropping them)"
+                          IsChecked="{Binding KeepSeparatorPages}" />
+            </WrapPanel>
+            <WrapPanel Margin="0,0,0,4">
+                <TextBlock Text="Blank pages:" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <ComboBox Width="140" ItemsSource="{Binding BlankPolicies}" SelectedItem="{Binding BlankPolicy}" />
+                <TextBlock Text="Drop = journaled and discarded · Flag = kept but excluded from OCR/AI/index · Separator = treated like a Patch-T sheet"
+                           VerticalAlignment="Center" Margin="12,0,0,0" Opacity="0.7" TextWrapping="Wrap" MaxWidth="520" />
+            </WrapPanel>
+            <TextBlock Text="Both take effect only while the matching feature below is on."
+                       Opacity="0.7" Margin="0,0,0,12" />
+
             <TextBlock Text="OCR" FontWeight="SemiBold" Margin="0,0,0,4" />
             <WrapPanel Margin="0,0,0,4">
                 <CheckBox Content="Run OCR automatically on pages saved with this profile"
@@ -106,6 +122,35 @@
                 <Button Content="Export selected profile…" Command="{Binding ExportProfileCommand}" Margin="0,0,6,0" />
                 <Button Content="Import profile…" Command="{Binding ImportProfileCommand}" />
             </WrapPanel>
+
+            <TextBlock Text="Features (v1.1)" FontWeight="SemiBold" Margin="0,0,0,4" />
+            <StackPanel Margin="0,0,0,4">
+                <CheckBox Content="Patch-T separator detection (enables the capture policy above and the separator-sheet button in Scan)"
+                          IsChecked="{Binding FeaturePatchT}" Margin="0,0,0,4" />
+                <CheckBox Content="Blank-page policy (enables the per-profile blank handling above)"
+                          IsChecked="{Binding FeatureBlankPolicy}" Margin="0,0,0,4" />
+                <CheckBox Content="Full-text search section (applies on next launch)"
+                          IsChecked="{Binding FeatureSearch}" Margin="0,0,0,4" />
+                <CheckBox Content="Commit hook (run a command and/or POST a webhook when a group is committed)"
+                          IsChecked="{Binding FeatureCommitHook}" Margin="0,0,0,4" />
+            </StackPanel>
+            <Grid Margin="20,0,0,12" IsEnabled="{Binding FeatureCommitHook}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock Text="Command line:" VerticalAlignment="Center" Margin="0,0,6,4" />
+                <TextBox Grid.Column="1" Text="{Binding HookCommandLine}" Margin="0,0,0,4" />
+                <TextBlock Grid.Row="1" Text="Webhook URL:" VerticalAlignment="Center" Margin="0,0,6,4" />
+                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding HookWebhookUrl}" Margin="0,0,0,4" />
+                <TextBlock Grid.Row="2" Grid.Column="1" Opacity="0.7" TextWrapping="Wrap"
+                           Text="Command runs via cmd.exe in the group folder; tokens: $(group), $(dir), $(manifest). The webhook receives the index.json payload (manifest + rows). Outcomes land in the group's journal.txt." />
+            </Grid>
 
             <TextBlock Text="Keyboard shortcuts" FontWeight="SemiBold" Margin="0,0,0,4" />
             <TextBlock Opacity="0.6" FontSize="11" Margin="0,0,0,4"
