@@ -39,6 +39,18 @@
                     </Style>
                 </views:ScanView.Style>
             </views:ScanView>
+            <views:GroupsView DataContext="{Binding GroupsViewModel}">
+                <views:GroupsView.Style>
+                    <Style TargetType="views:GroupsView">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding DataContext.SelectedSection, RelativeSource={RelativeSource AncestorType=Window}}" Value="Groups">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </views:GroupsView.Style>
+            </views:GroupsView>
             <TextBlock HorizontalAlignment="Center"
                        VerticalAlignment="Center"
                        FontSize="20"
@@ -48,6 +60,9 @@
                         <Setter Property="Visibility" Value="Visible" />
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding SelectedSection}" Value="Scan">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding SelectedSection}" Value="Groups">
                                 <Setter Property="Visibility" Value="Collapsed" />
                             </DataTrigger>
                         </Style.Triggers>

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FgScanner.App.Services;
+using FgScanner.Data;
 using FgScanner.Scanning;
 using Serilog;
 
@@ -11,20 +12,38 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 {
     private readonly IScanService _scanService;
     private readonly ScanSessionService _sessionService;
+    private readonly GroupService _groupService;
+    private readonly ActiveGroupStore _activeGroup;
     private CancellationTokenSource? _scanCts;
 
-    public ScanViewModel(IScanService scanService, ScanSessionService sessionService)
+    public ScanViewModel(
+        IScanService scanService,
+        ScanSessionService sessionService,
+        GroupService groupService,
+        ActiveGroupStore activeGroup)
     {
         _scanService = scanService;
         _sessionService = sessionService;
+        _groupService = groupService;
+        _activeGroup = activeGroup;
         Drivers = [.. scanService.AvailableDrivers];
         _selectedDriver = Drivers[0];
+        activeGroup.PropertyChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(SaveTargetText));
+            SaveToGroupCommand.NotifyCanExecuteChanged();
+        };
+
+        Pages.CollectionChanged += (_, _) => SaveToGroupCommand.NotifyCanExecuteChanged();
 
         foreach (var page in sessionService.Session.Pages)
         {
             Pages.Add(page);
         }
     }
+
+    public string SaveTargetText =>
+        _activeGroup.Current is { } g ? $"Save to group \"{g.Name}\"" : "Save to group (select one in Groups)";
 
     public IReadOnlyList<ScanDriver> Drivers { get; }
 
@@ -68,6 +87,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ScanCommand))]
     [NotifyCanExecuteChangedFor(nameof(CancelScanCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveToGroupCommand))]
     private bool _isScanning;
 
     [ObservableProperty]
@@ -151,6 +171,30 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 
     [RelayCommand(CanExecute = nameof(CanCancelScan))]
     private void CancelScan() => _scanCts?.Cancel();
+
+    private bool CanSaveToGroup() => _activeGroup.Current is not null && Pages.Count > 0 && !IsScanning;
+
+    /// <summary>Moves the session's pages into the active group (files + DB rows), then resets the session.</summary>
+    [RelayCommand(CanExecute = nameof(CanSaveToGroup))]
+    private async Task SaveToGroupAsync()
+    {
+        var group = _activeGroup.Current!;
+        try
+        {
+            var result = await _groupService.AdoptPagesAsync(
+                group.Id, Pages.OrderBy(p => p.SequenceNumber).Select(p => p.FilePath));
+            Pages.Clear();
+            _sessionService.ResetSession();
+            StatusText = result.DuplicateSourceFiles.Count == 0
+                ? $"Saved {result.Adopted.Count} page(s) to \"{group.Name}\"."
+                : $"Saved {result.Adopted.Count} page(s) to \"{group.Name}\"; {result.DuplicateSourceFiles.Count} duplicate(s) skipped.";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Saving pages to group {Group}", group.Name);
+            StatusText = $"Saving to group failed: {ex.Message}";
+        }
+    }
 
     public void Dispose() => _scanCts?.Dispose();
 }
