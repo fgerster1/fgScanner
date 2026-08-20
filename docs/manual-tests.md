@@ -61,3 +61,12 @@ Run before each release, and after any change to FgScanner.Scanning. Automated t
 - [ ] Pull the network cable mid-run: remaining pages stay Pending; reconnect + restart resumes without re-billing finished pages.
 - [ ] A blank page (OCRed, <5 words) shows Skipped / "BLANK PAGE" with no API call (spend unchanged).
 - [ ] Windows Credential Manager shows "FGScanner:GeminiApiKey"; "Clear stored key" removes it and hides the AI button.
+
+## Phase 7 — retro-processing (manual checks)
+
+- [ ] "Process existing folder…" on a folder of old photos + a PDF: images keep their names, PDF pages appear as <name>_page_NNN.png, report matches reality.
+- [ ] Run it again immediately: report shows nothing adopted, grid unchanged (idempotence).
+- [ ] Rename an image in Explorer, hit Reconcile: row re-matches by checksum, field values intact.
+- [ ] Delete an image in Explorer, Reconcile: offered removal moves the row to Trash, restorable.
+- [ ] A folder with someone else's index.csv: warning appears; commit only replaces after the warning.
+- [ ] "Re-process…" with "Redo everything": .md files land in Trash, OCR/AI redo (AI shows estimate first).
