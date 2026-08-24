@@ -6,18 +6,30 @@ Run before each release, and after any change to FgScanner.Scanning. Automated t
 - [ ] Launch `FgScanner.exe` (real drivers) — app starts, Scan section visible
 - [ ] Launch `FgScanner.exe --fake-scanner` — 3 fake devices listed, scan produces pages
 
+> **Partial pass 2026-08-24** on a Pantum M6550NW (TWAIN + eSCL; no WIA driver installed).
+> Driven headlessly through `fgscanner.exe`, so every GUI-only row below is still open.
+> Findings: **BUG-1** (first TWAIN page gets 96 DPI metadata) and two gaps, **GAP-1**/**GAP-2**
+> — see "Findings from the 2026-08-24 pass" at the bottom of this file.
+
 ## Device discovery
-- [ ] WIA: physical USB scanner appears in device list after Refresh
-- [ ] TWAIN: same scanner appears under TWAIN driver (32-bit worker starts; check Task Manager for NAPS2.Worker.exe)
-- [ ] eSCL: network MFP appears (same subnet, mDNS allowed through firewall)
+- [x] ~~WIA~~ **BLOCKED, not a failure** — `WIA.DeviceManager` reports 0 devices on this machine
+      (only a webcam in the PnP Image class), so our empty WIA list is correct. Needs a USB
+      scanner with a WIA driver to actually exercise.
+- [x] TWAIN: 8 Pantum sources enumerated via `fgscanner list-devices --driver twain`;
+      two 32-bit `NAPS2.Worker` processes spawned and exited cleanly afterwards. 2026-08-24
+- [x] eSCL: `M6550NW series (192.168.0.114)` discovered over the network. 2026-08-24
 
 ## Scanning
 - [ ] WIA flatbed scan at 300 DPI Color → one page thumbnail, file in %APPDATA%\FGScanner\recovery\<session>\
-- [ ] Feeder scan with 3+ pages → thumbnails stream in one at a time
+      — blocked, see above
+- [x] Feeder scan with 3+ pages — 3 pages captured twice via CLI, exit 0, all 2480x3507 px.
+      **The "thumbnails stream in one at a time" half is GUI-only and still untested.** 2026-08-24
 - [ ] Duplex scan (if hardware supports) → front/back pages in order
-- [ ] BlackWhite bit depth + 150 DPI → smaller file, still legible
+- [~] BlackWhite bit depth + 150 DPI — eSCL produced a correct 1275x1650 px @ 150 DPI file, but the
+      sheet on the glass was blank so "still legible" is **inconclusive**. Re-run over real text.
 - [ ] Cancel mid-feeder-run → already-scanned pages remain, status shows canceled
 - [ ] Empty feeder → error surfaces in status text, app stays responsive
+      — attempted twice, feeder still had paper both times; not yet exercised
 
 ## Crash recovery
 - [ ] Start a feeder scan, kill FgScanner.exe from Task Manager mid-scan
@@ -100,3 +112,70 @@ Run before each release, and after any change to FgScanner.Scanning. Automated t
 - [ ] Blank-page policy on a real feeder scan: Drop removes the empty back sides (journal.txt lists them), Flag keeps them visible as "Blank — excluded" and out of index.csv/OCR/AI.
 - [ ] Search: after OCR, find a word from a scanned page; the snippet highlights it; double-click opens the group with the page selected. Field values and AI descriptions are also found. Turn the feature off: section is gone on next launch.
 - [ ] Commit hook: set command `echo %date% >> committed.txt` and a webhook (e.g. webhook.site); commit a group: file appears in the group folder, webhook receives the index.json payload, journal.txt records both.
+
+---
+
+## Findings from the 2026-08-24 pass
+
+Hardware: Pantum M6550NW (TWAIN sources + eSCL at 192.168.0.114). Driven via `fgscanner.exe`.
+What passed is ticked above; what follows is what the pass *found*.
+
+### BUG-1 — first TWAIN page carries 96 DPI metadata on 300 DPI pixels
+
+Reproduced 3/3, and TWAIN-specific:
+
+| Scan | page 1 | pages 2-3 |
+|---|---|---|
+| TWAIN feeder (batch 1) | **96 dpi** | 300, 300 |
+| TWAIN flatbed | **96 dpi** | — |
+| TWAIN feeder (batch 2) | **96 dpi** | 300, 300 |
+| eSCL flatbed @150 | 150 dpi ✅ | — |
+
+Every page is 2480x3507 px — genuinely 300 DPI pixel data — so only the metadata is wrong. eSCL is
+clean, so this is not a universal save-path defect.
+
+Cause: `Naps2ScanService.ScanAsync` does a bare `image.Save(path)` (Naps2ScanService.cs:61). We pass
+`Dpi = options.Dpi` down to the driver but never check what comes back, so whatever resolution the
+TWAIN bridge reports on the first image (GDI's 96 default) lands in the JPEG.
+
+Impact: PLAN §5.5 feeds Tesseract `--dpi` from scan metadata and depends on it for text-layer
+alignment — this is the NAPS2 #843 bug class the plan explicitly set out to regression-test. A PDF
+built from that page would also be sized 25.8" wide instead of 8.27".
+
+Fix has a judgment call in it — decide before implementing:
+- stamp `options.Dpi` unconditionally (simple; mislabels scanners that clamp to a nearby DPI), or
+- stamp only when the returned resolution looks unset/default (safer; "unset" vs "genuinely 96" is
+  ambiguous).
+Either way add a regression test asserting saved-image DPI == requested DPI for page 1 of a run.
+
+### GAP-1 — no page-orientation detection
+
+The test sheets went through the ADF 180° rotated. Capture quality was excellent, but OCR returned
+reversed text (`smopulM\:D` = `C:\Windows` backwards) at 21-40% mean confidence, and nothing in the
+pipeline noticed. `TesseractRunner` hardcodes `--psm 3` with no OSD pass (`--psm 0` detects
+orientation), and there is no auto-rotate on the capture path.
+
+Upside-down paper is user error, but silently producing garbage is a product gap: most scanning apps
+auto-rotate. Cheap first step: an OSD pass when mean confidence lands below
+`OcrPipeline.LowConfidenceThreshold`, then re-OCR at the detected orientation.
+
+### GAP-2 — index.csv hides low-confidence OCR
+
+All three pages scored 40.63 / 21.85 / 29.7 mean confidence — every one below
+`OcrPipeline.LowConfidenceThreshold` (65), i.e. all should be flagged for review. `index.csv` records
+a flat `OCRed=Yes` for each:
+
+```
+Group,ImageName,OCRed,AIDescription,AIStatus
+twain-feeder,scan_00001.jpg,Yes,,Off
+```
+
+The threshold exists and the GUI grid shows "Yes ⚠ nn% — review", but a headless consumer of the CSV
+cannot tell clean OCR from 21%-confidence garbage. Consider a confidence column, or an
+`OCRed=Review` value. Needs a decision: it is an index-schema change (PLAN §5.2 fixes column order),
+so it affects the XSD, the manifest, and the Verify snapshots.
+
+### Still requiring a human at the GUI
+
+Thumbnail streaming, cancel mid-run, the crash-recovery prompt, duplex, empty-feeder error surfacing,
+`--fake-scanner` startup, and everything in the phase 4-10 sections.

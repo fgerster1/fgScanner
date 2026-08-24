@@ -58,12 +58,31 @@ public sealed class Naps2ScanService : IScanService, IDisposable
             using (image)
             {
                 var path = storage.ReserveNextPagePath("jpg");
-                image.Save(path);
+                SaveWithCorrectedResolution(image, path, options.Dpi);
                 var page = new ScannedPage(path, ExtractSequence(path));
                 storage.CommitPage(page);
                 yield return page;
             }
         }
+    }
+
+    /// <summary>
+    /// Writes the page, repairing a resolution the driver never set (see
+    /// <see cref="ScanResolutionPolicy"/>). Each axis is judged on its own so a scanner reporting a
+    /// genuine asymmetric resolution keeps it. Rendering here costs nothing extra — saving a
+    /// <see cref="ProcessedImage"/> renders it anyway.
+    /// </summary>
+    private static void SaveWithCorrectedResolution(ProcessedImage image, string path, int requestedDpi)
+    {
+        using var rendered = image.Render();
+        var x = ScanResolutionPolicy.ResolveDpiToStamp(rendered.HorizontalResolution, requestedDpi);
+        var y = ScanResolutionPolicy.ResolveDpiToStamp(rendered.VerticalResolution, requestedDpi);
+        if (x is not null || y is not null)
+        {
+            rendered.SetResolution(x ?? rendered.HorizontalResolution, y ?? rendered.VerticalResolution);
+        }
+
+        rendered.Save(path);
     }
 
     public void Dispose() => _scanningContext.Dispose();
