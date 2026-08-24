@@ -48,7 +48,17 @@ Run before each release, and after any change to FgScanner.Scanning. Automated t
 
 ## Phase 4 — editing & export (manual checks)
 
-- [ ] Rotate/flip/deskew a page in Groups: thumbnail refreshes, file on disk changes, checksum updates (re-scan of same original no longer flags duplicate).
+- [x] Rotate/flip/deskew a page in Groups: thumbnail refreshes, file on disk changes, checksum updates.
+      **Verified 2026-08-24** on the twain-feeder group, all 3 pages rotated via the toolbar button:
+      thumbnails refreshed (observed); all 3 JPEGs changed on disk (e.g. scan_00002 970754 →
+      927253 bytes, SHA-256 DE4DE23A… → 8BBFB0BC…); 6 undo snapshots written (3 pages ×
+      before/after). Checksum refresh proven behaviourally — a copy of a *rotated* page under a new
+      filename came back `1 duplicate(s) skipped`, which only happens if the stored checksum matches
+      the post-rotation content. This is the path auto-orientation depends on (docs/scope-auto-orientation.md).
+      Two notes: index.csv/manifest.json were not re-exported because the group is not in Committed
+      state (by design — `ApplyEditsAsync` re-exports only when `Group.State == GroupState.Committed`,
+      and rotation changes no index column anyway); and the `.md` OCR sidecars are now stale, since a
+      manual rotate does not re-OCR — which is exactly why the auto-orient design re-OCRs after rotating.
 - [ ] Undo (Ctrl+Z) and redo (Ctrl+Y) an edit and a reorder; verify committed groups re-export after each.
 - [ ] Export PDF with PDF/A-2b + encryption; open in Adobe/Edge: metadata present, password required, printing restricted per flags.
 - [ ] Export multi-page TIFF; open in an image viewer and page through frames.
