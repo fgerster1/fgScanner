@@ -91,19 +91,32 @@ Net cost on a clean page: zero. On a misfed page: one OSD pass plus one re-OCR, 
 - **Rotate at capture time** would slow the scan loop by 741 ms/page and fight the streaming
   thumbnail UX. Orientation is an OCR-stage concern.
 
-## 5. Open decisions — need your call before implementation
+## 5. Decisions
 
-1. **Does the stored image get rotated, or only the OCR text corrected?** The recommendation above
-   rotates the image, because leaving a visibly upside-down scan with correct hidden text fixes the
-   half of the problem the user cannot see. The cost is that auto-rotation mutates a file the user
-   scanned — mitigated by routing it through undo/redo, but still a real behavioral change.
-2. **Bundle or download `osd.traineddata`?** Recommendation: bundle.
-3. **Behind a feature flag?** Phase 10's precedent is one flag per differentiator
-   (`FeatureFlags.PatchT` etc.). Suggest `Feature.AutoOrient`, defaulting **on** once the hardware
-   check passes — unlike Patch-T or commit hooks it needs no user setup to be useful.
-4. **Does 90°/270° matter to you?** OSD detects all four orientations. Handling them is free once
-   the plumbing exists, but landscape documents legitimately scan at 90° and auto-rotating those may
-   be unwanted. Suggest: rotate on 180 only, log 90/270 as a review flag.
+### DECIDED 2026-08-24
+
+1. **The stored image gets rotated**, not just the OCR text. Auto-rotation goes through the existing
+   phase-4 `PageEdit.Rotate` path so it inherits checksum update, thumbnail refresh, re-export and
+   undo/redo. Accepted consequence: this mutates a file the user scanned and puts checksum identity
+   and committed-group re-export inside the blast radius — the risk called out in §6 item 4 is
+   therefore in scope and needs the heaviest test cover.
+2. **`osd.traineddata` is bundled in the installer.** Setup exe grows ~10 MB (91.6 → ~102 MB).
+   Orientation detection then works fully offline with nothing to fail at runtime, which keeps the
+   local-first promise in `PRIVACY.md` intact. Work items: csproj content item, the win-x64 publish
+   profile, `build/installer/setup.iss`, and a `THIRD-PARTY-NOTICES.md` entry (Apache-2.0, same
+   upstream as the bundled `eng.traineddata`).
+
+3. **Ships behind `FeatureFlags.AutoOrient`, defaulting ON.** Departs from the phase-10 precedent
+   (PatchT/BlankPolicy/CommitHook all default off) because this needs no user setup to be useful —
+   off-by-default would mean it never reaches anyone. The flag exists as a field escape hatch, which
+   matters more than usual here since decision #1 means the feature rewrites image files. Per the D5
+   policy in `docs/STATUS-AND-REMAINING-WORK.md`, if this later graduates to permanent the flag gets
+   **deleted**, not left flipped on.
+4. **Rotate on 180° only; surface 90°/270° as a review flag.** 180° is unambiguously a misfeed.
+   Landscape documents are legitimately fed at 90°, and silently rotating them would fight the user
+   and churn checksums for nothing — so sideways pages are reported, and the user decides.
+
+**All four decisions settled 2026-08-24. Ready to implement.**
 
 ## 6. Effort
 
