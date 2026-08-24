@@ -65,7 +65,18 @@ fgscanner export --group C:\Scans\Inbox -o inbox.pdf --pdfcompat A2-b --ocr
 fgscanner list-devices
 ```
 
-Exit code 0 = success; add `--verbose` for detail. Ideal for Task Scheduler.
+Exit code 0 = success. Ideal for Task Scheduler.
+
+`--verbose` and `--fake` are **global** options and must come *before* the
+command — `fgscanner --verbose scan --group ...`. Placed after the command they
+are rejected with "Unrecognized command or argument".
+
+> **`fgscanner.exe` requires the .NET 10 Desktop Runtime.** Unlike `FgScanner.exe`,
+> which is self-contained, the command line tool is published framework-dependent.
+> On a machine without .NET 10 it exits with "You must install .NET". Install the
+> runtime from <https://dotnet.microsoft.com/download/dotnet/10.0> — the GUI needs
+> nothing. This matters most for headless or server machines running scheduled
+> tasks, which are exactly where the runtime is least likely to already be present.
 
 ## Keyboard shortcuts
 

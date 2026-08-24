@@ -38,6 +38,14 @@ jobs:
 
       # --- Payload signing via SignPath (enable by setting the repo variable SIGNPATH_ENABLED=true
       #     and the secrets documented in docs/release.md). Runs BEFORE the installer is packed.
+      - name: Upload payload for signing
+        if: vars.SIGNPATH_ENABLED == 'true'
+        id: payload_artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-payload
+          path: publish/win-x64
+
       - name: Sign payload (SignPath)
         if: vars.SIGNPATH_ENABLED == 'true'
         uses: signpath/github-action-submit-signing-request@v1
@@ -47,7 +55,10 @@ jobs:
           project-slug: fgScanner
           signing-policy-slug: release-signing
           artifact-configuration-slug: publish-payload
-          github-artifact-id: ''
+          github-artifact-id: ${{ steps.payload_artifact.outputs.artifact-id }}
+          # Without output-artifact-directory the action signs but never downloads the result,
+          # so the installer would be packed from the UNSIGNED payload.
+          output-artifact-directory: publish/win-x64
           wait-for-completion: true
 
       - name: Portable ZIP (config beside exe)
@@ -64,8 +75,25 @@ jobs:
       - name: Build installer
         shell: pwsh
         run: |
-          $iscc = Get-ChildItem "$env:ProgramFiles(x86)\Inno Setup*","$env:ProgramFiles\Inno Setup*" -Filter ISCC.exe -Recurse | Select-Object -First 1
+          # "$env:ProgramFiles(x86)" expands to "C:\Program Files(x86)" — the space is lost and the
+          # path never matches. ${env:ProgramFiles(x86)} is the form that survives the parser.
+          $roots = @("${env:ProgramFiles(x86)}\Inno Setup*", "$env:ProgramFiles\Inno Setup*")
+          $iscc = Get-ChildItem $roots -Filter ISCC.exe -Recurse -ErrorAction SilentlyContinue |
+                  Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $iscc) {
+            throw "ISCC.exe not found under: $($roots -join '; ')"
+          }
+          Write-Host "Using $($iscc.FullName)"
           & $iscc.FullName /DAppVersion=${{ steps.ver.outputs.version }} build\installer\setup.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
+
+      - name: Upload installer for signing
+        if: vars.SIGNPATH_ENABLED == 'true'
+        id: installer_artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer
+          path: dist/*.exe
 
       - name: Sign installer (SignPath)
         if: vars.SIGNPATH_ENABLED == 'true'
@@ -76,7 +104,9 @@ jobs:
           project-slug: fgScanner
           signing-policy-slug: release-signing
           artifact-configuration-slug: installer
-          github-artifact-id: ''
+          github-artifact-id: ${{ steps.installer_artifact.outputs.artifact-id }}
+          # Signed installer replaces the unsigned one before checksums and appcast are generated.
+          output-artifact-directory: dist
           wait-for-completion: true
 
       # Appcast for auto-update: generated + Ed25519-signed per docs/release.md, then uploaded
@@ -88,9 +118,24 @@ jobs:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
         run: |
           dotnet tool install --global NetSparkleUpdater.Tools.AppCastGenerator
-          netsparkle-generate-appcast -a dist -e exe -o windows `
-            --key-path-override env --description "FG Scanner" `
+          # Write the key pair to a key-path directory rather than relying on env-var pickup:
+          # this is the exact invocation verified locally against the real key pair.
+          # The public key is not a secret — it ships in UpdateService.Ed25519PublicKey.
+          $keyDir = Join-Path $env:RUNNER_TEMP 'sparkle-keys'
+          New-Item $keyDir -ItemType Directory -Force | Out-Null
+          $env:SPARKLE_PRIVATE_KEY.Trim() | Out-File "$keyDir\NetSparkle_Ed25519.priv" -NoNewline -Encoding ascii
+          'AYGJKjx0kHdK1dPayOwD71kSEa4yS7j0iVMofJ9RVm4=' | Out-File "$keyDir\NetSparkle_Ed25519.pub" -NoNewline -Encoding ascii
+          # -b is the binaries directory, -a the output directory. They are different flags;
+          # passing only -a leaves the search at "." and silently finds nothing.
+          netsparkle-generate-appcast -b dist -a dist -e exe -o windows -n "FG Scanner" `
+            --key-path $keyDir `
             -u https://github.com/fgerster1/fgScanner/releases/latest/download/
+          Remove-Item $keyDir -Recurse -Force
+          # NetSparkle in SecurityMode.Strict fetches <appcast-url>.signature to verify the feed,
+          # so a missing signature file means every client silently sees "no update available".
+          foreach ($f in 'dist\appcast.xml', 'dist\appcast.xml.signature') {
+            if (-not (Test-Path $f)) { throw "$f was not generated" }
+          }
 
       - name: Checksums
         shell: pwsh
@@ -112,5 +157,6 @@ jobs:
             dist/*.zip
             dist/SHA256SUMS.txt
             dist/appcast.xml
+            dist/appcast.xml.signature
           generate_release_notes: true
           draft: true
