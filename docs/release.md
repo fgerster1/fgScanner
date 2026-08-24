@@ -9,8 +9,20 @@
    Release. Review the draft, edit notes, publish.
 4. Publishing the release triggers `winget.yml` (needs `WINGET_TOKEN`).
 
-Local installer check: `dotnet publish src/FgScanner.App -p:PublishProfile=win-x64`
-then `ISCC.exe /DAppVersion=0.1.0 build\installer\setup.iss` → `dist/`.
+Local installer check (PowerShell, from repo root):
+
+```powershell
+dotnet publish src/FgScanner.App -p:PublishProfile=win-x64
+$iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup*","$env:ProgramFiles\Inno Setup*",
+  "$env:LOCALAPPDATA\Programs\Inno Setup*" -Filter ISCC.exe -Recurse -EA SilentlyContinue |
+  Sort-Object FullName -Descending | Select-Object -First 1
+& $iscc.FullName /DAppVersion=0.1.0 build\installer\setup.iss   # → dist\
+```
+
+`winget install JRSoftware.InnoSetup.7` installs **per-user** under
+`%LOCALAPPDATA%\Programs` when run unelevated — hence the wider search above.
+CI installs it machine-wide via `choco install innosetup`, so `release.yml`
+only searches the two Program Files roots.
 
 ## Secrets and variables (GitHub → Settings)
 

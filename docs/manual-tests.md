@@ -91,7 +91,8 @@ Run before each release, and after any change to FgScanner.Scanning. Automated t
 - [ ] First-run wizard on a fresh profile: theme choice applies (incl. dark), custom profile created.
 - [ ] Portable ZIP: runs from an extracted folder without install.
 - [ ] After keys exist (docs/release.md): publish a test release, old build offers the update, /VERYSILENT upgrade succeeds.
-- [ ] Local installer build (needs admin once for Inno Setup): choco install innosetup, then ISCC per CLAUDE.md.
+- [x] Local installer build: `winget install JRSoftware.InnoSetup.7` (per-user, no admin needed), then
+      ISCC per CLAUDE.md. Verified 2026-08-24 on 7.1.0 → `dist\fgscanner-0.1.0-win-x64.exe`, 91.6 MB.
 
 ## Phase 10 — differentiators (manual checks)
 

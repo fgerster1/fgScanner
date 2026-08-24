@@ -15,7 +15,16 @@ dotnet test  -c Release                 rem MTP mode (opt-in lives in global.jso
 dotnet format --verify-no-changes       rem CI gate
 dotnet run --project src/FgScanner.App
 dotnet publish src/FgScanner.App -p:PublishProfile=win-x64
-ISCC.exe /DAppVersion=0.1.0 build\installer\setup.iss
+```
+
+Installer (PowerShell, from repo root — `ISCC.exe` is not on PATH, and Inno Setup may be
+installed machine-wide *or* per-user under `%LOCALAPPDATA%\Programs`):
+
+```powershell
+$iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup*","$env:ProgramFiles\Inno Setup*",
+  "$env:LOCALAPPDATA\Programs\Inno Setup*" -Filter ISCC.exe -Recurse -EA SilentlyContinue |
+  Sort-Object FullName -Descending | Select-Object -First 1
+& $iscc.FullName /DAppVersion=0.1.0 build\installer\setup.iss   # → dist\
 ```
 
 ## Architecture (docs/PLAN.md §8)

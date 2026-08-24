@@ -1,6 +1,10 @@
 ; FG Scanner — Inno Setup script (phase 9: complete)
 ; Packages the publish output (created by: dotnet publish src/FgScanner.App -p:PublishProfile=win-x64)
-; Build:  ISCC.exe /DAppVersion=0.1.0 build\installer\setup.iss   (run from repo root)
+; Build (run from repo root; finds ISCC.exe whether Inno Setup is machine-wide or per-user):
+;   $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup*","$env:ProgramFiles\Inno Setup*",
+;     "$env:LOCALAPPDATA\Programs\Inno Setup*" -Filter ISCC.exe -Recurse -EA SilentlyContinue |
+;     Sort-Object FullName -Descending | Select-Object -First 1
+;   & $iscc.FullName /DAppVersion=0.1.0 build\installer\setup.iss
 ;
 ; Silent install (documented per PLAN prompt 9):
 ;   fgscanner-<ver>-win-x64.exe /VERYSILENT /NORESTART /SUPPRESSMSGBOXES
@@ -20,6 +24,10 @@
 AppId={{77A2D51A-B7C2-452F-A125-84191C2ABA38}
 AppName={#AppName}
 AppVersion={#AppVersion}
+; Without this the setup exe ships a blank FileVersion resource: support triage
+; can't identify a build from its properties, and unsigned installers with no
+; version info score worse against AV/SmartScreen heuristics.
+VersionInfoVersion={#AppVersion}
 AppPublisher={#Publisher}
 AppPublisherURL=https://github.com/fgerster1/fgScanner
 DefaultDirName={commonpf}\FGScanner
