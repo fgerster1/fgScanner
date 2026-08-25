@@ -68,7 +68,8 @@ public sealed class ShellTests : IDisposable
         CreateRetroService(),
         new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false),
         new AppSettingsService(new TestFactory(_dbPath)),
-        CreateTriageService());
+        CreateTriageService(),
+        new DuplicateFinder(new TestFactory(_dbPath)));
 
     private CaptureTriageService CreateTriageService() => new(
         new TestFactory(_dbPath), new AppSettingsService(new TestFactory(_dbPath)));

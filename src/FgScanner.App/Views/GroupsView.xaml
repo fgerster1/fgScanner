@@ -149,6 +149,8 @@
                     <Button Content="Export images…" Command="{Binding ExportImagesCommand}" Padding="8,4" Margin="0,0,4,0" />
                     <Button Content="Print…" Command="{Binding PrintCommand}" Padding="8,4" Margin="0,0,4,0" />
                     <Button Content="Copy" Command="{Binding CopyPageCommand}" Padding="8,4" ToolTip="Copy page image to clipboard" />
+                    <Button Content="Duplicates…" Command="{Binding CheckDuplicatesCommand}" Padding="8,4" Margin="4,0,0,0"
+                            ToolTip="Find pages in this group that look like the same document" />
                 </WrapPanel>
                 <TextBlock Text="{Binding ValidationSummary}" Foreground="IndianRed"
                            TextWrapping="Wrap" Margin="0,0,0,4"

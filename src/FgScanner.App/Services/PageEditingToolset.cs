@@ -18,4 +18,5 @@ public sealed record PageEditingToolset(
     RetroProcessService Retro,
     CredentialStore Credentials,
     AppSettingsService Settings,
-    CaptureTriageService Triage);
+    CaptureTriageService Triage,
+    DuplicateFinder Duplicates);

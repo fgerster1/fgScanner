@@ -66,7 +66,8 @@ public sealed class RowContentVisibilityTests : IDisposable
         new RetroProcessService(new TestFactory(_dbPath), _groupService, _trashService),
         new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false),
         new AppSettingsService(new TestFactory(_dbPath)),
-        new CaptureTriageService(new TestFactory(_dbPath), new AppSettingsService(new TestFactory(_dbPath))));
+        new CaptureTriageService(new TestFactory(_dbPath), new AppSettingsService(new TestFactory(_dbPath))),
+        new DuplicateFinder(new TestFactory(_dbPath)));
 
     private async Task<GroupDetailViewModel> CreateGroupWithOcrAndAiAsync()
     {

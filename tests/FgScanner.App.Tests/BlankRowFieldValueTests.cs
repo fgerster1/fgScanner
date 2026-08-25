@@ -69,7 +69,8 @@ public sealed class BlankRowFieldValueTests : IDisposable
         new RetroProcessService(new TestFactory(_dbPath), _groupService, _trashService),
         new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false),
         new AppSettingsService(new TestFactory(_dbPath)),
-        new CaptureTriageService(new TestFactory(_dbPath), new AppSettingsService(new TestFactory(_dbPath))));
+        new CaptureTriageService(new TestFactory(_dbPath), new AppSettingsService(new TestFactory(_dbPath))),
+        new DuplicateFinder(new TestFactory(_dbPath)));
 
     /// <summary>A group with one blank-flagged page whose document already carries field values.</summary>
     private async Task<(Group Group, Guid DocumentId, GroupDetailViewModel Vm)> CreateGroupWithBlankPageAsync()

@@ -92,6 +92,7 @@ is taken automatically before every schema migration).
 | CreatedUtc | TEXT | no |  |
 | DocumentId | TEXT | no | FK → Documents |
 | FileName | TEXT | no |  |
+| ImageHash | TEXT | yes |  |
 | IsBlank | INTEGER | no |  |
 | OcrMeanConfidence | REAL | yes |  |
 | OcrStatus | INTEGER | no | enum: 0=No, 1=Pending, 2=Yes, 3=Failed |

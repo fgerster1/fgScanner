@@ -102,6 +102,7 @@ public partial class App : Application
                 services.AddSingleton<FgScanner.Core.Capture.IPageClassifier>(
                     new FgScanner.Scanning.Capture.PageClassifier());
                 services.AddSingleton<CaptureTriageService>();
+                services.AddSingleton<DuplicateFinder>();
                 services.AddSingleton<SearchService>();
                 services.AddSingleton(sp => new FgScanner.Core.Index.IndexExporter());
                 services.AddSingleton<IndexingService>();
@@ -135,7 +136,8 @@ public partial class App : Application
                     sp.GetRequiredService<RetroProcessService>(),
                     sp.GetRequiredService<FgScanner.Ai.CredentialStore>(),
                     sp.GetRequiredService<AppSettingsService>(),
-                    sp.GetRequiredService<CaptureTriageService>()));
+                    sp.GetRequiredService<CaptureTriageService>(),
+                    sp.GetRequiredService<DuplicateFinder>()));
                 services.AddSingleton(sp => new FgScanner.Ocr.LanguageManager());
                 services.AddSingleton(sp => new FgScanner.Ocr.TesseractRunner(
                     tessdataDir: sp.GetRequiredService<FgScanner.Ocr.LanguageManager>().TessdataDir));

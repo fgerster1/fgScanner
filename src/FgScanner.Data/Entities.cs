@@ -206,6 +206,12 @@ public class Page
     /// <summary>Plain OCR text; indexed by the PagesFts FTS5 table (phase 5 fills it).</summary>
     public string? OcrText { get; set; }
 
+    /// <summary>
+    /// Perceptual (dHash) fingerprint for near-duplicate detection, computed on demand and cached.
+    /// Cleared whenever the image is edited, since it describes the previous picture.
+    /// </summary>
+    public string? ImageHash { get; set; }
+
     /// <summary>AI description (≤1000 chars); phase 6 fills it.</summary>
     public string? AiDescription { get; set; }
 

@@ -8,6 +8,7 @@ using FgScanner.App.Services;
 using FgScanner.Core.Index;
 using FgScanner.Data;
 using FgScanner.Ocr;
+using FgScanner.Scanning.Capture;
 using Microsoft.Win32;
 using Serilog;
 
@@ -142,6 +143,54 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         }
 
         StatusText = $"{Rows.Count} page(s). State: {Group.State}.";
+    }
+
+    /// <summary>
+    /// Reviews suspected duplicates in this group. Deletion goes through the Trash, so a wrong
+    /// answer to an image hint stays recoverable.
+    /// </summary>
+    [RelayCommand]
+    private async Task CheckDuplicatesAsync()
+    {
+        try
+        {
+            StatusText = "Checking for duplicates…";
+            var candidates = await _toolset.Duplicates.FindAsync(
+                Group.Id, ImageHasher.Compute, ImageHasher.DefaultThreshold);
+            if (candidates.Count == 0)
+            {
+                StatusText = "No duplicates found.";
+                return;
+            }
+
+            var dialog = new Dialogs.DuplicateReviewDialog(candidates, Group.Name)
+            {
+                Owner = System.Windows.Application.Current?.MainWindow,
+            };
+            if (dialog.ShowDialog() != true || dialog.ToDelete.Count == 0)
+            {
+                StatusText = $"{candidates.Count} suspected duplicate(s) — nothing deleted.";
+                return;
+            }
+
+            foreach (var candidate in dialog.ToDelete)
+            {
+                await _trashService.DeleteDocumentAsync(candidate.RightDocumentId);
+            }
+
+            await ReloadRowsAsync();
+            if (Group.State == GroupState.Committed)
+            {
+                await _indexingService.ReexportAsync(Group.Id);
+            }
+
+            StatusText = $"Moved {dialog.ToDelete.Count} duplicate page(s) to Trash.";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Checking duplicates in {Group}", Group.Name);
+            StatusText = $"Duplicate check failed: {ex.Message}";
+        }
     }
 
     /// <summary>Opens Explorer at the selected page, since the grid now shows where files live.</summary>
