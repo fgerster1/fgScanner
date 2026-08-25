@@ -37,6 +37,9 @@ public sealed partial class GroupDetailViewModel
     private async Task AfterPageFileChangedAsync(Guid pageId)
     {
         await _toolset.Reorder.RefreshChecksumAsync(pageId);
+        // Undo/redo swaps the image file too, so text recognised from the other version is stale
+        // (BUG-5). A job that is still queued needs nothing — it reads the file when it runs.
+        await _toolset.OcrQueue.ReOcrEditedPageAsync(pageId);
         await ReloadRowsAsync();
         if (Group.State == GroupState.Committed)
         {
@@ -70,6 +73,8 @@ public sealed partial class GroupDetailViewModel
                 UndoRedo.Push(new FileEditAction(
                     description, row.ImagePath, before, after, () => AfterPageFileChangedAsync(pageId)));
                 await _toolset.Reorder.RefreshChecksumAsync(pageId);
+                // The recognised text belongs to the image we just replaced (BUG-5).
+                await _toolset.OcrQueue.ReOcrEditedPageAsync(pageId);
             }
 
             await ReloadRowsAsync();

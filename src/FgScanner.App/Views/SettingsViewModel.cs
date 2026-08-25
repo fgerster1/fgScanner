@@ -485,6 +485,39 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
 
+    /// <summary>Renames the selected profile using the name box beside "New profile".</summary>
+    [RelayCommand]
+    private async Task RenameProfileAsync()
+    {
+        if (SelectedProfile is not { } profile)
+        {
+            StatusText = "Select a profile to rename.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(NewProfileName))
+        {
+            StatusText = $"Type the new name for \"{profile.Name}\" in the box first.";
+            return;
+        }
+
+        try
+        {
+            var previous = profile.Name;
+            await _profileService.RenameAsync(profile.Id, NewProfileName);
+            var renamedId = profile.Id;
+            NewProfileName = "";
+            await ReloadAsync();
+            SelectedProfile = Profiles.FirstOrDefault(p => p.Id == renamedId);
+            ProfilesChanged?.Invoke();
+            StatusText = $"Renamed \"{previous}\" to \"{SelectedProfile?.Name}\".";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Could not rename profile: {ex.Message}";
+        }
+    }
+
     [RelayCommand]
     private void AddField()
     {

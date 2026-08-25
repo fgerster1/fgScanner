@@ -51,6 +51,32 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
         return profile;
     }
 
+    /// <summary>
+    /// Renames a profile. Until now Name was written only at creation and import, so the only way
+    /// to correct a typo was Export then Import, which produced a "(2)" copy and left the original.
+    /// </summary>
+    public async Task RenameAsync(Guid profileId, string newName, CancellationToken cancellationToken = default)
+    {
+        var trimmed = newName.Trim();
+        if (trimmed.Length == 0)
+        {
+            throw new InvalidOperationException("A profile name cannot be empty.");
+        }
+
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var clash = await db.Profiles
+            .AnyAsync(p => p.Id != profileId && p.Name == trimmed, cancellationToken).ConfigureAwait(false);
+        if (clash)
+        {
+            throw new InvalidOperationException($"A profile named \"{trimmed}\" already exists.");
+        }
+
+        var profile = await db.Profiles
+            .FirstAsync(p => p.Id == profileId, cancellationToken).ConfigureAwait(false);
+        profile.Name = trimmed;
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<IndexSchema> GetLatestSchemaAsync(Guid profileId, CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);

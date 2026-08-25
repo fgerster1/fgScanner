@@ -18,6 +18,51 @@ public sealed class OcrQueueService(IDbContextFactory<FgScannerDbContext> dbFact
     /// Queues OCR for the group's pages: all when <paramref name="force"/>, otherwise only pages
     /// not yet OCRed (No/Failed). Returns the number of jobs created.
     /// </summary>
+    /// <summary>
+    /// Re-runs OCR for a page whose image was just edited. Editing left the recognised text,
+    /// confidence and FTS entry describing the pre-edit image, with nothing marking them stale
+    /// (BUG-5): after rotating a misfed page the grid still claimed "Yes" and search still returned
+    /// the reversed text. The stale text is dropped rather than kept, because text that describes a
+    /// different image is worse than no text — search would keep serving it.
+    /// Pages that never had OCR are left alone: re-running them would impose OCR on a group whose
+    /// profile may not want it, purely because the user rotated something.
+    /// </summary>
+    /// <returns>True when the page had OCR to invalidate.</returns>
+    public async Task<bool> ReOcrEditedPageAsync(Guid pageId, CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var page = await db.Pages.FirstOrDefaultAsync(p => p.Id == pageId, cancellationToken).ConfigureAwait(false);
+        if (page is null || page.OcrStatus is not (OcrStatus.Yes or OcrStatus.Failed))
+        {
+            return false;
+        }
+
+        page.OcrText = null;
+        page.OcrMeanConfidence = null;
+        page.OcrStatus = OcrStatus.Pending;
+
+        var alreadyQueued = await db.Jobs.AnyAsync(
+            j => j.PageId == pageId && j.Type == JobType.Ocr
+                && (j.State == JobState.Pending || j.State == JobState.InFlight),
+            cancellationToken).ConfigureAwait(false);
+        if (!alreadyQueued)
+        {
+            db.Jobs.Add(new QueuedJob
+            {
+                Id = Guid.NewGuid(),
+                Type = JobType.Ocr,
+                PageId = page.Id,
+                State = JobState.Pending,
+                CreatedUtc = DateTime.UtcNow,
+                UpdatedUtc = DateTime.UtcNow,
+            });
+        }
+
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        JobsEnqueued?.Invoke();
+        return true;
+    }
+
     public async Task<int> EnqueueGroupAsync(
         Guid groupId, bool force = false, CancellationToken cancellationToken = default)
     {
