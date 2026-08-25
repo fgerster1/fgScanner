@@ -52,7 +52,7 @@ public sealed class CliIntegrationTests : IDisposable
 
         Assert.Equal(0, exit);
         Assert.Equal(3, Directory.GetFiles(GroupDir, "scan_*.png").Length);
-        var groups = await Groups.ListGroupsAsync(TestContext.Current.CancellationToken);
+        var groups = await Groups.ListGroupsAsync(cancellationToken: TestContext.Current.CancellationToken);
         var group = Assert.Single(groups);
         Assert.Equal("CliGroup", group.Name);
         Assert.Equal(3, (await Groups.GetPagesAsync(group.Id, TestContext.Current.CancellationToken)).Count);
@@ -68,7 +68,7 @@ public sealed class CliIntegrationTests : IDisposable
         Assert.Equal(0, exit);
         Assert.True(File.Exists(Path.Combine(GroupDir, "index.csv")));
         Assert.True(File.Exists(Path.Combine(GroupDir, "manifest.json")));
-        var group = Assert.Single(await Groups.ListGroupsAsync(TestContext.Current.CancellationToken));
+        var group = Assert.Single(await Groups.ListGroupsAsync(cancellationToken: TestContext.Current.CancellationToken));
         Assert.All(
             await Groups.GetPagesAsync(group.Id, TestContext.Current.CancellationToken),
             p => Assert.Equal(OcrStatus.Yes, p.OcrStatus)); // real Tesseract ran per page

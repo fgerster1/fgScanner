@@ -47,6 +47,23 @@ public sealed partial class GroupsViewModel : ObservableObject
     [ObservableProperty]
     private Profile? _selectedProfile;
 
+    /// <summary>
+    /// The profile combo doubles as "profile for new groups"; this makes it also narrow the list,
+    /// so switching profiles shows only that profile's groups.
+    /// </summary>
+    [ObservableProperty]
+    private bool _onlyCurrentProfile;
+
+    partial void OnSelectedProfileChanged(Profile? value)
+    {
+        if (OnlyCurrentProfile)
+        {
+            _ = RefreshAsync();
+        }
+    }
+
+    partial void OnOnlyCurrentProfileChanged(bool value) => _ = RefreshAsync();
+
     [ObservableProperty]
     private Group? _selectedGroup;
 
@@ -126,7 +143,10 @@ public sealed partial class GroupsViewModel : ObservableObject
     {
         var selectedId = SelectedGroup?.Id;
         Groups.Clear();
-        foreach (var group in await _groupService.ListGroupsAsync())
+        // "Only this profile" narrows the list to the selected profile's groups; off, every group
+        // is listed regardless of profile.
+        var filter = OnlyCurrentProfile ? SelectedProfile?.Id : null;
+        foreach (var group in await _groupService.ListGroupsAsync(filter))
         {
             Groups.Add(group);
         }

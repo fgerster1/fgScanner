@@ -54,7 +54,7 @@ public sealed class GroupPathIdentityTests : IDisposable
         var second = await _groupService.AdoptDirectoryAsync(lower, null, TestContext.Current.CancellationToken);
 
         Assert.Equal(first.Id, second.Id);
-        var all = await _groupService.ListGroupsAsync(TestContext.Current.CancellationToken);
+        var all = await _groupService.ListGroupsAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.Single(all);
     }
 
@@ -67,7 +67,7 @@ public sealed class GroupPathIdentityTests : IDisposable
             Path.Combine(_root, "Receipts"), null, TestContext.Current.CancellationToken);
 
         Assert.NotEqual(a.Id, b.Id);
-        Assert.Equal(2, (await _groupService.ListGroupsAsync(TestContext.Current.CancellationToken)).Count);
+        Assert.Equal(2, (await _groupService.ListGroupsAsync(cancellationToken: TestContext.Current.CancellationToken)).Count);
     }
 
     [Fact]

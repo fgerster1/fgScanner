@@ -283,9 +283,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             Pages.Clear();
             _sessionService.ResetSession();
             StatusText = $"Saved {result.Adopted.Count} page(s) to \"{group.Name}\"."
-                + (result.DuplicateSourceFiles.Count > 0
-                    ? $" {result.DuplicateSourceFiles.Count} duplicate(s) skipped."
-                    : "")
+                + DuplicateReport.Format(result.DuplicateSourceFiles)
                 + (triage.DroppedCount > 0
                     ? $" {triage.DroppedCount} page(s) dropped by capture policy (see journal.txt)."
                     : "");

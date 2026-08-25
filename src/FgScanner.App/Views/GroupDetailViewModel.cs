@@ -130,8 +130,11 @@ public sealed partial class GroupDetailViewModel : ObservableObject
                 Sequence = sequence,
                 ImageName = page.FileName,
                 ImagePath = Path.Combine(Group.DirectoryPath, page.FileName),
+                Folder = Group.DirectoryPath,
                 OcrStatus = FormatOcrStatus(page),
                 AiStatus = page.AiStatus.ToString(),
+                OcrText = page.OcrText,
+                AiDescription = page.AiDescription,
                 Values = values,
             };
             values.ValueChanged += () => _ = PersistRowAsync(documentRow);
@@ -139,6 +142,32 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         }
 
         StatusText = $"{Rows.Count} page(s). State: {Group.State}.";
+    }
+
+    /// <summary>Opens Explorer at the selected page, since the grid now shows where files live.</summary>
+    [RelayCommand]
+    private void OpenContainingFolder()
+    {
+        if (SelectedRow is not { } row)
+        {
+            return;
+        }
+
+        try
+        {
+            // /select, highlights the file itself rather than just opening the folder.
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                ArgumentList = { "/select,", row.ImagePath },
+                UseShellExecute = false,
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Opening containing folder for {Path}", row.ImagePath);
+            StatusText = $"Could not open the folder: {ex.Message}";
+        }
     }
 
     /// <summary>Selects the row for a document (used by search-result navigation).</summary>

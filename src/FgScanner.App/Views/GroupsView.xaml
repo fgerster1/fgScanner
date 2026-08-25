@@ -18,7 +18,10 @@
                 <TextBlock Text="Groups" FontWeight="SemiBold" Margin="0,0,0,6" />
                 <TextBlock Text="Profile for new groups" Opacity="0.7" />
                 <ComboBox ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}"
-                          DisplayMemberPath="Name" Margin="0,2,0,6" />
+                          DisplayMemberPath="Name" Margin="0,2,0,2" />
+                <CheckBox Content="Only this profile's groups" IsChecked="{Binding OnlyCurrentProfile}"
+                          Margin="0,0,0,6"
+                          ToolTip="Narrow the list below to groups created with the selected profile" />
                 <DockPanel Margin="0,0,0,6">
                     <Button DockPanel.Dock="Right" Content="Create…"
                             Command="{Binding CreateGroupCommand}" Margin="6,0,0,0" />
@@ -34,9 +37,17 @@
             <ListBox ItemsSource="{Binding Groups}" SelectedItem="{Binding SelectedGroup}">
                 <ListBox.ItemTemplate>
                     <DataTemplate>
-                        <StackPanel Margin="2">
+                        <!-- The path matters: two groups can share a name in different parents,
+                             and until now the list gave no way to tell them apart. -->
+                        <StackPanel Margin="2" ToolTip="{Binding DirectoryPath}">
                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                            <TextBlock Text="{Binding State}" Opacity="0.6" FontSize="11" />
+                            <TextBlock Text="{Binding DirectoryPath}" Opacity="0.55" FontSize="10"
+                                       TextTrimming="CharacterEllipsis" />
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding State}" Opacity="0.6" FontSize="11" />
+                                <TextBlock Text="{Binding Profile.Name, StringFormat=' · {0}'}" Opacity="0.6"
+                                           FontSize="11" />
+                            </StackPanel>
                         </StackPanel>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
@@ -134,7 +145,7 @@
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="170" />
+                    <ColumnDefinition Width="300" />
                 </Grid.ColumnDefinitions>
                 <DataGrid x:Name="EntryGrid" Grid.Column="0"
                           ItemsSource="{Binding Rows}"
@@ -164,11 +175,46 @@
                         </Style>
                     </DataGrid.CellStyle>
                 </DataGrid>
-                <Border Grid.Column="1" Margin="8,0,0,0" BorderBrush="Gray" BorderThickness="1"
-                        ToolTip="Drag this preview to copy the page file elsewhere">
-                    <Image Source="{Binding SelectedRow.ImagePath, Converter={x:Static views:ThumbnailConverter.Instance}}"
-                           Stretch="Uniform" MouseMove="OnThumbnailMouseMove" />
-                </Border>
+                <DockPanel Grid.Column="1" Margin="8,0,0,0">
+                    <Border DockPanel.Dock="Top" Height="190" BorderBrush="Gray" BorderThickness="1"
+                            ToolTip="Drag this preview to copy the page file elsewhere">
+                        <Image Source="{Binding SelectedRow.ImagePath, Converter={x:Static views:ThumbnailConverter.Instance}}"
+                               Stretch="Uniform" MouseMove="OnThumbnailMouseMove" />
+                    </Border>
+
+                    <StackPanel DockPanel.Dock="Top" Margin="0,8,0,0">
+                        <TextBlock Text="Folder" FontWeight="SemiBold" />
+                        <TextBox Text="{Binding SelectedRow.Folder, Mode=OneWay}" IsReadOnly="True"
+                                 TextWrapping="Wrap" BorderThickness="0" Background="Transparent"
+                                 Padding="0" Margin="0,2,0,4"
+                                 ToolTip="{Binding SelectedRow.ImagePath}" />
+                        <Button Content="Open containing folder" HorizontalAlignment="Left" Padding="8,3"
+                                Command="{Binding OpenContainingFolderCommand}" />
+                    </StackPanel>
+
+                    <!-- OCR text and the AI description are stored and exported but had no viewer;
+                         read-only TextBoxes so the text can be selected and copied. -->
+                    <Grid DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <GroupBox Grid.Row="0" Header="OCR text">
+                            <TextBox Text="{Binding SelectedRow.OcrText, Mode=OneWay}" IsReadOnly="True"
+                                     TextWrapping="Wrap" AcceptsReturn="True" BorderThickness="0"
+                                     Background="Transparent" FontFamily="Consolas" FontSize="11"
+                                     VerticalScrollBarVisibility="Auto" />
+                        </GroupBox>
+
+                        <GroupBox Grid.Row="1" Header="AI description" Margin="0,8,0,0" MaxHeight="150">
+                            <TextBox Text="{Binding SelectedRow.AiDescription, Mode=OneWay}" IsReadOnly="True"
+                                     TextWrapping="Wrap" AcceptsReturn="True" BorderThickness="0"
+                                     Background="Transparent" FontSize="11"
+                                     VerticalScrollBarVisibility="Auto" />
+                        </GroupBox>
+                    </Grid>
+                </DockPanel>
             </Grid>
         </DockPanel>
     </Grid>

@@ -170,7 +170,7 @@ public sealed class ShellTests : IDisposable
 
         // "Restart": a brand-new service over the same DB sees the group and its pages.
         var reloaded = new GroupService(new TestFactory(_dbPath));
-        var groups = await reloaded.ListGroupsAsync(TestContext.Current.CancellationToken);
+        var groups = await reloaded.ListGroupsAsync(cancellationToken: TestContext.Current.CancellationToken);
         var pages = await reloaded.GetPagesAsync(Assert.Single(groups).Id, TestContext.Current.CancellationToken);
         Assert.Equal(2, pages.Count);
     }

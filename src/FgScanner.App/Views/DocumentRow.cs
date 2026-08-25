@@ -23,9 +23,18 @@ public sealed class DocumentRow : ObservableObject
 
     public required string ImagePath { get; init; }
 
+    /// <summary>The folder the image lives in; shown so a group's location is visible in the grid.</summary>
+    public required string Folder { get; init; }
+
     public required string OcrStatus { get; init; }
 
     public required string AiStatus { get; init; }
+
+    /// <summary>Recognised text, surfaced read-only in the detail pane.</summary>
+    public string? OcrText { get; init; }
+
+    /// <summary>AI-generated description, surfaced read-only in the detail pane.</summary>
+    public string? AiDescription { get; init; }
 
     public required RowValues Values { get; init; }
 }

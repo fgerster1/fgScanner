@@ -80,10 +80,21 @@ public sealed class GroupService(IDbContextFactory<FgScannerDbContext> dbFactory
             .OrderBy(g => g.CreatedUtc).ThenBy(g => g.Id)
             .FirstOrDefaultAsync(cancellationToken);
 
-    public async Task<IReadOnlyList<Group>> ListGroupsAsync(CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Groups, newest activity first. Pass <paramref name="profileId"/> to list only the groups
+    /// belonging to one profile; Profile is included so the list can show which one owns a group.
+    /// </summary>
+    public async Task<IReadOnlyList<Group>> ListGroupsAsync(
+        Guid? profileId = null, CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-        return await db.Groups.OrderByDescending(g => g.UpdatedUtc).ToListAsync(cancellationToken).ConfigureAwait(false);
+        var query = db.Groups.Include(g => g.Profile).AsQueryable();
+        if (profileId is { } id)
+        {
+            query = query.Where(g => g.ProfileId == id);
+        }
+
+        return await query.OrderByDescending(g => g.UpdatedUtc).ToListAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<Page>> GetPagesAsync(Guid groupId, CancellationToken cancellationToken = default)
