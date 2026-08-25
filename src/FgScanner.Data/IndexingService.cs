@@ -30,6 +30,26 @@ public sealed class IndexingService(
 
     // ---- field values ----
 
+    /// <summary>
+    /// Stored field values for every document in the group, blank-flagged documents included.
+    /// The export projection deliberately omits blanks (they never reach an index file), so the
+    /// grid must not source values from it: doing so rendered blank rows empty and the first edit
+    /// then persisted that emptiness over the real values (BUG-3, docs/roadmap-v0.2.md).
+    /// </summary>
+    public async Task<IReadOnlyDictionary<Guid, IReadOnlyDictionary<string, string?>>> GetStoredFieldValuesAsync(
+        Guid groupId, CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var documents = await db.Documents
+            .Where(d => d.GroupId == groupId)
+            .Select(d => new { d.Id, d.CustomFieldsJson })
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        return documents.ToDictionary(
+            d => d.Id,
+            d => (IReadOnlyDictionary<string, string?>)(
+                JsonSerializer.Deserialize<Dictionary<string, string?>>(d.CustomFieldsJson) ?? []));
+    }
+
     public async Task SetFieldValuesAsync(
         Guid documentId, IReadOnlyDictionary<string, string?> values, CancellationToken cancellationToken = default)
     {

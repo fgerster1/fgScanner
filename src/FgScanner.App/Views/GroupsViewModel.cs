@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FgScanner.App.Services;
+using FgScanner.Core;
 using FgScanner.Data;
 using Microsoft.Win32;
 using Serilog;
@@ -148,6 +150,9 @@ public sealed partial class GroupsViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(NewGroupName))
         {
+            System.Windows.MessageBox.Show(
+                "Type a name for the group first.", "Create group",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
             return;
         }
 
@@ -159,6 +164,21 @@ public sealed partial class GroupsViewModel : ObservableObject
 
         try
         {
+            // Creating into a folder that is already a group silently opened that group instead,
+            // so the user got a different group than they asked for with no explanation (BUG-4).
+            var target = Path.Combine(dialog.FolderName, GroupNameSanitizer.Sanitize(NewGroupName));
+            if (await _groupService.GroupExistsForDirectoryAsync(target))
+            {
+                var answer = System.Windows.MessageBox.Show(
+                    $"\"{target}\" is already a group. Open it instead of creating a new one?",
+                    "Group already exists",
+                    System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Question);
+                if (answer != System.Windows.MessageBoxResult.OK)
+                {
+                    return;
+                }
+            }
+
             var group = await _groupService.CreateGroupAsync(
                 dialog.FolderName, NewGroupName, await ResolveProfileRefAsync());
             NewGroupName = "";
@@ -168,6 +188,9 @@ public sealed partial class GroupsViewModel : ObservableObject
         catch (Exception ex)
         {
             Log.Error(ex, "Creating group");
+            System.Windows.MessageBox.Show(
+                $"Creating the group failed: {ex.Message}", "Create group",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
         }
     }
 

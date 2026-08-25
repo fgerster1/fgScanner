@@ -28,11 +28,10 @@ public sealed class GroupService(IDbContextFactory<FgScannerDbContext> dbFactory
         string directory, (Guid ProfileId, int SchemaVersion)? profile = null,
         CancellationToken cancellationToken = default)
     {
-        var fullPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
+        var fullPath = NormalizeDirectory(directory);
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
-        var existing = await db.Groups
-            .FirstOrDefaultAsync(g => g.DirectoryPath == fullPath, cancellationToken).ConfigureAwait(false);
+        var existing = await FindByDirectoryAsync(db, fullPath, cancellationToken).ConfigureAwait(false);
         if (existing is not null)
         {
             return existing;
@@ -54,6 +53,32 @@ public sealed class GroupService(IDbContextFactory<FgScannerDbContext> dbFactory
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return group;
     }
+
+    /// <summary>True when a group already owns this directory, ignoring case (see BUG-4).</summary>
+    public async Task<bool> GroupExistsForDirectoryAsync(
+        string directory, CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        return await FindByDirectoryAsync(db, NormalizeDirectory(directory), cancellationToken)
+            .ConfigureAwait(false) is not null;
+    }
+
+    private static string NormalizeDirectory(string directory) =>
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
+
+    /// <summary>
+    /// Windows paths are case-insensitive but SQLite's default collation is BINARY, so a plain
+    /// equality match let "C:\Docs" and "c:\docs" each mint a Group row over one physical folder,
+    /// whose index files then overwrote each other (BUG-4, docs/roadmap-v0.2.md). NOCASE keeps the
+    /// comparison in SQL; the OrderBy makes the winner deterministic when a database already
+    /// contains such a pair from before this fix.
+    /// </summary>
+    private static Task<Group?> FindByDirectoryAsync(
+        FgScannerDbContext db, string fullPath, CancellationToken cancellationToken) =>
+        db.Groups
+            .Where(g => EF.Functions.Collate(g.DirectoryPath, "NOCASE") == fullPath)
+            .OrderBy(g => g.CreatedUtc).ThenBy(g => g.Id)
+            .FirstOrDefaultAsync(cancellationToken);
 
     public async Task<IReadOnlyList<Group>> ListGroupsAsync(CancellationToken cancellationToken = default)
     {

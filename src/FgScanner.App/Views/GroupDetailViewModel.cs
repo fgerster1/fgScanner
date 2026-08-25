@@ -110,16 +110,17 @@ public sealed partial class GroupDetailViewModel : ObservableObject
     {
         Rows.Clear();
         var pages = await _groupService.GetPagesAsync(Group.Id);
-        var documents = await _indexingService.BuildExportDataAsync(Group.Id);
-        var byImage = documents.Rows.ToDictionary(r => r.ImageName, StringComparer.OrdinalIgnoreCase);
+        // Read stored values straight from the documents, keyed by id. Sourcing them from the
+        // export projection skipped blank-flagged rows entirely (BUG-3).
+        var storedValues = await _indexingService.GetStoredFieldValuesAsync(Group.Id);
         var sequence = 0;
         foreach (var page in pages)
         {
             sequence++;
             var values = new RowValues(Fields);
-            if (byImage.TryGetValue(page.FileName, out var row))
+            if (storedValues.TryGetValue(page.DocumentId, out var stored))
             {
-                values.Load(row.CustomValues);
+                values.Load(stored);
             }
 
             var documentRow = new DocumentRow
