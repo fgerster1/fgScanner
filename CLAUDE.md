@@ -49,7 +49,7 @@ FgScanner.Cli  (headless fgscanner.exe; Core/Scanning/Data/Ocr/Ai — never App/
 **Code:**
 - Comments explain *why*, never what. Validate at boundaries (user input, files, external APIs) only. No features beyond the task.
 - Hardware access only through `IScanService`. All index/file writes atomic (temp + `File.Replace`). Dates ISO-8601; numbers invariant culture.
-- User-visible strings go in .resx from phase 3 onward.
+- UI is English-only; user-visible strings are written inline, no .resx (docs/adr/0001).
 
 **Tests:**
 - Business logic must run without a scanner (FakeScanService). OCR tests run real Tesseract (deterministic — never mock the engine). AI tests use MockHttp — never live keys, never network in CI. CSV/PDF assertions via Verify snapshots (scrub PDF /CreationDate /ModDate /ID).
