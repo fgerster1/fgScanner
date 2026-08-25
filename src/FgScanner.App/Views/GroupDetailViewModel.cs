@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -80,10 +81,17 @@ public sealed partial class GroupDetailViewModel : ObservableObject
             Fields = schema.Fields;
         }
 
+        foreach (var stale in PendingFields)
+        {
+            stale.PropertyChanged -= OnPendingFieldChanged;
+        }
+
         PendingFields.Clear();
         foreach (var field in Fields)
         {
-            PendingFields.Add(new PendingFieldEditor(field));
+            var editor = new PendingFieldEditor(field);
+            editor.PropertyChanged += OnPendingFieldChanged;
+            PendingFields.Add(editor);
         }
 
         await ReloadRowsAsync();
@@ -342,6 +350,18 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         {
             Log.Error(ex, "Persisting row {Doc}", row.DocumentId);
             StatusText = $"Save failed: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Republishes on every keystroke. Publishing once at load time captured nothing but nulls, so
+    /// everything typed before a scan was silently dropped (BUG-2, docs/roadmap-v0.2.md).
+    /// </summary>
+    private void OnPendingFieldChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PendingFieldEditor.Value))
+        {
+            PushPendingValues();
         }
     }
 
