@@ -214,6 +214,152 @@ public sealed partial class GroupsViewModel : ObservableObject
         }
     }
 
+    /// <summary>Raised by "Scan into this group" so the shell can switch to the Scan section.</summary>
+    public event Action? ScanRequested;
+
+    /// <summary>
+    /// Selecting the group already points ActiveGroupStore at it, so scanning into it is just a
+    /// jump to the Scan section — which is the same screen, rather than a second copy of it.
+    /// </summary>
+    [RelayCommand]
+    private void ScanIntoGroup()
+    {
+        if (SelectedGroup is null)
+        {
+            return;
+        }
+
+        ScanRequested?.Invoke();
+    }
+
+    /// <summary>Moves every page of the selected group into another group.</summary>
+    [RelayCommand]
+    private async Task MoveContentsAsync()
+    {
+        if (SelectedGroup is not { } source)
+        {
+            return;
+        }
+
+        var others = Groups.Where(g => g.Id != source.Id).ToList();
+        if (others.Count == 0)
+        {
+            System.Windows.MessageBox.Show(
+                "There is no other group to move these scans into. Create one first.",
+                "Move scans", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            return;
+        }
+
+        var picked = Dialogs.GroupPicker.Show(
+            System.Windows.Application.Current?.MainWindow,
+            $"Move all scans out of \"{source.Name}\" into:", others);
+        if (picked is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var documentIds = await _groupService.GetDocumentIdsAsync(source.Id);
+            var result = await _groupService.MoveDocumentsAsync(source.Id, picked.Id, documentIds);
+            await ReexportIfCommittedAsync(source.Id, picked.Id);
+            await RefreshAsync();
+            ReportMove(result, picked.Name);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Moving contents of {Group}", source.Name);
+            System.Windows.MessageBox.Show(
+                $"Moving the scans failed: {ex.Message}", "Move scans",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+        }
+    }
+
+    /// <summary>Deletes the selected group; the file policy is chosen in the dialog.</summary>
+    [RelayCommand]
+    private async Task DeleteGroupAsync()
+    {
+        if (SelectedGroup is not { } group)
+        {
+            return;
+        }
+
+        var pages = await _groupService.GetPagesAsync(group.Id);
+        var dialog = new Dialogs.DeleteGroupDialog(group, pages.Count, [.. Groups.Where(g => g.Id != group.Id)])
+        {
+            Owner = System.Windows.Application.Current?.MainWindow,
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        try
+        {
+            // Moving the scans out first leaves an empty group, which is then removed with its
+            // (now empty) folder left alone.
+            if (dialog.TargetGroup is { } target)
+            {
+                var documentIds = await _groupService.GetDocumentIdsAsync(group.Id);
+                var moveResult = await _groupService.MoveDocumentsAsync(group.Id, target.Id, documentIds);
+                await ReexportIfCommittedAsync(group.Id, target.Id);
+                ReportMove(moveResult, target.Name);
+                if (moveResult.SkippedAsDuplicate.Count > 0)
+                {
+                    await RefreshAsync();
+                    return; // something is still in there; deleting now would discard it
+                }
+            }
+
+            await _groupService.DeleteGroupAsync(
+                group.Id, dialog.Policy, _trashService.TrashRoot, dialog.MoveTo);
+            SelectedGroup = null;
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Deleting group {Group}", group.Name);
+            System.Windows.MessageBox.Show(
+                $"Deleting the group failed: {ex.Message}", "Delete group",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+        }
+    }
+
+    private async Task ReexportIfCommittedAsync(params Guid[] groupIds)
+    {
+        foreach (var id in groupIds)
+        {
+            var group = await _groupService.FindAsync(id);
+            if (group is { State: GroupState.Committed })
+            {
+                await _indexingService.ReexportAsync(id);
+            }
+        }
+    }
+
+    private static void ReportMove(MoveResult result, string targetName)
+    {
+        var lines = new List<string> { $"Moved {result.MovedCount} page(s) into \"{targetName}\"." };
+        if (result.SkippedAsDuplicate.Count > 0)
+        {
+            lines.Add($"Left behind, because the same content is already in \"{targetName}\": "
+                + string.Join(", ", result.SkippedAsDuplicate.Take(8)));
+        }
+
+        if (result.TargetSchemaDiffers && result.MovedCount > 0)
+        {
+            lines.Add("The two groups use different profiles or schema versions, so some field "
+                + "values may not line up with the target's columns.");
+        }
+
+        System.Windows.MessageBox.Show(
+            string.Join("\n\n", lines), "Move scans",
+            System.Windows.MessageBoxButton.OK,
+            result.SkippedAsDuplicate.Count > 0
+                ? System.Windows.MessageBoxImage.Warning
+                : System.Windows.MessageBoxImage.Information);
+    }
+
     /// <summary>Retro-processing (PLAN §5.7): register an existing folder's images and PDFs.</summary>
     [RelayCommand]
     private async Task ProcessExistingFolderAsync()

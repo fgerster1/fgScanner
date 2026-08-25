@@ -13,6 +13,9 @@ public sealed class TrashService(
     string trashRoot,
     TimeProvider? time = null)
 {
+    /// <summary>Where trashed content lives; group deletes relocate whole folders here.</summary>
+    public string TrashRoot => trashRoot;
+
     public const string RetentionSettingKey = "Trash.RetentionDays";
     public const int DefaultRetentionDays = 30;
     private static readonly string[] SidecarExtensions = [".md", ".txt"];

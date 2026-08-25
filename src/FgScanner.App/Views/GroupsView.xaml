@@ -35,6 +35,20 @@
                         ToolTip="Register a folder full of images and PDFs as a group (PLAN §5.7)" />
             </StackPanel>
             <ListBox ItemsSource="{Binding Groups}" SelectedItem="{Binding SelectedGroup}">
+                <ListBox.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Scan into this group"
+                                  Command="{Binding PlacementTarget.DataContext.ScanIntoGroupCommand,
+                                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                        <Separator />
+                        <MenuItem Header="Move all scans to another group…"
+                                  Command="{Binding PlacementTarget.DataContext.MoveContentsCommand,
+                                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                        <MenuItem Header="Delete group…"
+                                  Command="{Binding PlacementTarget.DataContext.DeleteGroupCommand,
+                                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                    </ContextMenu>
+                </ListBox.ContextMenu>
                 <ListBox.ItemTemplate>
                     <DataTemplate>
                         <!-- The path matters: two groups can share a name in different parents,

@@ -36,6 +36,9 @@ public partial class ShellWindow : Window
                 await _settings.GetAsync(SettingsViewModel.ShortcutsSettingKey, "")));
             await RestoreSessionAsync();
         };
+        // "Scan into this group" reuses the real Scan screen rather than a second copy of it;
+        // selecting the group has already pointed ActiveGroupStore at it.
+        viewModel.GroupsViewModel.ScanRequested += () => _viewModel.SelectedSection = "Scan";
         Closing += (_, _) => SaveSession();
     }
 
