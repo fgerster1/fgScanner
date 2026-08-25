@@ -57,6 +57,13 @@ public class Profile
     /// <summary>Serialized scan settings (device/dpi/source…); structured in phase 4.</summary>
     public string ScanSettingsJson { get; set; } = "{}";
 
+    /// <summary>
+    /// Root folder this profile's groups are created under. Empty means "ask every time", which is
+    /// what every create/adopt/retro dialog did before: each opened its own folder picker with no
+    /// memory of where this profile's work lives.
+    /// </summary>
+    public string BaseDirectory { get; set; } = "";
+
     public bool OcrEnabled { get; set; }
 
     public string OcrLanguages { get; set; } = "eng";

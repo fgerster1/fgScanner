@@ -13,8 +13,21 @@
                 <Button DockPanel.Dock="Right" Content="New profile" Command="{Binding CreateProfileCommand}" Margin="6,0,0,0" />
                 <Button DockPanel.Dock="Right" Content="Rename" Command="{Binding RenameProfileCommand}" Margin="6,0,0,0"
                         ToolTip="Rename the selected profile to the name in the box" />
+                <Button DockPanel.Dock="Right" Content="Delete" Command="{Binding DeleteProfileCommand}" Margin="6,0,0,0"
+                        ToolTip="Delete the selected profile (refused while groups still use it)" />
                 <TextBox DockPanel.Dock="Right" Width="160" Text="{Binding NewProfileName, UpdateSourceTrigger=PropertyChanged}" Margin="6,0,0,0" />
                 <ComboBox ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}" DisplayMemberPath="Name" />
+            </DockPanel>
+
+            <!-- With a base directory set, creating a group stops asking where to put it. -->
+            <DockPanel Margin="0,0,0,8">
+                <TextBlock DockPanel.Dock="Left" Text="Base folder for new groups" VerticalAlignment="Center"
+                           Width="180" Opacity="0.75" />
+                <Button DockPanel.Dock="Right" Content="Clear" Command="{Binding ClearBaseDirectoryCommand}"
+                        Margin="6,0,0,0" Padding="8,2" ToolTip="Ask every time instead" />
+                <Button DockPanel.Dock="Right" Content="Browse…" Command="{Binding PickBaseDirectoryCommand}"
+                        Margin="6,0,0,0" Padding="8,2" />
+                <TextBox Text="{Binding BaseDirectory, Mode=OneWay}" IsReadOnly="True" Background="Transparent" />
             </DockPanel>
 
             <TextBlock Text="Custom fields (up to 12; saving creates a new schema version)" Opacity="0.7" Margin="0,0,0,4" />

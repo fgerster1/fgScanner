@@ -485,6 +485,92 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
 
+    /// <summary>Base folder of the selected profile; empty means "ask every time".</summary>
+    public string BaseDirectory => SelectedProfile?.BaseDirectory ?? "";
+
+    [RelayCommand]
+    private async Task PickBaseDirectoryAsync()
+    {
+        if (SelectedProfile is not { } profile)
+        {
+            StatusText = "Select a profile first.";
+            return;
+        }
+
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = $"Base folder for new \"{profile.Name}\" groups",
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        await SetBaseDirectoryAsync(profile.Id, dialog.FolderName);
+    }
+
+    [RelayCommand]
+    private async Task ClearBaseDirectoryAsync()
+    {
+        if (SelectedProfile is { } profile)
+        {
+            await SetBaseDirectoryAsync(profile.Id, "");
+        }
+    }
+
+    private async Task SetBaseDirectoryAsync(Guid profileId, string folder)
+    {
+        try
+        {
+            await _profileService.UpdateBaseDirectoryAsync(profileId, folder);
+            await ReloadAsync();
+            SelectedProfile = Profiles.FirstOrDefault(p => p.Id == profileId);
+            OnPropertyChanged(nameof(BaseDirectory));
+            ProfilesChanged?.Invoke();
+            StatusText = folder.Length == 0
+                ? "New groups will ask where to go."
+                : $"New groups will be created under {folder}.";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Could not set the base folder: {ex.Message}";
+        }
+    }
+
+    /// <summary>Deletes the selected profile; refused while any group still uses it.</summary>
+    [RelayCommand]
+    private async Task DeleteProfileAsync()
+    {
+        if (SelectedProfile is not { } profile)
+        {
+            StatusText = "Select a profile to delete.";
+            return;
+        }
+
+        var confirm = System.Windows.MessageBox.Show(
+            $"Delete the profile \"{profile.Name}\"?\n\nIts index schema and field definitions go with it. "
+                + "Groups already created keep their scans and their stored field values.",
+            "Delete profile",
+            System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Warning);
+        if (confirm != System.Windows.MessageBoxResult.OK)
+        {
+            return;
+        }
+
+        try
+        {
+            await _profileService.DeleteAsync(profile.Id);
+            await ReloadAsync();
+            SelectedProfile = Profiles.FirstOrDefault();
+            ProfilesChanged?.Invoke();
+            StatusText = $"Deleted profile \"{profile.Name}\".";
+        }
+        catch (Exception ex)
+        {
+            StatusText = ex.Message;
+        }
+    }
+
     /// <summary>Renames the selected profile using the name box beside "New profile".</summary>
     [RelayCommand]
     private async Task RenameProfileAsync()

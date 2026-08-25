@@ -176,17 +176,24 @@ public sealed partial class GroupsViewModel : ObservableObject
             return;
         }
 
-        var dialog = new OpenFolderDialog { Title = "Choose where to create the group folder" };
-        if (dialog.ShowDialog() != true)
+        // A profile with a base directory knows where its work lives, so it does not ask again.
+        var parent = SelectedProfile?.BaseDirectory;
+        if (string.IsNullOrWhiteSpace(parent))
         {
-            return;
+            var dialog = new OpenFolderDialog { Title = "Choose where to create the group folder" };
+            if (dialog.ShowDialog() != true)
+            {
+                return;
+            }
+
+            parent = dialog.FolderName;
         }
 
         try
         {
             // Creating into a folder that is already a group silently opened that group instead,
             // so the user got a different group than they asked for with no explanation (BUG-4).
-            var target = Path.Combine(dialog.FolderName, GroupNameSanitizer.Sanitize(NewGroupName));
+            var target = Path.Combine(parent, GroupNameSanitizer.Sanitize(NewGroupName));
             if (await _groupService.GroupExistsForDirectoryAsync(target))
             {
                 var answer = System.Windows.MessageBox.Show(
@@ -200,7 +207,7 @@ public sealed partial class GroupsViewModel : ObservableObject
             }
 
             var group = await _groupService.CreateGroupAsync(
-                dialog.FolderName, NewGroupName, await ResolveProfileRefAsync());
+                parent, NewGroupName, await ResolveProfileRefAsync());
             NewGroupName = "";
             await RefreshAsync();
             SelectedGroup = Groups.First(g => g.Id == group.Id);

@@ -107,6 +107,7 @@ is taken automatically before every schema migration).
 |---|---|---|---|
 | Id | TEXT | no | PK |
 | AiDescriptionEnabled | INTEGER | no |  |
+| BaseDirectory | TEXT | no |  |
 | BlankPolicy | INTEGER | no | enum: 0=Keep, 1=Drop, 2=Flag, 3=Separator |
 | CreatedUtc | TEXT | no |  |
 | CsvDelimiter | TEXT | no |  |

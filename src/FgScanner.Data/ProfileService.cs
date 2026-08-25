@@ -52,6 +52,55 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
     }
 
     /// <summary>
+    /// Sets the root folder new groups for this profile are created under. Empty restores
+    /// "ask every time".
+    /// </summary>
+    public async Task UpdateBaseDirectoryAsync(
+        Guid profileId, string baseDirectory, CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var profile = await db.Profiles
+            .FirstAsync(p => p.Id == profileId, cancellationToken).ConfigureAwait(false);
+        profile.BaseDirectory = baseDirectory.Trim();
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Deletes a profile, refusing while any group still uses it. Group.ProfileId carries no
+    /// declared delete behaviour, so an unguarded delete would either cascade the groups away or
+    /// throw at runtime — and opening a group resolves its schema through the profile, so a group
+    /// whose profile vanished would lose its columns and leave CustomFieldsJson unreachable.
+    /// The last profile is protected because EnsureDefaultAsync assumes one exists.
+    /// </summary>
+    public async Task DeleteAsync(Guid profileId, CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var profile = await db.Profiles
+            .FirstAsync(p => p.Id == profileId, cancellationToken).ConfigureAwait(false);
+
+        if (await db.Profiles.CountAsync(cancellationToken).ConfigureAwait(false) <= 1)
+        {
+            throw new InvalidOperationException(
+                $"\"{profile.Name}\" is the last profile and cannot be deleted.");
+        }
+
+        var usedBy = await db.Groups
+            .CountAsync(g => g.ProfileId == profileId, cancellationToken).ConfigureAwait(false);
+        if (usedBy > 0)
+        {
+            throw new InvalidOperationException(
+                $"\"{profile.Name}\" is used by {usedBy} group(s). Move or delete those groups first.");
+        }
+
+        var schemas = await db.IndexSchemas
+            .Where(s => s.ProfileId == profileId)
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        db.IndexSchemas.RemoveRange(schemas); // field definitions cascade from the schema
+        db.Profiles.Remove(profile);
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Renames a profile. Until now Name was written only at creation and import, so the only way
     /// to correct a typo was Export then Import, which produced a "(2)" copy and left the original.
     /// </summary>
