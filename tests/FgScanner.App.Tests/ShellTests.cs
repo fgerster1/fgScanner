@@ -87,7 +87,7 @@ public sealed class ShellTests : IDisposable
         var shell = new ShellViewModel(
             CreateScanViewModel(),
             new GroupsViewModel(_groupService, _profileService, _indexingService, _trashService, _activeGroup, CreateToolset(), CreateRetroService()),
-            new SearchViewModel(new SearchService(new TestFactory(_dbPath))),
+            new SearchViewModel(new SearchService(new TestFactory(_dbPath)), _groupService),
             new TrashViewModel(_trashService, _activeGroup),
             new SettingsViewModel(
                 _profileService, _trashService, settings,
@@ -103,7 +103,7 @@ public sealed class ShellTests : IDisposable
         var shell = new ShellViewModel(
             CreateScanViewModel(),
             new GroupsViewModel(_groupService, _profileService, _indexingService, _trashService, _activeGroup, CreateToolset(), CreateRetroService()),
-            new SearchViewModel(new SearchService(new TestFactory(_dbPath))),
+            new SearchViewModel(new SearchService(new TestFactory(_dbPath)), _groupService),
             new TrashViewModel(_trashService, _activeGroup),
             new SettingsViewModel(
                 _profileService, _trashService,

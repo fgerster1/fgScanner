@@ -27,8 +27,14 @@ public sealed class SearchService(IDbContextFactory<FgScannerDbContext> dbFactor
 
     private const int SnippetContext = 60;
 
+    /// <summary>
+    /// Searches OCR text, index field values and AI descriptions. Pass <paramref name="groupId"/>
+    /// to search inside one group; null searches every group. Group was output-only before — a hit
+    /// told you which group it came from, but you could not ask the question of one group.
+    /// </summary>
     public async Task<IReadOnlyList<SearchHit>> SearchAsync(
-        string query, int limit = 50, CancellationToken cancellationToken = default)
+        string query, int limit = 50, Guid? groupId = null,
+        CancellationToken cancellationToken = default)
     {
         query = query.Trim();
         if (query.Length == 0)
@@ -40,17 +46,18 @@ public sealed class SearchService(IDbContextFactory<FgScannerDbContext> dbFactor
         var seenPages = new HashSet<Guid>();
 
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-        await FtsSearchAsync(db, query, limit, hits, seenPages, cancellationToken).ConfigureAwait(false);
+        await FtsSearchAsync(db, query, limit, groupId, hits, seenPages, cancellationToken).ConfigureAwait(false);
         if (hits.Count < limit)
         {
-            await FieldAndAiSearchAsync(db, query, limit, hits, seenPages, cancellationToken).ConfigureAwait(false);
+            await FieldAndAiSearchAsync(db, query, limit, groupId, hits, seenPages, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         return hits;
     }
 
     private static async Task FtsSearchAsync(
-        FgScannerDbContext db, string query, int limit,
+        FgScannerDbContext db, string query, int limit, Guid? groupId,
         List<SearchHit> hits, HashSet<Guid> seenPages, CancellationToken cancellationToken)
     {
         var connection = db.Database.GetDbConnection();
@@ -65,11 +72,14 @@ public sealed class SearchService(IDbContextFactory<FgScannerDbContext> dbFactor
                 JOIN Pages p ON p.rowid = PagesFts.rowid
                 JOIN Documents d ON d.Id = p.DocumentId
                 JOIN Groups g ON g.Id = d.GroupId
-                WHERE PagesFts MATCH $query
+                WHERE PagesFts MATCH $query AND ($group IS NULL OR d.GroupId = $group)
                 ORDER BY rank
                 LIMIT $limit
                 """;
             AddParameter(command, "$query", ToFtsQuery(query));
+            // Bind the Guid itself rather than a formatted string: the provider then writes it the
+            // same way EF stored the column, and DBNull means "every group" for the IS NULL branch.
+            AddParameter(command, "$group", groupId.HasValue ? groupId.Value : (object)DBNull.Value);
             AddParameter(command, "$hs", HighlightStart.ToString());
             AddParameter(command, "$he", HighlightEnd.ToString());
             AddParameter(command, "$limit", limit);
@@ -92,11 +102,12 @@ public sealed class SearchService(IDbContextFactory<FgScannerDbContext> dbFactor
     }
 
     private static async Task FieldAndAiSearchAsync(
-        FgScannerDbContext db, string query, int limit,
+        FgScannerDbContext db, string query, int limit, Guid? groupId,
         List<SearchHit> hits, HashSet<Guid> seenPages, CancellationToken cancellationToken)
     {
         var pattern = "%" + EscapeLike(query) + "%";
         var candidates = await db.Pages
+            .Where(p => groupId == null || p.Document!.GroupId == groupId)
             .Where(p => EF.Functions.Like(p.Document!.CustomFieldsJson, pattern, "\\")
                 || (p.AiDescription != null && EF.Functions.Like(p.AiDescription, pattern, "\\")))
             .Select(p => new

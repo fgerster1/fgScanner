@@ -10,6 +10,10 @@
         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
             <Button DockPanel.Dock="Right" Content="Search" Command="{Binding SearchCommand}"
                     Padding="14,6" Margin="6,0,0,0" />
+            <ComboBox DockPanel.Dock="Right" Width="200" Margin="6,0,0,0"
+                      ItemsSource="{Binding Scopes}" SelectedItem="{Binding SelectedScope}"
+                      DisplayMemberPath="Label"
+                      ToolTip="Search everything, or just one group" />
             <TextBox Text="{Binding Query, UpdateSourceTrigger=PropertyChanged}" Padding="8,6">
                 <TextBox.InputBindings>
                     <KeyBinding Key="Return" Command="{Binding SearchCommand}" />

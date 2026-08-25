@@ -189,6 +189,12 @@ public partial class ShellWindow : Window
             {
                 _ = trash.RefreshAsync();
             }
+
+            // Rebuild the scope list on entry so groups created since startup are selectable.
+            if (section == "Search" && view is SearchView { DataContext: SearchViewModel search })
+            {
+                _ = search.RefreshScopesAsync();
+            }
         }
     }
 }
