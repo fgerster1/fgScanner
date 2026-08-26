@@ -40,6 +40,14 @@ public sealed partial class GroupsViewModel : ObservableObject
         _ = InitializeAsync();
     }
 
+    /// <summary>
+    /// App settings, so the view can remember the preview splitter sizes. Panel geometry is view
+    /// state rather than anything this view model reasons about, but the toolset already carries
+    /// the service and threading a second dependency through every construction site to store two
+    /// numbers would cost more than it explains.
+    /// </summary>
+    public AppSettingsService Settings => _toolset.Settings;
+
     public ObservableCollection<Group> Groups { get; } = [];
 
     public ObservableCollection<Profile> Profiles { get; } = [];

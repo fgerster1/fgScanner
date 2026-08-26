@@ -258,6 +258,33 @@ public sealed partial class GroupDetailViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Opens the selected page full size, with the rest of the group a key away. Modal, like every
+    /// other dialog here: the grid underneath would be re-sorted or reloaded by an edit while the
+    /// viewer held references to its rows.
+    /// </summary>
+    [RelayCommand]
+    private void OpenPageViewer()
+    {
+        if (Rows.Count == 0)
+        {
+            return;
+        }
+
+        var start = SelectedRow is null ? 0 : Rows.IndexOf(SelectedRow);
+        var viewer = new Dialogs.PageViewerWindow([.. Rows], start)
+        {
+            Owner = System.Windows.Application.Current?.MainWindow,
+        };
+        viewer.ShowDialog();
+
+        // The grid follows the viewer, so closing on page 7 does not drop the user back on page 1.
+        if (viewer.Current is { } landed)
+        {
+            SelectedRow = Rows.FirstOrDefault(r => r.DocumentId == landed.DocumentId) ?? landed;
+        }
+    }
+
+    /// <summary>
     /// Reviews suspected duplicates in this group. Deletion goes through the Trash, so a wrong
     /// answer to an image hint stays recoverable.
     /// </summary>

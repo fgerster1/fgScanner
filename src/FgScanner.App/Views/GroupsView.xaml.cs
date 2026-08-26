@@ -11,6 +11,9 @@ public partial class GroupsView : UserControl
 {
     private GroupDetailViewModel? _detail;
 
+    private const string PreviewWidthKey = "Session.PreviewPanelWidth";
+    private const string PreviewHeightKey = "Session.PreviewPanelHeight";
+
     public GroupsView()
     {
         InitializeComponent();
@@ -20,8 +23,72 @@ public partial class GroupsView : UserControl
             {
                 vm.PropertyChanged += OnViewModelPropertyChanged;
                 HookDetail(vm.Detail);
+                _ = RestorePanelSizesAsync(vm);
             }
         };
+        Unloaded += (_, _) => SavePanelSizes();
+    }
+
+    /// <summary>
+    /// A panel the user dragged wider that snaps back on the next launch has not really been made
+    /// resizable. Stored as plain numbers rather than window state so a bad value cannot wedge the
+    /// layout — anything unparseable or out of range falls back to the design size.
+    /// </summary>
+    private async Task RestorePanelSizesAsync(GroupsViewModel vm)
+    {
+        try
+        {
+            PreviewColumn.Width = await ReadLengthAsync(vm, PreviewWidthKey, 300, 200, 1600);
+            PreviewRow.Height = await ReadLengthAsync(vm, PreviewHeightKey, 190, 90, 2000);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Restoring preview panel sizes");
+        }
+    }
+
+    private static async Task<GridLength> ReadLengthAsync(
+        GroupsViewModel vm, string key, double fallback, double minimum, double maximum)
+    {
+        var stored = await vm.Settings.GetAsync(key, "");
+        return double.TryParse(stored, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var value)
+            && value >= minimum && value <= maximum
+            ? new GridLength(value)
+            : new GridLength(fallback);
+    }
+
+    /// <summary>
+    /// Saved on release rather than only on unload: closing the app while still on this screen
+    /// never unloads the view, and a size that survives only if you happen to navigate away first
+    /// is not remembered in any sense the user would recognise.
+    /// </summary>
+    private void OnSplitterDragCompleted(
+        object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e) => SavePanelSizes();
+
+    private void SavePanelSizes()
+    {
+        if (DataContext is not GroupsViewModel vm)
+        {
+            return;
+        }
+
+        try
+        {
+            var width = PreviewColumn.ActualWidth;
+            var height = PreviewRow.ActualHeight;
+            if (width > 0 && height > 0)
+            {
+                _ = vm.Settings.SetAsync(
+                    PreviewWidthKey, width.ToString("0", System.Globalization.CultureInfo.InvariantCulture));
+                _ = vm.Settings.SetAsync(
+                    PreviewHeightKey, height.ToString("0", System.Globalization.CultureInfo.InvariantCulture));
+            }
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Saving preview panel sizes");
+        }
     }
 
     /// <summary>
@@ -88,15 +155,104 @@ public partial class GroupsView : UserControl
     }
 
     /// <summary>Drag-out: dragging the preview hands the page file to Explorer or another app.</summary>
+    private readonly ZoomController _previewZoom = new();
+    private Point? _dragOrigin;
+
     private void OnThumbnailMouseMove(object sender, MouseEventArgs e)
     {
-        if (e.LeftButton == MouseButtonState.Pressed
-            && _detail?.SelectedRow is { } row
-            && System.IO.File.Exists(row.ImagePath))
+        // Only start a drag once the pointer has actually travelled. DoDragDrop on any movement
+        // swallows the second click of a double-click, which is how the preview is opened.
+        if (e.LeftButton != MouseButtonState.Pressed || _dragOrigin is not { } origin)
         {
+            return;
+        }
+
+        var moved = e.GetPosition(this) - origin;
+        if (Math.Abs(moved.X) < SystemParameters.MinimumHorizontalDragDistance
+            && Math.Abs(moved.Y) < SystemParameters.MinimumVerticalDragDistance)
+        {
+            return;
+        }
+
+        if (_detail?.SelectedRow is { } row && System.IO.File.Exists(row.ImagePath))
+        {
+            _dragOrigin = null;
             var data = new DataObject(DataFormats.FileDrop, new[] { row.ImagePath });
             DragDrop.DoDragDrop((DependencyObject)sender, data, DragDropEffects.Copy);
         }
+    }
+
+    private void OnPreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount == 2)
+        {
+            _dragOrigin = null;
+            _detail?.OpenPageViewerCommand.Execute(null);
+            e.Handled = true;
+            return;
+        }
+
+        _dragOrigin = e.GetPosition(this);
+    }
+
+    private void OnPreviewMouseUp(object sender, MouseButtonEventArgs e) => _dragOrigin = null;
+
+    private void OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (Keyboard.Modifiers != ModifierKeys.Control)
+        {
+            return;
+        }
+
+        if (e.Delta > 0)
+        {
+            _previewZoom.In();
+        }
+        else
+        {
+            _previewZoom.Out();
+        }
+
+        ApplyPreviewZoom();
+        e.Handled = true;
+    }
+
+    private void OnPreviewZoomIn(object sender, RoutedEventArgs e)
+    {
+        _previewZoom.In();
+        ApplyPreviewZoom();
+    }
+
+    private void OnPreviewZoomOut(object sender, RoutedEventArgs e)
+    {
+        _previewZoom.Out();
+        ApplyPreviewZoom();
+    }
+
+    /// <summary>
+    /// Each newly selected page opens showing all of itself. Without this the preview would start
+    /// at 1:1 — a 1200px decode in a 300px panel, scrolled to the middle of the paper.
+    /// </summary>
+    private void OnPreviewImageChanged(object sender, DataTransferEventArgs e) => FitPreview();
+
+    private void OnPreviewFit(object sender, RoutedEventArgs e) => FitPreview();
+
+    private void FitPreview()
+    {
+        if (PreviewImage.Source is System.Windows.Media.Imaging.BitmapSource image)
+        {
+            _previewZoom.Fit(
+                image.PixelWidth, image.PixelHeight,
+                PreviewScroller.ViewportWidth, PreviewScroller.ViewportHeight);
+        }
+
+        ApplyPreviewZoom();
+    }
+
+    private void ApplyPreviewZoom()
+    {
+        PreviewScale.ScaleX = _previewZoom.Scale;
+        PreviewScale.ScaleY = _previewZoom.Scale;
     }
 
     private void HookDetail(GroupDetailViewModel? detail)

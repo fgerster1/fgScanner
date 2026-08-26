@@ -205,14 +205,19 @@
 
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="300" />
+                    <ColumnDefinition Width="*" MinWidth="240" />
+                    <ColumnDefinition Width="6" />
+                    <ColumnDefinition x:Name="PreviewColumn" Width="300" MinWidth="200" />
                 </Grid.ColumnDefinitions>
+                <!-- CanUserSortColumns is off deliberately: the viewer pages in Rows order, so a
+                     header-click re-sort would make "next" mean one thing in the grid and another
+                     in the viewer. The # column already shows the real order. -->
                 <DataGrid x:Name="EntryGrid" Grid.Column="0"
                           ItemsSource="{Binding Rows}"
                           SelectedItem="{Binding SelectedRow}"
                           AutoGenerateColumns="False"
                           CanUserAddRows="False" CanUserDeleteRows="False"
+                          CanUserSortColumns="False"
                           HeadersVisibility="Column"
                           EnableRowVirtualization="True"
                           SelectionChanged="OnGridSelectionChanged"
@@ -236,12 +241,56 @@
                         </Style>
                     </DataGrid.CellStyle>
                 </DataGrid>
-                <DockPanel Grid.Column="1" Margin="8,0,0,0">
-                    <Border DockPanel.Dock="Top" Height="190" BorderBrush="Gray" BorderThickness="1"
-                            ToolTip="Drag this preview to copy the page file elsewhere">
-                        <Image Source="{Binding SelectedRow.ImagePath, Converter={x:Static views:ThumbnailConverter.Instance}}"
-                               Stretch="Uniform" MouseMove="OnThumbnailMouseMove" />
-                    </Border>
+                <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
+                              VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext"
+                              ShowsPreview="False" Cursor="SizeWE"
+                              DragCompleted="OnSplitterDragCompleted"
+                              ToolTip="Drag to make the preview wider" />
+
+                <DockPanel Grid.Column="2">
+                    <Grid DockPanel.Dock="Top">
+                        <Grid.RowDefinitions>
+                            <RowDefinition x:Name="PreviewRow" Height="190" MinHeight="90" />
+                            <RowDefinition Height="6" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <Border Grid.Row="0" BorderBrush="Gray" BorderThickness="1">
+                            <!-- Ctrl+wheel zooms; an ungated wheel would steal ordinary scrolling.
+                                 LayoutTransform so the ScrollViewer's extent grows with the zoom. -->
+                            <ScrollViewer x:Name="PreviewScroller"
+                                          HorizontalScrollBarVisibility="Auto"
+                                          VerticalScrollBarVisibility="Auto"
+                                          PreviewMouseWheel="OnPreviewMouseWheel">
+                                <Image x:Name="PreviewImage"
+                                       Source="{Binding SelectedRow.ImagePath, Converter={x:Static views:PreviewImageConverter.Instance}, NotifyOnTargetUpdated=True}"
+                                       TargetUpdated="OnPreviewImageChanged"
+                                       Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       ToolTip="Ctrl+wheel to zoom · double-click to open full size · drag to copy the file elsewhere"
+                                       MouseMove="OnThumbnailMouseMove"
+                                       PreviewMouseLeftButtonDown="OnPreviewMouseDown"
+                                       MouseLeftButtonUp="OnPreviewMouseUp">
+                                    <Image.LayoutTransform>
+                                        <ScaleTransform x:Name="PreviewScale" ScaleX="1" ScaleY="1" />
+                                    </Image.LayoutTransform>
+                                </Image>
+                            </ScrollViewer>
+                        </Border>
+
+                        <GridSplitter Grid.Row="1" Height="6" HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext"
+                                      ShowsPreview="False" Cursor="SizeNS"
+                                      DragCompleted="OnSplitterDragCompleted"
+                                      ToolTip="Drag to make the preview taller" />
+
+                        <WrapPanel Grid.Row="2" Margin="0,4,0,0">
+                            <Button Content="−" Click="OnPreviewZoomOut" Padding="10,2" Margin="0,0,4,0" ToolTip="Zoom out" />
+                            <Button Content="+" Click="OnPreviewZoomIn" Padding="10,2" Margin="0,0,4,0" ToolTip="Zoom in" />
+                            <Button Content="Fit" Click="OnPreviewFit" Padding="8,2" Margin="0,0,4,0" />
+                            <Button Content="Open full size" Command="{Binding OpenPageViewerCommand}"
+                                    Padding="8,2" ToolTip="Or double-click the preview" />
+                        </WrapPanel>
+                    </Grid>
 
                     <StackPanel DockPanel.Dock="Top" Margin="0,8,0,0">
                         <TextBlock Text="Folder" FontWeight="SemiBold" />
