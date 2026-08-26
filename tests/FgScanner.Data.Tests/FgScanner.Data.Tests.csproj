@@ -14,4 +14,15 @@
   <ItemGroup>
     <Content Include="fixtures\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <ItemGroup>
+    <!--
+      Test classes run serially. Several teardowns call SqliteConnection.ClearAllPools() to release
+      the database file so their temp folder can be deleted, and that clears the pool for the WHOLE
+      process — in parallel, one class's cleanup disposes a connection another class is midway
+      through writing on, surfacing as an intermittent "Cannot access a disposed object:
+      SQLitePCL.sqlite3". Before re-enabling parallelism, drop those ClearAllPools calls and give
+      the test databases unpooled connections instead; the pooling is the only reason they exist.
+    -->
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
