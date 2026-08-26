@@ -61,7 +61,25 @@ public sealed class ScanSessionService : IDisposable
 
     public static void Discard(OrphanedSession orphan) => RecoveryManager.Discard(orphan);
 
-    public void Dispose() => Session.DiscardAndDelete();
+    /// <summary>
+    /// Throws the session away only when it holds nothing. A clean shutdown does not mean every
+    /// page was saved — a page that failed to adopt is still sitting in that folder, and deleting
+    /// it on exit destroys a scan the user never agreed to lose. Leaving the folder makes it an
+    /// orphan, which the next launch offers to recover.
+    /// </summary>
+    public void Dispose()
+    {
+        if (Session.Pages.Count == 0)
+        {
+            Session.DiscardAndDelete();
+            return;
+        }
+
+        Log.Information(
+            "Leaving {Count} unsaved page(s) in {Folder} to recover on the next run",
+            Session.Pages.Count, Session.FolderPath);
+        Session.Dispose();
+    }
 }
 
 internal static class PageSequence

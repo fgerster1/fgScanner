@@ -6,7 +6,23 @@ using Microsoft.EntityFrameworkCore;
 namespace FgScanner.Data;
 
 /// <summary>Result of adopting scanned files into a group: what landed, what was a duplicate.</summary>
-public sealed record AdoptResult(IReadOnlyList<Page> Adopted, IReadOnlyList<string> DuplicateSourceFiles);
+/// <summary>A source file adoption could not take, and why.</summary>
+public sealed record AdoptFailure(string Path, string Reason);
+
+public sealed record AdoptResult(
+    IReadOnlyList<Page> Adopted,
+    IReadOnlyList<string> DuplicateSourceFiles)
+{
+    /// <summary>
+    /// Files that were gone by the time adoption reached them. Usually the tail of an earlier
+    /// partial run: those pages already moved into the group, so skipping them is what lets a
+    /// retry finish instead of dying on the first one.
+    /// </summary>
+    public IReadOnlyList<string> MissingSourceFiles { get; init; } = [];
+
+    /// <summary>Files that exist but could not be taken — a lock that outlasted the retries.</summary>
+    public IReadOnlyList<AdoptFailure> FailedSourceFiles { get; init; } = [];
+}
 
 /// <summary>What happens to the scanned files when a group is deleted — the user's choice.</summary>
 public enum GroupFilePolicy
@@ -240,10 +256,36 @@ public sealed class GroupService(IDbContextFactory<FgScannerDbContext> dbFactory
 
         var adopted = new List<Page>();
         var duplicates = new List<string>();
+        var missing = new List<string>();
+        var failed = new List<AdoptFailure>();
         foreach (var sourceFile in sourceFiles)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var checksum = await ComputeSha256Async(sourceFile, cancellationToken).ConfigureAwait(false);
+
+            // A file that is simply gone is skipped, not fatal. After a partial run the caller
+            // replays the whole list, and the pages that already moved are exactly the ones no
+            // longer here — aborting on the first of them wedges the batch permanently.
+            if (!File.Exists(sourceFile))
+            {
+                missing.Add(sourceFile);
+                continue;
+            }
+
+            string checksum;
+            try
+            {
+                // Retried as well as the move: an exclusive lock blocks reading the file at all,
+                // so the checksum is where a scanner's or indexer's hold shows up first.
+                checksum = await RetryOnLockAsync(
+                    () => ComputeSha256Async(sourceFile, cancellationToken), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                failed.Add(new AdoptFailure(sourceFile, ex.Message));
+                continue;
+            }
+
             if (!knownChecksums.Add(checksum))
             {
                 duplicates.Add(sourceFile);
@@ -251,7 +293,22 @@ public sealed class GroupService(IDbContextFactory<FgScannerDbContext> dbFactory
             }
 
             nextSequence++;
-            var fileName = MoveIntoGroup(sourceFile, group.DirectoryPath, nextSequence);
+            string fileName;
+            try
+            {
+                fileName = await MoveIntoGroupAsync(
+                    sourceFile, group.DirectoryPath, nextSequence, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // One page that will not move must not cost the pages that already did. Record it,
+                // leave the file where it is so a retry can take it, and keep going.
+                nextSequence--;
+                knownChecksums.Remove(checksum);
+                failed.Add(new AdoptFailure(sourceFile, ex.Message));
+                continue;
+            }
+
             var document = new Document
             {
                 Id = Guid.NewGuid(),
@@ -275,8 +332,16 @@ public sealed class GroupService(IDbContextFactory<FgScannerDbContext> dbFactory
         }
 
         group.UpdatedUtc = DateTime.UtcNow;
+
+        // Always saved, even when some pages failed. A file sitting in the group folder with no row
+        // describing it is invisible to every screen, every export and every reconcile — far worse
+        // than a batch that reports "3 of 4".
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return new AdoptResult(adopted, duplicates);
+        return new AdoptResult(adopted, duplicates)
+        {
+            MissingSourceFiles = missing,
+            FailedSourceFiles = failed,
+        };
     }
 
     public static async Task<string> ComputeSha256Async(string filePath, CancellationToken cancellationToken = default)
@@ -476,4 +541,35 @@ public sealed class GroupService(IDbContextFactory<FgScannerDbContext> dbFactory
         File.Move(sourceFile, target);
         return fileName;
     }
+
+    private static Task<string> MoveIntoGroupAsync(
+        string sourceFile, string groupDirectory, int sequence, CancellationToken cancellationToken) =>
+        RetryOnLockAsync(
+            () => Task.FromResult(MoveIntoGroup(sourceFile, groupDirectory, sequence)), cancellationToken);
+
+    /// <summary>
+    /// Retries a file operation through a transient lock. A scan is adopted milliseconds after it
+    /// was written, which is exactly when a virus scanner or the shell's thumbnailer is most likely
+    /// to still hold it open. Same backoff AtomicFileWriter uses for exports: five attempts over
+    /// about 1.5s — long enough to outlast a scanner, short of looking like a hang.
+    /// </summary>
+    private static async Task<T> RetryOnLockAsync<T>(
+        Func<Task<T>> action, CancellationToken cancellationToken)
+    {
+        var delay = TimeSpan.FromMilliseconds(100);
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await action().ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && attempt < LockAttempts)
+            {
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                delay *= 2;
+            }
+        }
+    }
+
+    private const int LockAttempts = 5;
 }

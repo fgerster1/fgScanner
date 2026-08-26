@@ -144,4 +144,37 @@ public sealed class RecoveryTests : IDisposable
         var page = Assert.Single(orphan.Pages);
         Assert.Equal(kept.FilePath, page.FilePath);
     }
+    [Fact]
+    public void Forgetting_adopted_pages_leaves_the_index_describing_only_what_is_left()
+    {
+        // After a partial save the adopted files have moved out of the session folder. If the
+        // index still names them, the next run offers to recover files that are not there and
+        // every retry dies on the first one.
+        using var session = RecoverySession.Create(_root);
+        var first = AddPage(session, 1);
+        var second = AddPage(session, 2);
+        var third = AddPage(session, 3);
+        File.Delete(first.FilePath);
+        File.Delete(third.FilePath);
+
+        session.ForgetPages([first.FilePath, third.FilePath]);
+        session.Flush();
+
+        Assert.Equal([second.FilePath], session.Pages.Select(p => p.FilePath));
+        var index = System.Text.Json.JsonSerializer.Deserialize<RecoveryIndex>(
+            File.ReadAllText(Path.Combine(session.FolderPath, RecoverySession.IndexFileName)))!;
+        Assert.Equal([Path.GetFileName(second.FilePath)], index.Pages.Select(p => p.FileName));
+    }
+
+    [Fact]
+    public void Forgetting_a_page_that_is_not_in_the_session_changes_nothing()
+    {
+        using var session = RecoverySession.Create(_root);
+        var only = AddPage(session, 1);
+
+        session.ForgetPages([Path.Combine(_root, "never-here.png")]);
+
+        Assert.Single(session.Pages);
+        Assert.Equal(only.FilePath, session.Pages[0].FilePath);
+    }
 }

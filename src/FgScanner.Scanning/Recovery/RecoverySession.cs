@@ -83,6 +83,27 @@ public sealed class RecoverySession : IPageStorage, IDisposable
         WriteIndexIfDue(force: false);
     }
 
+    /// <summary>
+    /// Drops pages the session no longer owns — the ones adoption moved into a group. Without
+    /// this a partial save leaves the index naming files that have gone, so the next run offers to
+    /// recover them and every retry stops at the first one that is missing.
+    /// </summary>
+    public void ForgetPages(IEnumerable<string> filePaths)
+    {
+        var gone = filePaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        lock (_sync)
+        {
+            if (_pages.RemoveAll(p => gone.Contains(p.FilePath)) == 0)
+            {
+                return;
+            }
+
+            _indexDirty = true;
+        }
+
+        WriteIndexIfDue(force: true);
+    }
+
     /// <summary>Flushes the index immediately (end of a scan run, or before showing UI state).</summary>
     public void Flush() => WriteIndexIfDue(force: true);
 

@@ -301,13 +301,38 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 
             await _ocrTrigger.EnqueueIfProfileEnabledAsync(group);
             _activeGroup.NotifyGroupContentChanged();
-            Pages.Clear();
-            _sessionService.ResetSession();
-            StatusText = $"Saved {result.Adopted.Count} page(s) to \"{group.Name}\"."
+
+            var stuck = result.FailedSourceFiles.Select(f => f.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var summary = $"Saved {result.Adopted.Count} page(s) to \"{group.Name}\"."
                 + DuplicateReport.Format(result.DuplicateSourceFiles)
                 + (triage.DroppedCount > 0
                     ? $" {triage.DroppedCount} page(s) dropped by capture policy (see journal.txt)."
                     : "");
+
+            if (stuck.Count > 0)
+            {
+                // Keep exactly the pages that could not be taken, and let the session forget the
+                // rest — they have moved into the group. Clearing everything here would discard
+                // scans that are still only in the session folder.
+                var consumed = Pages.Where(p => !stuck.Contains(p.FilePath)).Select(p => p.FilePath).ToList();
+                _sessionService.Session.ForgetPages(consumed);
+                foreach (var page in Pages.Where(p => consumed.Contains(p.FilePath)).ToList())
+                {
+                    Pages.Remove(page);
+                }
+
+                StatusText = summary
+                    + $" {stuck.Count} page(s) could not be saved and are still here — "
+                    + $"try again in a moment. ({result.FailedSourceFiles[0].Reason})";
+                Log.Warning(
+                    "Adoption left {Count} page(s) in the session: {Reason}",
+                    stuck.Count, result.FailedSourceFiles[0].Reason);
+                return;
+            }
+
+            Pages.Clear();
+            _sessionService.ResetSession();
+            StatusText = summary;
 
             // Inside the try, never a finally: a failed save must leave the user here, with their
             // pages still in hand and the reason on screen.
