@@ -9,12 +9,19 @@
     <DockPanel>
         <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6">
             <Button Content="Restore" Command="{Binding RestoreCommand}" Padding="10,6" Margin="0,0,6,0" />
-            <Button Content="Delete permanently" Command="{Binding DeletePermanentlyCommand}" Padding="10,6" Margin="0,0,6,0" />
+            <Button Content="Delete permanently" Command="{Binding DeletePermanentlyCommand}" Padding="10,6" Margin="0,0,6,0" ToolTip="Delete the selected item(s) for good — Del" />
             <Button Content="Refresh" Command="{Binding RefreshCommand}" Padding="10,6" />
         </WrapPanel>
         <TextBlock DockPanel.Dock="Top" Text="{Binding StatusText}" Opacity="0.8" Margin="0,0,0,6" />
         <DataGrid ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}"
-                  AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+                  AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                  SelectionMode="Extended" SelectionUnit="FullRow"
+                  SelectionChanged="OnSelectionChanged">
+            <DataGrid.InputBindings>
+                <!-- Delete is what a user reaches for over a highlighted row; the command confirms
+                     before anything goes, because the Trash is the last copy of these scans. -->
+                <KeyBinding Key="Delete" Command="{Binding DeletePermanentlyCommand}" />
+            </DataGrid.InputBindings>
             <DataGrid.Columns>
                 <DataGridTextColumn Header="Group" Binding="{Binding GroupName}" Width="160" />
                 <DataGridTextColumn Header="Position" Binding="{Binding DocumentSequence}" Width="70" />

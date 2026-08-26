@@ -18,6 +18,7 @@ Tracks FG Scanner against the NAPS2 8.3.2 inventory (docs/research/research-1-na
 | Group field-layout upgrade + bulk fill | FG core | ☑ (move a group to its profile's current layout; apply values to all rows; unchanged layouts stop minting versions) | 12 |
 | Scan into a group returns to Groups | FG core | ☑ (auto-saves on success only; cancel/failure stay on Scan; right-click selects the group under the cursor) | 13 |
 | Page viewer: zoom, resizable panel, pop-out | [F] | ☑ (Ctrl+wheel + buttons; two GridSplitters with remembered sizes; double-click opens full resolution with first/prev/next/last) | 14 |
+| Trash multi-select + confirmed delete | FG core | ☑ (Extended selection, Del key, one confirm for the batch, partial failure keeps going; Restore follows the selection too) | 15 |
 | AI descriptions (Gemini, BYO-key, queue, cost) | FG core | ☑ (gemini-2.5-flash-lite; CredMan key; durable queue; estimate + spend tracking; blank-page skip) | 6 |
 | Retro-process existing folder + reconcile | FG core | ☑ (in-place adoption, PDF render, checksum re-match, foreign-index warn, selective re-run; idempotent) | 7 |
 | Batch dialog + CLI + shortcuts + profiles import/export | [P] | ☑ (scan/process/export/list-devices; batch modes; rebindable NAPS2 defaults; .fgprofile) | 8 |
