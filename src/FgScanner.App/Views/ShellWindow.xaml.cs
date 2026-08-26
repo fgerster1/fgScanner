@@ -37,8 +37,8 @@ public partial class ShellWindow : Window
             await RestoreSessionAsync();
         };
         // "Scan into this group" reuses the real Scan screen rather than a second copy of it;
-        // selecting the group has already pointed ActiveGroupStore at it.
-        viewModel.GroupsViewModel.ScanRequested += () => _viewModel.SelectedSection = "Scan";
+        // selecting the group has already pointed ActiveGroupStore at it. The jump there and the
+        // return afterwards both live in ShellViewModel, where they can be tested without a UI.
         Closing += (_, _) => SaveSession();
     }
 

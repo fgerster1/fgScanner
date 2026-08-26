@@ -34,7 +34,18 @@
                 <Button Content="Process existing folder…" Command="{Binding ProcessExistingFolderCommand}" Margin="0,0,0,8"
                         ToolTip="Register a folder full of images and PDFs as a group (PLAN §5.7)" />
             </StackPanel>
-            <ListBox ItemsSource="{Binding Groups}" SelectedItem="{Binding SelectedGroup}">
+            <ListBox ItemsSource="{Binding Groups}" SelectedItem="{Binding SelectedGroup}"
+                     ContextMenuOpening="OnGroupsContextMenuOpening">
+                <!--
+                  Every menu item acts on SelectedGroup, but a right-click does not select in WPF.
+                  Without this, right-clicking group B while A is selected silently acts on A —
+                  including "Delete group…".
+                -->
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <EventSetter Event="PreviewMouseRightButtonDown" Handler="OnGroupRightClicked" />
+                    </Style>
+                </ListBox.ItemContainerStyle>
                 <ListBox.ContextMenu>
                     <ContextMenu>
                         <MenuItem Header="Scan into this group"

@@ -156,6 +156,16 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         return Pages.Count - pagesBefore;
     }
 
+    /// <summary>
+    /// Set by "Scan into this group": that gesture names its destination up front, so making the
+    /// user press "Save to group" afterwards asks a question they already answered. Off for an
+    /// ordinary scan, where pages stay on screen until the user decides where they go.
+    /// </summary>
+    public bool AutoSaveAfterScan { get; set; }
+
+    /// <summary>Raised only after pages have actually landed in the group.</summary>
+    public event Action? SavedToGroup;
+
     [RelayCommand(CanExecute = nameof(CanScan))]
     private async Task ScanAsync()
     {
@@ -166,6 +176,17 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             var scanned = await RunScanPassAsync(_scanCts.Token);
             _sessionService.Session.Flush();
             StatusText = $"Scan complete — {scanned} page(s).";
+
+            // Only on the success path. A cancelled or failed run leaves whatever arrived on
+            // screen: its pages are still reviewable and its error text lives in this status line.
+            if (AutoSaveAfterScan && scanned > 0)
+            {
+                IsScanning = false; // CanSaveToGroup refuses while a scan is in flight
+                if (CanSaveToGroup())
+                {
+                    await SaveToGroupAsync();
+                }
+            }
         }
         catch (OperationCanceledException)
         {
@@ -287,6 +308,10 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
                 + (triage.DroppedCount > 0
                     ? $" {triage.DroppedCount} page(s) dropped by capture policy (see journal.txt)."
                     : "");
+
+            // Inside the try, never a finally: a failed save must leave the user here, with their
+            // pages still in hand and the reason on screen.
+            SavedToGroup?.Invoke();
         }
         catch (Exception ex)
         {

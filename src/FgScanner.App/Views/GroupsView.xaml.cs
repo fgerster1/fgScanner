@@ -24,6 +24,43 @@ public partial class GroupsView : UserControl
         };
     }
 
+    /// <summary>
+    /// Selects the group under the cursor before its context menu opens. WPF does not select on
+    /// right-click, and every item in that menu acts on the selected group — so without this,
+    /// right-clicking one group while another is selected acts on the other one.
+    /// </summary>
+    private void OnGroupRightClicked(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is ListBoxItem item)
+        {
+            item.IsSelected = true;
+        }
+    }
+
+    /// <summary>
+    /// Suppresses the menu on empty space below the list. There is no group under the cursor
+    /// there, so offering "Delete group…" would silently target whatever happened to be selected.
+    /// </summary>
+    private void OnGroupsContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        if (e.OriginalSource is DependencyObject source && FindListBoxItem(source) is null)
+        {
+            e.Handled = true;
+        }
+    }
+
+    private static ListBoxItem? FindListBoxItem(DependencyObject? source)
+    {
+        while (source is not null and not ListBoxItem)
+        {
+            source = source is System.Windows.Media.Visual or System.Windows.Media.Media3D.Visual3D
+                ? System.Windows.Media.VisualTreeHelper.GetParent(source)
+                : LogicalTreeHelper.GetParent(source);
+        }
+
+        return source as ListBoxItem;
+    }
+
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(GroupsViewModel.Detail) && sender is GroupsViewModel vm)
