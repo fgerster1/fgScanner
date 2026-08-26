@@ -19,14 +19,18 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     private readonly FgScanner.Ai.CredentialStore _credentials;
 
+    private readonly GroupService _groupService;
+
     public SettingsViewModel(
         ProfileService profileService,
         TrashService trashService,
         AppSettingsService appSettings,
         LanguageManager languageManager,
-        FgScanner.Ai.CredentialStore credentials)
+        FgScanner.Ai.CredentialStore credentials,
+        GroupService groupService)
     {
         _profileService = profileService;
+        _groupService = groupService;
         _trashService = trashService;
         _appSettings = appSettings;
         _languageManager = languageManager;
@@ -672,7 +676,14 @@ public sealed partial class SettingsViewModel : ObservableObject
                 UpdateService.NoUpdatePromptKey, CheckForUpdates ? "false" : "true");
             await _appSettings.SetAsync(ShortcutsSettingKey, shortcutMap.ToJson());
             ShortcutsChanged?.Invoke(shortcutMap);
-            StatusText = $"Saved as schema version {schema.Version}. New groups use it; existing groups keep theirs.";
+            // Naming the way out matters: this used to state the consequence and stop, leaving the
+            // user to conclude their fields simply did not work on the group they were looking at.
+            var behind = await _groupService.GroupsOnOlderSchemaAsync(SelectedProfile!.Id);
+            StatusText = behind.Count == 0
+                ? $"Saved as field layout v{schema.Version}."
+                : $"Saved as field layout v{schema.Version}. New groups use it; "
+                    + $"{behind.Count} existing group(s) stay on their own — open one in Groups and "
+                    + "choose \"Use latest field layout\" to move it.";
             ProfilesChanged?.Invoke();
         }
         catch (Exception ex)

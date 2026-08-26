@@ -163,9 +163,20 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
         }
 
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
-        var latest = await db.IndexSchemas
+
+        // Saving a layout that has not actually changed used to mint a version anyway, so clicking
+        // Save twice left every existing group two versions behind for no reason.
+        var current = await db.IndexSchemas
+            .Include(s => s.Fields.OrderBy(f => f.Order))
             .Where(s => s.ProfileId == profileId)
-            .MaxAsync(s => (int?)s.Version, cancellationToken).ConfigureAwait(false) ?? 0;
+            .OrderByDescending(s => s.Version)
+            .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        if (current is not null && Unchanged(current.Fields, fields))
+        {
+            return current;
+        }
+
+        var latest = current?.Version ?? 0;
         var schema = new IndexSchema
         {
             Id = Guid.NewGuid(),
@@ -193,6 +204,28 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
 
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return schema;
+    }
+
+    /// <summary>
+    /// Whether a submitted layout is identical to the stored one, field for field and in order.
+    /// Required and Sticky are compared because they change behaviour — treating a flag flip as
+    /// cosmetic would silently leave groups on a layout that validates differently.
+    /// </summary>
+    private static bool Unchanged(
+        List<FieldDefinition> stored, IReadOnlyList<FieldDefinition> submitted)
+    {
+        if (stored.Count != submitted.Count)
+        {
+            return false;
+        }
+
+        return !stored.Where((field, i) =>
+            !string.Equals(field.Name, submitted[i].Name.Trim(), StringComparison.Ordinal)
+            || field.Type != submitted[i].Type
+            || field.Required != submitted[i].Required
+            || field.Sticky != submitted[i].Sticky
+            || field.DefaultValue != submitted[i].DefaultValue
+            || field.ListChoicesJson != submitted[i].ListChoicesJson).Any();
     }
 
     public async Task UpdateOcrEnabledAsync(

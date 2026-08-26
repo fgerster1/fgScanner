@@ -93,7 +93,8 @@ public sealed class ShellTests : IDisposable
             new SettingsViewModel(
                 _profileService, _trashService, settings,
                 new FgScanner.Ocr.LanguageManager(Path.Combine(_root, "tessdata")),
-                new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false)),
+                new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false),
+                _groupService),
             settings);
         Assert.Equal(["Scan", "Groups", "Trash", "Settings"], shell.Sections);
     }
@@ -110,7 +111,8 @@ public sealed class ShellTests : IDisposable
                 _profileService, _trashService,
                 new AppSettingsService(new TestFactory(_dbPath)),
                 new FgScanner.Ocr.LanguageManager(Path.Combine(_root, "tessdata")),
-                new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false)),
+                new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false),
+                _groupService),
             new AppSettingsService(new TestFactory(_dbPath)));
         Assert.Equal(["Scan", "Groups", "Search", "Trash", "Settings"], shell.Sections);
         Assert.Equal("Scan", shell.SelectedSection);

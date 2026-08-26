@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -71,15 +72,34 @@ public sealed partial class GroupDetailViewModel : ObservableObject
     [ObservableProperty]
     private string _validationSummary = "";
 
+    /// <summary>
+    /// Set when this group is pinned to an older field layout than its profile's newest. Empty
+    /// otherwise. A group created before its fields were defined resolves zero of them and renders
+    /// an empty pane; saying nothing leaves the user to conclude the feature is broken.
+    /// </summary>
+    [ObservableProperty]
+    private string _schemaNotice = "";
+
     public event Action? SchemaLoaded;
 
     public async Task LoadAsync()
     {
         Fields = [];
+        SchemaNotice = "";
         if (Group.ProfileId is not null)
         {
             var schema = await _profileService.GetSchemaAsync(Group.ProfileId.Value, Group.SchemaVersion);
             Fields = schema.Fields;
+
+            var latest = await _profileService.GetLatestSchemaAsync(Group.ProfileId.Value);
+            if (latest.Version != Group.SchemaVersion)
+            {
+                SchemaNotice = Fields.Count == 0
+                    ? $"This group uses field layout v{Group.SchemaVersion}, which has no fields. "
+                        + $"\"{Group.Profile?.Name ?? "The profile"}\" now defines {latest.Fields.Count}."
+                    : $"This group uses field layout v{Group.SchemaVersion}; "
+                        + $"\"{Group.Profile?.Name ?? "the profile"}\" is on v{latest.Version}.";
+            }
         }
 
         foreach (var stale in PendingFields)
@@ -143,6 +163,98 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         }
 
         StatusText = $"{Rows.Count} page(s). State: {Group.State}.";
+    }
+
+    /// <summary>
+    /// Moves this group onto its profile's newest field layout. Offered rather than performed
+    /// silently: the new layout's required fields land on rows that were filled under the old one,
+    /// so the user is told how many rows that affects before agreeing.
+    /// </summary>
+    [RelayCommand]
+    private async Task UseLatestFieldLayoutAsync()
+    {
+        if (Group.ProfileId is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var latest = await _profileService.GetLatestSchemaAsync(Group.ProfileId.Value);
+            var required = latest.Fields.Count(f => f.Required);
+            var warning = required > 0 && Rows.Count > 0
+                ? $"\n\n{required} of them are required, so the {Rows.Count} existing row(s) will "
+                    + "need values before this group can be committed. Fill them in one step with "
+                    + "\"Apply to all rows\"."
+                : "";
+            var answer = System.Windows.MessageBox.Show(
+                $"Move this group from field layout v{Group.SchemaVersion} to v{latest.Version} "
+                    + $"({latest.Fields.Count} field(s))?{warning}\n\nValues already entered are kept.",
+                "Use latest field layout",
+                System.Windows.MessageBoxButton.OKCancel,
+                System.Windows.MessageBoxImage.Question);
+            if (answer != System.Windows.MessageBoxResult.OK)
+            {
+                return;
+            }
+
+            await _groupService.UpgradeSchemaVersionAsync(Group.Id, latest.Version);
+            Group.SchemaVersion = latest.Version;
+            await LoadAsync();
+            StatusText = $"Now using field layout v{latest.Version}.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            StatusText = $"Could not change the field layout: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Writes the values typed above onto every row that does not already have one. This is the
+    /// way out for pages scanned before the fields existed — the pre-scan values only ever reach
+    /// pages adopted afterwards.
+    /// </summary>
+    [RelayCommand]
+    private async Task ApplyValuesToAllRowsAsync()
+    {
+        var values = PendingFields
+            .Where(p => !string.IsNullOrWhiteSpace(p.Value))
+            .ToDictionary(p => p.Field.Name, p => (string?)p.Value);
+        if (values.Count == 0)
+        {
+            StatusText = "Type a value above first, then apply it to the rows.";
+            return;
+        }
+
+        if (Rows.Count == 0)
+        {
+            StatusText = "This group has no pages yet — these values will apply to the next scan.";
+            return;
+        }
+
+        try
+        {
+            var answer = System.Windows.MessageBox.Show(
+                $"Apply {values.Count} value(s) to the {Rows.Count} row(s) in this group?\n\n"
+                    + "Rows that already have a value keep it.",
+                "Apply to all rows",
+                System.Windows.MessageBoxButton.OKCancel,
+                System.Windows.MessageBoxImage.Question);
+            if (answer != System.Windows.MessageBoxResult.OK)
+            {
+                return;
+            }
+
+            var filled = await _indexingService.ApplyValuesToAllAsync(Group.Id, values, overwrite: false);
+            await ReloadRowsAsync();
+            StatusText = filled == 0
+                ? "Every row already had a value for those fields."
+                : $"Filled {filled} row(s).";
+        }
+        catch (InvalidOperationException ex)
+        {
+            StatusText = $"Could not apply those values: {ex.Message}";
+        }
     }
 
     /// <summary>
@@ -549,6 +661,22 @@ public sealed partial class PendingFieldEditor(FieldDefinition field) : Observab
 
     public bool IsList => Field.Type == FieldType.List;
 
+    public bool IsDate => Field.Type == FieldType.Date;
+
     [ObservableProperty]
     private string? _value;
+
+    /// <summary>
+    /// The same value as a date, for the picker. Kept as the canonical ISO-8601 string underneath
+    /// (CLAUDE.md), so what the picker writes and what a user types by hand are indistinguishable
+    /// downstream — and a value applied to every row in a batch cannot be a locale-shaped surprise.
+    /// </summary>
+    public DateTime? DateValue
+    {
+        get => DateTime.TryParse(
+            Value, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed) ? parsed : null;
+        set => Value = value?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    }
+
+    partial void OnValueChanged(string? value) => OnPropertyChanged(nameof(DateValue));
 }

@@ -138,6 +138,71 @@ public sealed class GroupService(IDbContextFactory<FgScannerDbContext> dbFactory
         return await db.Groups.FirstOrDefaultAsync(g => g.Id == groupId, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Re-points an existing group at another of its profile's schema versions.
+    ///
+    /// Schema versions themselves stay immutable (PLAN §5.3) — this moves the group's pointer, not
+    /// the layout. Without it a group created before its profile had any fields is stuck on a
+    /// zero-field schema forever, and the only escape is deleting and recreating it. Stored values
+    /// are untouched: a field that exists in both versions keeps what the user typed, and one that
+    /// does not is simply not rendered rather than erased.
+    /// </summary>
+    public async Task UpgradeSchemaVersionAsync(
+        Guid groupId, int schemaVersion, CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var group = await db.Groups.FirstOrDefaultAsync(g => g.Id == groupId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new InvalidOperationException("That group no longer exists.");
+        if (group.ProfileId is null)
+        {
+            throw new InvalidOperationException("A group with no profile has no field layout to move to.");
+        }
+
+        // Version numbers restart per profile, so the guard checks ownership rather than merely
+        // that some schema carries this number.
+        var exists = await db.IndexSchemas
+            .AnyAsync(
+                s => s.ProfileId == group.ProfileId && s.Version == schemaVersion, cancellationToken)
+            .ConfigureAwait(false);
+        if (!exists)
+        {
+            throw new InvalidOperationException(
+                $"This profile has no field layout version {schemaVersion}.");
+        }
+
+        if (group.SchemaVersion == schemaVersion)
+        {
+            return;
+        }
+
+        group.SchemaVersion = schemaVersion;
+        group.UpdatedUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Groups still pointing at an older layout than their profile's newest, so the user can be
+    /// offered the move instead of being told about it in a status line that disappears.
+    /// </summary>
+    public async Task<IReadOnlyList<Group>> GroupsOnOlderSchemaAsync(
+        Guid profileId, CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var latest = await db.IndexSchemas
+            .Where(s => s.ProfileId == profileId)
+            .MaxAsync(s => (int?)s.Version, cancellationToken).ConfigureAwait(false);
+        if (latest is null)
+        {
+            return [];
+        }
+
+        return await db.Groups
+            .Where(g => g.ProfileId == profileId && g.SchemaVersion < latest)
+            .OrderBy(g => g.Name)
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<IReadOnlyList<Page>> GetPagesAsync(Guid groupId, CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);

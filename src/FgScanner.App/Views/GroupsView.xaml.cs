@@ -153,3 +153,17 @@ public sealed class CountToVisibilityConverter : IValueConverter
     public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
         throw new NotSupportedException();
 }
+
+/// <summary>Shows an element only while its bound text is non-empty.</summary>
+public sealed class StringToVisibilityConverter : IValueConverter
+{
+    public static StringToVisibilityConverter Instance { get; } = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
+        string.IsNullOrWhiteSpace(value as string)
+            ? System.Windows.Visibility.Collapsed
+            : System.Windows.Visibility.Visible;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
+        throw new NotSupportedException();
+}

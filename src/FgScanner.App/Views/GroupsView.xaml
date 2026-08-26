@@ -71,8 +71,22 @@
         <!-- Detail: pending values, entry grid, commit -->
         <DockPanel Grid.Column="1" DataContext="{Binding Detail}">
             <StackPanel DockPanel.Dock="Top">
-                <Expander Header="Values for the next scan (applied to newly scanned pages)"
-                          IsExpanded="False" Margin="0,0,0,6"
+                <!--
+                  A group keeps the field layout it was created with, so one created before its
+                  fields were defined renders an empty pane. Saying so, with the way out attached,
+                  is the difference between a data trap and a one-click fix.
+                -->
+                <Border Margin="0,0,0,6" Padding="10,8" CornerRadius="4"
+                        Background="#22808080" BorderBrush="#44808080" BorderThickness="1"
+                        Visibility="{Binding SchemaNotice, Converter={x:Static views:StringToVisibilityConverter.Instance}}">
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="Use latest field layout"
+                                Command="{Binding UseLatestFieldLayoutCommand}" Padding="10,4" Margin="10,0,0,0" />
+                        <TextBlock Text="{Binding SchemaNotice}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                    </DockPanel>
+                </Border>
+                <Expander Header="Index values — applied to the next scan, or to existing rows with the button below"
+                          IsExpanded="True" Margin="0,0,0,6"
                           Visibility="{Binding PendingFields.Count, Converter={x:Static views:CountToVisibilityConverter.Instance}}">
                     <ItemsControl ItemsSource="{Binding PendingFields}" Margin="4">
                         <ItemsControl.ItemsPanel>
@@ -105,6 +119,20 @@
                                                             </Setter.Value>
                                                         </Setter>
                                                     </DataTrigger>
+                                                    <!--
+                                                      A pre-scan value lands on every page of the
+                                                      batch, so a mistyped date is a batch-wide
+                                                      mistake. The picker makes one impossible.
+                                                    -->
+                                                    <DataTrigger Binding="{Binding IsDate}" Value="True">
+                                                        <Setter Property="ContentTemplate">
+                                                            <Setter.Value>
+                                                                <DataTemplate>
+                                                                    <DatePicker SelectedDate="{Binding DateValue}" />
+                                                                </DataTemplate>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
                                         </ContentControl.Style>
@@ -114,6 +142,12 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </Expander>
+                <WrapPanel Margin="0,0,0,6"
+                           Visibility="{Binding PendingFields.Count, Converter={x:Static views:CountToVisibilityConverter.Instance}}">
+                    <Button Content="Apply to all rows" Command="{Binding ApplyValuesToAllRowsCommand}"
+                            Padding="10,4"
+                            ToolTip="Write the values above onto every row that does not already have one" />
+                </WrapPanel>
                 <WrapPanel Margin="0,0,0,6">
                     <Button Content="Review &amp; Commit" Command="{Binding CommitCommand}" FontWeight="SemiBold"
                             Padding="10,6" Margin="0,0,6,0" />

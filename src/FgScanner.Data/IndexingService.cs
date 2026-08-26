@@ -61,6 +61,99 @@ public sealed class IndexingService(
     }
 
     /// <summary>
+    /// Writes the same field values across every document in a group, and returns how many rows
+    /// changed.
+    ///
+    /// This is what a user reaches for after discovering their fields were missing while they
+    /// scanned: the pending-values mechanism only reaches documents adopted after the fact, and
+    /// filling a hundred rows by hand is not a fix. With <paramref name="overwrite"/> false — the
+    /// default the UI uses — a row that already holds a value keeps it, because the common case is
+    /// completing what is blank rather than replacing work already done by hand.
+    ///
+    /// Values are validated against the field type once, up front. Stamping an unparseable date
+    /// onto every row and surfacing it one row at a time at commit is the failure this avoids.
+    /// </summary>
+    public async Task<int> ApplyValuesToAllAsync(
+        Guid groupId,
+        IReadOnlyDictionary<string, string?> values,
+        bool overwrite = false,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var group = await db.Groups.FirstAsync(g => g.Id == groupId, cancellationToken).ConfigureAwait(false);
+        if (group.ProfileId is null)
+        {
+            return 0;
+        }
+
+        var schema = await profileService
+            .GetSchemaAsync(group.ProfileId.Value, group.SchemaVersion, cancellationToken).ConfigureAwait(false);
+
+        // A value for a field this group's layout does not have would never be shown or exported,
+        // so it is dropped rather than written into a row where nothing could reach it again.
+        var applicable = new Dictionary<string, string?>();
+        foreach (var field in schema.Fields)
+        {
+            if (!values.TryGetValue(field.Name, out var value) || string.IsNullOrEmpty(value))
+            {
+                continue;
+            }
+
+            var error = FieldValidator.Validate(
+                new IndexFieldDef(field.Name, (IndexFieldType)field.Type, field.Required),
+                value,
+                ParseChoices(field.ListChoicesJson));
+            if (error is not null)
+            {
+                throw new InvalidOperationException($"{field.Name}: {error}");
+            }
+
+            applicable[field.Name] = value;
+        }
+
+        if (applicable.Count == 0)
+        {
+            return 0;
+        }
+
+        var documents = await db.Documents
+            .Where(d => d.GroupId == groupId)
+            .OrderBy(d => d.Sequence)
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        var changed = 0;
+        foreach (var document in documents)
+        {
+            var current = JsonSerializer.Deserialize<Dictionary<string, string?>>(document.CustomFieldsJson) ?? [];
+            var touched = false;
+            foreach (var (name, value) in applicable)
+            {
+                if (!overwrite && current.TryGetValue(name, out var existing) && !string.IsNullOrEmpty(existing))
+                {
+                    continue;
+                }
+
+                current[name] = value;
+                touched = true;
+            }
+
+            if (touched)
+            {
+                document.CustomFieldsJson = JsonSerializer.Serialize(current, JsonOptions);
+                changed++;
+            }
+        }
+
+        if (changed > 0)
+        {
+            group.UpdatedUtc = DateTime.UtcNow;
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return changed;
+    }
+
+    /// <summary>
     /// Applies initial values to freshly adopted documents: explicit pending values win, then
     /// sticky values from the previous document, then expanded defaults (PLAN §5.4).
     /// </summary>
