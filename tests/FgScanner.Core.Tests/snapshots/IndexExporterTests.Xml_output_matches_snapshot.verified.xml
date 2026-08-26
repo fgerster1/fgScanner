@@ -1,13 +1,13 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <fgIndex group="Invoices 2026" profile="Accounting" schemaVersion="3" appVersion="1.2.3" generatedUtc="2026-08-20T12:00:00.0000000Z">
-  <document sequence="1" image="scan_00001.png" ocred="Yes" aiStatus="Done">
+  <document sequence="1" image="scan_00001.png" ocred="Yes" ocrConfidence="96.4" aiStatus="Done">
     <aiDescription>A plain description.</aiDescription>
     <field name="Vendor" type="text">Acme Corp</field>
     <field name="InvoiceDate" type="date">2026-08-19</field>
     <field name="Amount" type="number">1234.5</field>
     <field name="Category" type="list">Utilities</field>
   </document>
-  <document sequence="2" image="scan_00002.png" ocred="Failed" aiStatus="Pending">
+  <document sequence="2" image="scan_00002.png" ocred="Failed" ocrConfidence="" aiStatus="Pending">
     <aiDescription>Comma, "quotes" and
 a new line.</aiDescription>
     <field name="Vendor" type="text">Müller &amp; Söhne GmbH — 日本語</field>
@@ -15,14 +15,14 @@ a new line.</aiDescription>
     <field name="Amount" type="number">-42.75</field>
     <field name="Category" type="list"></field>
   </document>
-  <document sequence="3" image="scan_00003.png" ocred="No" aiStatus="Skipped">
+  <document sequence="3" image="scan_00003.png" ocred="No" ocrConfidence="" aiStatus="Skipped">
     <aiDescription>=1+2+cmd|' /C calc'!A0</aiDescription>
     <field name="Vendor" type="text">@SUM(A1:A9)</field>
     <field name="InvoiceDate" type="date">2026-01-02</field>
     <field name="Amount" type="number">0</field>
     <field name="Category" type="list">Other</field>
   </document>
-  <document sequence="4" image="scan_00004.png" ocred="Yes" aiStatus="Done">
+  <document sequence="4" image="scan_00004.png" ocred="Yes" ocrConfidence="21.3" aiStatus="Done">
     <aiDescription>DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD</aiDescription>
     <field name="Vendor" type="text">Long Description Test</field>
     <field name="InvoiceDate" type="date">2026-12-31</field>

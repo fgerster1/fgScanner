@@ -158,7 +158,16 @@ Fix has a judgment call in it — decide before implementing:
   ambiguous).
 Either way add a regression test asserting saved-image DPI == requested DPI for page 1 of a run.
 
-### GAP-1 — no page-orientation detection
+### GAP-1 — no page-orientation detection — FIXED 2026-08-25
+
+**Resolved** by the auto-orientation work: `osd.traineddata` now ships, `OcrPipeline` runs an OSD
+pass per page and rotates the stored image to upright before recognition. See
+`docs/adr/0002-auto-orient-every-angle.md` — the scoped "rotate 180 only" decision was overturned
+by measurement, because exactly one of the two sideways directions reads correctly and the other is
+indistinguishable from an inverted page.
+
+Original report:
+
 
 The test sheets went through the ADF 180° rotated. Capture quality was excellent, but OCR returned
 reversed text (`smopulM\:D` = `C:\Windows` backwards) at 21-40% mean confidence, and nothing in the
@@ -169,7 +178,14 @@ Upside-down paper is user error, but silently producing garbage is a product gap
 auto-rotate. Cheap first step: an OSD pass when mean confidence lands below
 `OcrPipeline.LowConfidenceThreshold`, then re-OCR at the detected orientation.
 
-### GAP-2 — index.csv hides low-confidence OCR
+### GAP-2 — index.csv hides low-confidence OCR — FIXED 2026-08-25
+
+**Resolved**: every export format now carries an `OCRConfidence` column beside `OCRed` (empty when
+the page was never read, never 0). The XSD, the manifest and the Verify snapshots were updated with
+it, and the XLSX cell is a real number so "confidence < 70" is one Excel filter.
+
+Original report:
+
 
 All three pages scored 40.63 / 21.85 / 29.7 mean confidence — every one below
 `OcrPipeline.LowConfidenceThreshold` (65), i.e. all should be flagged for review. `index.csv` records

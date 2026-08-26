@@ -297,9 +297,14 @@ public static class CliRunner
         CancellationToken cancellationToken)
     {
         var tessdataDir = overrides?.TessdataDir ?? TesseractPaths.DefaultUserTessdataDir;
-        new LanguageManager(tessdataDir).EnsureBundledEnglish();
+        new LanguageManager(tessdataDir).EnsureBundledData();
         using var runner = new TesseractRunner(tessdataDir: tessdataDir);
-        var pipeline = new OcrPipeline(runner);
+        var settings = new AppSettingsService(services.Factory);
+        var pipeline = new OcrPipeline(
+            runner,
+            new Scanning.Editing.ImageEditorPageRotator(new Scanning.Editing.ImageEditor()),
+            ct => FeatureFlags.IsEnabledAsync(settings, FeatureFlags.AutoOrient, ct));
+        var reorder = new ReorderService(services.Factory);
         var queue = new OcrQueueService(services.Factory);
         await queue.ResetInFlightAsync(cancellationToken).ConfigureAwait(false);
         var queued = await queue.EnqueueGroupAsync(groupId, cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -310,6 +315,18 @@ public static class CliRunner
         {
             var outcome = await pipeline.ProcessPageAsync(
                 job.ImagePath, languages: "eng", cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (outcome.RotatedClockwiseDegrees != 0)
+            {
+                // Uprighting rewrote the file, so the stored checksum and perceptual hash are stale.
+                await reorder.RefreshChecksumAsync(job.PageId, cancellationToken).ConfigureAwait(false);
+                if (verbose)
+                {
+                    Console.WriteLine(string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"  {Path.GetFileName(job.ImagePath)}: rotated {outcome.RotatedClockwiseDegrees}° upright"));
+                }
+            }
+
             if (outcome.Success)
             {
                 await queue.CompleteAsync(job.JobId, outcome.PlainText ?? "", outcome.MeanConfidence, cancellationToken)
@@ -416,7 +433,7 @@ public static class CliRunner
                 if (parseResult.GetValue(ocrOption))
                 {
                     var tessdataDir = overrides?.TessdataDir ?? TesseractPaths.DefaultUserTessdataDir;
-                    new LanguageManager(tessdataDir).EnsureBundledEnglish();
+                    new LanguageManager(tessdataDir).EnsureBundledData();
                     ocrSettings = new PdfOcrSettings(TesseractPaths.DefaultExePath, tessdataDir);
                 }
 

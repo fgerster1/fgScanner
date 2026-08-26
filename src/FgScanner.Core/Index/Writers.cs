@@ -18,15 +18,31 @@ internal static class ColumnOrder
     public const string Group = "Group";
     public const string ImageName = "ImageName";
     public const string Ocred = "OCRed";
+
+    /// <summary>
+    /// Mean word confidence. "OCRed=Yes" alone cannot distinguish a clean read from a misfed page
+    /// recognised as confident gibberish, so the number travels with the verdict.
+    /// </summary>
+    public const string OcrConfidence = "OCRConfidence";
+
     public const string AiDescription = "AIDescription";
     public const string AiStatus = "AIStatus";
 
     public static IEnumerable<string> Headers(IndexExportData data) =>
-        new[] { Group, ImageName, Ocred, AiDescription, AiStatus }.Concat(data.Fields.Select(f => f.Name));
+        new[] { Group, ImageName, Ocred, OcrConfidence, AiDescription, AiStatus }
+            .Concat(data.Fields.Select(f => f.Name));
 
     public static IEnumerable<string?> Cells(IndexExportData data, IndexRow row) =>
-        new[] { data.GroupName, row.ImageName, row.Ocred, row.AiDescription, row.AiStatus }
+        new[]
+        {
+            data.GroupName, row.ImageName, row.Ocred, FormatConfidence(row.OcrConfidence),
+            row.AiDescription, row.AiStatus,
+        }
             .Concat(data.Fields.Select(f => row.CustomValues.GetValueOrDefault(f.Name)));
+
+    /// <summary>Empty for a page that was never read — a 0 would sort as "read very badly".</summary>
+    public static string? FormatConfidence(double? confidence) =>
+        confidence?.ToString("0.##", CultureInfo.InvariantCulture);
 }
 
 /// <summary>RFC 4180: UTF-8 with BOM, CRLF, quoting, "" escaping — plus formula-injection prefixing.</summary>
@@ -87,10 +103,13 @@ internal sealed class XlsxFormatWriter : IFormatWriter
             cell.Style.Font.Bold = true;
         }
 
+        // Custom fields start after the fixed columns, so this offset must track Headers().
+        var fixedColumns = headers.Count - data.Fields.Count;
+        var confidenceColumn = headers.IndexOf(ColumnOrder.OcrConfidence);
         var fieldTypeByColumn = new Dictionary<int, IndexFieldType>();
         for (var i = 0; i < data.Fields.Count; i++)
         {
-            fieldTypeByColumn[5 + i] = data.Fields[i].Type; // custom fields start after the 5 fixed columns
+            fieldTypeByColumn[fixedColumns + i] = data.Fields[i].Type;
         }
 
         for (var r = 0; r < data.Rows.Count; r++)
@@ -102,6 +121,14 @@ internal sealed class XlsxFormatWriter : IFormatWriter
                 var value = cells[c];
                 if (string.IsNullOrEmpty(value))
                 {
+                    continue;
+                }
+
+                // A real number, so "confidence < 70" is one Excel filter away.
+                if (c == confidenceColumn
+                    && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var confidence))
+                {
+                    cell.Value = confidence;
                     continue;
                 }
 
@@ -157,6 +184,9 @@ internal sealed class XmlFormatWriter : IFormatWriter
             await xml.WriteAttributeStringAsync(null, "sequence", null, sequence.ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false);
             await xml.WriteAttributeStringAsync(null, "image", null, row.ImageName).ConfigureAwait(false);
             await xml.WriteAttributeStringAsync(null, "ocred", null, row.Ocred).ConfigureAwait(false);
+            await xml.WriteAttributeStringAsync(
+                null, "ocrConfidence", null, ColumnOrder.FormatConfidence(row.OcrConfidence) ?? "")
+                .ConfigureAwait(false);
             await xml.WriteAttributeStringAsync(null, "aiStatus", null, row.AiStatus).ConfigureAwait(false);
             if (!string.IsNullOrEmpty(row.AiDescription))
             {

@@ -22,6 +22,7 @@ public static class IndexPayload
             Group = data.GroupName,
             r.ImageName,
             OCRed = r.Ocred,
+            OCRConfidence = r.OcrConfidence,
             AiDescription = r.AiDescription ?? "",
             r.AiStatus,
             Fields = data.Fields.ToDictionary(f => f.Name, f => r.CustomValues.GetValueOrDefault(f.Name) ?? ""),

@@ -28,7 +28,7 @@ public sealed class LanguageManagerTests : IDisposable
     {
         using var manager = new LanguageManager(Path.Combine(_dir, "td"));
 
-        manager.EnsureBundledEnglish();
+        manager.EnsureBundledData();
 
         Assert.True(manager.IsInstalled("eng"));
         Assert.Equal(["eng"], manager.InstalledCodes());

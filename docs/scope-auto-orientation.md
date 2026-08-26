@@ -1,6 +1,14 @@
 # Scope — GAP-1: automatic page-orientation detection
 
-**Status:** proposed, not started · **Scoped:** 2026-08-24 · **Origin:** `docs/manual-tests.md` GAP-1
+> **Status: implemented 2026-08-25** (branch `phase-11-auto-orientation`).
+> Decision #4 below — "rotate on 180 only" — was **overturned by measurement** before
+> implementation: exactly one of the two sideways directions reads correctly and the other
+> is indistinguishable from an inverted page, so a 180-only rule would leave a landscape
+> page on disk that no confidence check could flag. The shipped behaviour rotates to
+> whatever angle OSD reports. See `docs/adr/0002-auto-orient-every-angle.md`.
+> The blocker in §3 is resolved: `osd.traineddata` now ships in `src/FgScanner.Ocr/tessdata`.
+
+**Status:** implemented 2026-08-25 · **Scoped:** 2026-08-24 · **Origin:** `docs/manual-tests.md` GAP-1
 
 Every number below was measured on this machine against the real upside-down scans from the
 2026-08-24 hardware pass — none of it is estimated.

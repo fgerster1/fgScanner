@@ -24,28 +24,28 @@ internal static class ExporterTestData
         Formats: formats,
         Rows:
         [
-            new IndexRow("scan_00001.png", "Yes", "A plain description.", "Done", new Dictionary<string, string?>
+            new IndexRow("scan_00001.png", "Yes", 96.4, "A plain description.", "Done", new Dictionary<string, string?>
             {
                 ["Vendor"] = "Acme Corp",
                 ["InvoiceDate"] = "2026-08-19",
                 ["Amount"] = "1234.5",
                 ["Category"] = "Utilities",
             }),
-            new IndexRow("scan_00002.png", "Failed", "Comma, \"quotes\" and\r\na new line.", "Pending", new Dictionary<string, string?>
+            new IndexRow("scan_00002.png", "Failed", null, "Comma, \"quotes\" and\r\na new line.", "Pending", new Dictionary<string, string?>
             {
                 ["Vendor"] = "Müller & Söhne GmbH — 日本語",
                 ["InvoiceDate"] = null,
                 ["Amount"] = "-42.75",
                 ["Category"] = null,
             }),
-            new IndexRow("scan_00003.png", "No", "=1+2+cmd|' /C calc'!A0", "Skipped", new Dictionary<string, string?>
+            new IndexRow("scan_00003.png", "No", null, "=1+2+cmd|' /C calc'!A0", "Skipped", new Dictionary<string, string?>
             {
                 ["Vendor"] = "@SUM(A1:A9)",
                 ["InvoiceDate"] = "2026-01-02",
                 ["Amount"] = "0",
                 ["Category"] = "Other",
             }),
-            new IndexRow("scan_00004.png", "Yes", new string('D', 1000), "Done", new Dictionary<string, string?>
+            new IndexRow("scan_00004.png", "Yes", 21.3, new string('D', 1000), "Done", new Dictionary<string, string?>
             {
                 ["Vendor"] = "Long Description Test",
                 ["InvoiceDate"] = "2026-12-31",

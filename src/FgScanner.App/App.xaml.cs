@@ -142,7 +142,11 @@ public partial class App : Application
                 services.AddSingleton(sp => new FgScanner.Ocr.TesseractRunner(
                     tessdataDir: sp.GetRequiredService<FgScanner.Ocr.LanguageManager>().TessdataDir));
                 services.AddSingleton(sp => new FgScanner.Ocr.OcrPipeline(
-                    sp.GetRequiredService<FgScanner.Ocr.TesseractRunner>()));
+                    sp.GetRequiredService<FgScanner.Ocr.TesseractRunner>(),
+                    new FgScanner.Scanning.Editing.ImageEditorPageRotator(
+                        new FgScanner.Scanning.Editing.ImageEditor()),
+                    ct => FeatureFlags.IsEnabledAsync(
+                        sp.GetRequiredService<AppSettingsService>(), FeatureFlags.AutoOrient, ct)));
                 services.AddSingleton<ProfileOcrTrigger>();
                 services.AddSingleton<OcrWorker>();
                 services.AddSingleton<UpdateService>();
@@ -171,7 +175,7 @@ public partial class App : Application
         OfferCrashRecovery(_host.Services.GetRequiredService<ScanSessionService>());
 
         // Bundled English lands in the writable tessdata dir; then the durable queue drains.
-        _host.Services.GetRequiredService<FgScanner.Ocr.LanguageManager>().EnsureBundledEnglish();
+        _host.Services.GetRequiredService<FgScanner.Ocr.LanguageManager>().EnsureBundledData();
         _host.Services.GetRequiredService<OcrWorker>().Start();
         _host.Services.GetRequiredService<AiWorker>().Start();
 

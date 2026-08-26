@@ -219,6 +219,7 @@ public sealed class IndexingService(
                     OcrStatus.Pending => "Pending",
                     _ => "No",
                 },
+                page.OcrMeanConfidence,
                 page.AiDescription,
                 page.AiStatus.ToString(),
                 JsonSerializer.Deserialize<Dictionary<string, string?>>(doc.CustomFieldsJson) ?? []));

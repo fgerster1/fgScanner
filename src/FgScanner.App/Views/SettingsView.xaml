@@ -82,6 +82,10 @@
                           IsChecked="{Binding OcrEnabled}" Margin="0,0,12,0" />
             </WrapPanel>
             <WrapPanel Margin="0,0,0,4">
+                <CheckBox Content="Turn misfed pages upright before reading them (adds about a second per page)"
+                          IsChecked="{Binding FeatureAutoOrient}" Margin="0,0,12,0" />
+            </WrapPanel>
+            <WrapPanel Margin="0,0,0,4">
                 <TextBlock Text="Languages (e.g. eng or eng+deu):" VerticalAlignment="Center" Margin="0,0,6,0" />
                 <TextBox Width="120" Text="{Binding OcrLanguages}" />
                 <TextBlock Text="Installed:" VerticalAlignment="Center" Margin="16,0,4,0" Opacity="0.7" />

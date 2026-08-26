@@ -69,6 +69,25 @@ public sealed class IndexExporterTests : IDisposable
     }
 
     [Fact]
+    public async Task A_low_confidence_read_is_distinguishable_from_a_good_one()
+    {
+        // "OCRed=Yes" alone described a 21%-confidence upside-down page exactly as it described a
+        // clean 96% read, which is how a batch of misfed scans went unnoticed. The number has to
+        // reach whatever consumes the index, not just the app's own grid.
+        await ExportAsync(IndexFormat.Csv);
+
+        var text = await File.ReadAllTextAsync(
+            Path.Combine(_dir, "index.csv"), TestContext.Current.CancellationToken);
+
+        Assert.Contains("OCRed,OCRConfidence,", text, StringComparison.Ordinal);
+        Assert.Contains("scan_00001.png,Yes,96.4,", text, StringComparison.Ordinal);
+        Assert.Contains("scan_00004.png,Yes,21.3,", text, StringComparison.Ordinal);
+        // A page that was never read has no confidence to report — not a zero, which would sort
+        // and filter as though it had been read very badly.
+        Assert.Contains("scan_00003.png,No,,", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Csv_neutralizes_formula_injection()
     {
         await ExportAsync(IndexFormat.Csv);
@@ -96,22 +115,27 @@ public sealed class IndexExporterTests : IDisposable
         var sheet = workbook.Worksheet("Index");
 
         Assert.Equal("Group", sheet.Cell(1, 1).GetString());
-        Assert.Equal("Vendor", sheet.Cell(1, 6).GetString());
+        Assert.Equal("OCRConfidence", sheet.Cell(1, 4).GetString());
+        Assert.Equal("Vendor", sheet.Cell(1, 7).GetString());
 
         // Row 2 = first data row. Date and number are REAL typed cells, not text.
-        Assert.Equal(XLDataType.DateTime, sheet.Cell(2, 7).DataType);
-        Assert.Equal(new DateTime(2026, 8, 19), sheet.Cell(2, 7).GetDateTime());
-        Assert.Equal(XLDataType.Number, sheet.Cell(2, 8).DataType);
-        Assert.Equal(1234.5, sheet.Cell(2, 8).GetDouble());
+        Assert.Equal(XLDataType.DateTime, sheet.Cell(2, 8).DataType);
+        Assert.Equal(new DateTime(2026, 8, 19), sheet.Cell(2, 8).GetDateTime());
+        Assert.Equal(XLDataType.Number, sheet.Cell(2, 9).DataType);
+        Assert.Equal(1234.5, sheet.Cell(2, 9).GetDouble());
+
+        // Confidence is numeric, so "less than 70" is one Excel filter rather than a text compare.
+        Assert.Equal(XLDataType.Number, sheet.Cell(2, 4).DataType);
+        Assert.Equal(96.4, sheet.Cell(2, 4).GetDouble());
 
         // Injection row stays literal text, never a formula.
-        var injectionCell = sheet.Cell(4, 4);
+        var injectionCell = sheet.Cell(4, 5);
         Assert.Equal(XLDataType.Text, injectionCell.DataType);
         Assert.False(injectionCell.HasFormula);
         Assert.StartsWith("=1+2", injectionCell.GetString());
 
         // Unicode survives.
-        Assert.Contains("日本語", sheet.Cell(3, 6).GetString());
+        Assert.Contains("日本語", sheet.Cell(3, 7).GetString());
 
         Assert.Equal(1, sheet.SheetView.SplitRow); // frozen header
         Assert.True(sheet.AutoFilter.IsEnabled);

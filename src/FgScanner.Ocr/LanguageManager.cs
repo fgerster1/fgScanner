@@ -40,22 +40,35 @@ public sealed class LanguageManager(string? tessdataDir = null, HttpMessageHandl
         Directory.Exists(_tessdataDir)
             ? [.. Directory.EnumerateFiles(_tessdataDir, "*.traineddata")
                 .Select(Path.GetFileNameWithoutExtension)
-                .Where(c => c is not null)
+                .Where(c => c is not null && !OrientationDataCodes.Contains(c))
                 .Select(c => c!)
                 .OrderBy(c => c, StringComparer.Ordinal)]
             : [];
 
-    /// <summary>Copies the shipped eng.traineddata into the writable dir so one folder holds all languages.</summary>
-    public void EnsureBundledEnglish()
+    /// <summary>Files that live in tessdata but are not languages, so must not be offered as one.</summary>
+    private static readonly HashSet<string> OrientationDataCodes = new(StringComparer.OrdinalIgnoreCase) { "osd" };
+
+    /// <summary>The traineddata shipped beside the app: English, plus the orientation model.</summary>
+    private static readonly string[] BundledFiles = ["eng.traineddata", "osd.traineddata"];
+
+    /// <summary>Copies the shipped traineddata into the writable dir so one folder holds them all.</summary>
+    public void EnsureBundledData()
     {
         Directory.CreateDirectory(_tessdataDir);
-        var target = Path.Combine(_tessdataDir, "eng.traineddata");
-        var bundled = Path.Combine(TesseractPaths.BundledTessdataDir, "eng.traineddata");
-        if (!File.Exists(target) && File.Exists(bundled))
+        foreach (var file in BundledFiles)
         {
-            File.Copy(bundled, target);
+            var target = Path.Combine(_tessdataDir, file);
+            var bundled = Path.Combine(TesseractPaths.BundledTessdataDir, file);
+            if (!File.Exists(target) && File.Exists(bundled))
+            {
+                File.Copy(bundled, target);
+            }
         }
     }
+
+    /// <summary>Whether orientation detection can run; false leaves misfed pages undetectable.</summary>
+    public bool IsOrientationDataInstalled() =>
+        File.Exists(Path.Combine(_tessdataDir, "osd.traineddata"));
 
     public async Task InstallAsync(string code, CancellationToken cancellationToken = default)
     {

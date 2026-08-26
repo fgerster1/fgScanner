@@ -22,6 +22,7 @@ public sealed record IndexFieldDef(string Name, IndexFieldType Type, bool Requir
 public sealed record IndexRow(
     string ImageName,
     string Ocred,
+    double? OcrConfidence,
     string? AiDescription,
     string AiStatus,
     IReadOnlyDictionary<string, string?> CustomValues);

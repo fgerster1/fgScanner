@@ -41,6 +41,21 @@
                 </xs:restriction>
               </xs:simpleType>
             </xs:attribute>
+            <!--
+              Mean word confidence, 0-100. Empty when the page was never read: "ocred" alone
+              cannot separate a clean read from a misfed page recognised as confident gibberish.
+            -->
+            <xs:attribute name="ocrConfidence" use="required">
+              <xs:simpleType>
+                <xs:union memberTypes="xs:decimal">
+                  <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                      <xs:enumeration value="" />
+                    </xs:restriction>
+                  </xs:simpleType>
+                </xs:union>
+              </xs:simpleType>
+            </xs:attribute>
             <xs:attribute name="aiStatus" use="required">
               <xs:simpleType>
                 <xs:restriction base="xs:string">

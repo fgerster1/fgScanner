@@ -13,5 +13,13 @@
     <Content Include="tessdata\eng.traineddata">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!--
+      Orientation detection is not a language: without osd.traineddata the OSD page-segmentation
+      mode hard-errors and auto-with-OSD silently degrades to plain auto, leaving a misfed page
+      unrecoverable. It ships rather than downloads because the failure it prevents is silent.
+    -->
+    <Content Include="tessdata\osd.traineddata">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 </Project>

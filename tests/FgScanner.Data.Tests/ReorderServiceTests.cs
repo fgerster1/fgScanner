@@ -1,4 +1,5 @@
 using FgScanner.Data;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace FgScanner.Data.Tests;
@@ -117,5 +118,29 @@ public sealed class ReorderServiceTests : IDisposable
         Assert.NotEqual(before, refreshed.Checksum);
         Assert.Equal(await GroupService.ComputeSha256Async(
             Path.Combine(group.DirectoryPath, refreshed.FileName), Ct), refreshed.Checksum);
+    }
+
+    [Fact]
+    public async Task RefreshChecksum_discards_the_perceptual_hash_of_the_previous_image()
+    {
+        // The hash describes a picture, not a file. Keeping it after an edit would have duplicate
+        // detection compare pages against images that no longer exist — silently, since a stale
+        // hash is indistinguishable from a current one.
+        var (group, pages) = await CreateGroupWithPagesAsync(1);
+        await SetImageHashAsync(pages[0].Id, new string('a', 64));
+        await File.WriteAllBytesAsync(
+            Path.Combine(group.DirectoryPath, pages[0].FileName), [9, 9, 9], Ct);
+
+        await _reorder.RefreshChecksumAsync(pages[0].Id, Ct);
+
+        Assert.Null((await _groups.GetPagesAsync(group.Id, Ct))[0].ImageHash);
+    }
+
+    private async Task SetImageHashAsync(Guid pageId, string hash)
+    {
+        await using var db = _db.Factory.CreateDbContext();
+        var page = await db.Pages.SingleAsync(p => p.Id == pageId, Ct);
+        page.ImageHash = hash;
+        await db.SaveChangesAsync(Ct);
     }
 }

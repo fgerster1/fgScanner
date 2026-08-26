@@ -93,7 +93,12 @@ public sealed class ReorderService(IDbContextFactory<FgScannerDbContext> dbFacto
             .ToListAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Recomputes a page's checksum after its image file was edited in place.</summary>
+    /// <summary>
+    /// Recomputes a page's checksum after its image file was edited in place, and discards the
+    /// perceptual hash. That hash describes a picture rather than a file, so an edit invalidates
+    /// it; leaving it would have duplicate detection compare pages against images that no longer
+    /// exist, and a stale hash is indistinguishable from a current one. It is recomputed on demand.
+    /// </summary>
     public async Task RefreshChecksumAsync(Guid pageId, CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
@@ -102,6 +107,7 @@ public sealed class ReorderService(IDbContextFactory<FgScannerDbContext> dbFacto
             .FirstAsync(p => p.Id == pageId, cancellationToken).ConfigureAwait(false);
         var filePath = Path.Combine(page.Document!.Group!.DirectoryPath, page.FileName);
         page.Checksum = await GroupService.ComputeSha256Async(filePath, cancellationToken).ConfigureAwait(false);
+        page.ImageHash = null;
         page.Document.Group.UpdatedUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }

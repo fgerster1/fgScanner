@@ -13,6 +13,8 @@ Tracks FG Scanner against the NAPS2 8.3.2 inventory (docs/research/research-1-na
 | PDF (PDF/A, metadata, encryption) + images export | [F] | ☑ (PDF/A-1b/2b/3b/3u, 8 permission flags; JPEG/PNG/BMP/TIFF incl. multi-page + CCITT4) | 4 |
 | Import PDF/images; file associations | [F] | ◐ (import incl. PDF passwords done; file associations in 9) | 4,9 |
 | OCR → .md + searchable PDF + languages | [F]+ | ☑ (Tesseract 5.5 fast; geometric Markdown; durable queue; 9 languages w/ SHA-256 downloads; text layer via exporter) | 5 |
+| Auto-orient misfed pages | [F] | ☑ (per-page OSD, rotates stored image to any angle, osd.traineddata bundled; Feature.AutoOrient default on; ADR-0002) | 11 |
+| OCR confidence in the index | FG core | ☑ (OCRConfidence column in CSV/XLSX/XML/JSON + XSD; empty, never 0, when unread) | 11 |
 | AI descriptions (Gemini, BYO-key, queue, cost) | FG core | ☑ (gemini-2.5-flash-lite; CredMan key; durable queue; estimate + spend tracking; blank-page skip) | 6 |
 | Retro-process existing folder + reconcile | FG core | ☑ (in-place adoption, PDF render, checksum re-match, foreign-index warn, selective re-run; idempotent) | 7 |
 | Batch dialog + CLI + shortcuts + profiles import/export | [P] | ☑ (scan/process/export/list-devices; batch modes; rebindable NAPS2 defaults; .fgprofile) | 8 |

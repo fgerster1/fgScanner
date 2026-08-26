@@ -18,6 +18,7 @@ public sealed class OcrWorker : IDisposable
     private readonly TrashService _trash;
     private readonly ActiveGroupStore _activeGroup;
     private readonly AppSettingsService _settings;
+    private readonly ReorderService _reorder;
     private readonly SemaphoreSlim _wake = new(0);
     private readonly CancellationTokenSource _stop = new();
     private Task? _loop;
@@ -28,7 +29,8 @@ public sealed class OcrWorker : IDisposable
         IndexingService indexing,
         TrashService trash,
         ActiveGroupStore activeGroup,
-        AppSettingsService settings)
+        AppSettingsService settings,
+        ReorderService reorder)
     {
         _queue = queue;
         _pipeline = pipeline;
@@ -36,6 +38,7 @@ public sealed class OcrWorker : IDisposable
         _trash = trash;
         _activeGroup = activeGroup;
         _settings = settings;
+        _reorder = reorder;
         queue.JobsEnqueued += () => _wake.Release();
     }
 
@@ -115,6 +118,16 @@ public sealed class OcrWorker : IDisposable
             var languages = await _settings.GetAsync(AppSettingsService.OcrLanguagesKey, "eng", _stop.Token);
             var outcome = await _pipeline.ProcessPageAsync(
                 job.ImagePath, ReadDpi(job.ImagePath), languages, _stop.Token);
+            if (outcome.RotatedClockwiseDegrees != 0)
+            {
+                // The pipeline rewrote the file to upright it, so the stored checksum and
+                // perceptual hash now describe the previous image.
+                Log.Information(
+                    "Auto-rotated {Image} by {Degrees}° to upright it",
+                    job.ImagePath, outcome.RotatedClockwiseDegrees);
+                await _reorder.RefreshChecksumAsync(job.PageId, _stop.Token);
+            }
+
             if (outcome.Success)
             {
                 await _queue.CompleteAsync(

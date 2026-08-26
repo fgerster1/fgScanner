@@ -14,6 +14,7 @@ treat drift as a review item.
 | NAPS2.Pdfium.Binaries (PDFium) | BSD-3-Clause | PDF rendering/import |
 | PDFsharp (via NAPS2.Sdk) | MIT | PDF assembly and text layer |
 | tessdata_fast language models | Apache-2.0 | OCR languages (eng bundled, others downloaded) |
+| tessdata_fast osd.traineddata | Apache-2.0 | Page-orientation detection (bundled) |
 | Microsoft.EntityFrameworkCore.Sqlite | MIT | Data access |
 | SQLitePCLRaw.bundle_e_sqlite3 / SQLite | Apache-2.0 / Public Domain | Database engine |
 | ClosedXML | MIT | XLSX index export |
