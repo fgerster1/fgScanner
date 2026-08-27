@@ -1,0 +1,415 @@
+FG Scanner — Evidence scanning station setup
+============================================
+For the dedicated scanning machine (Portage County probate case, Jim Tomaiko).
+Work through this once, in order. At the end you run the test in Part 7 before
+Jim scans a single real sheet.
+
+Companion documents on this stick:
+    READ-ME-FIRST.txt   installing and testing the scanner hardware
+    user-guide.md       general FG Scanner reference
+
+Why this document is fussy about spelling: the folders Jim produces are read by
+an importer on Franz's machine that looks for exact field names and exact JSON
+keys. A misspelled field name does not raise an error — it produces a folder
+that imports with that column silently empty. Two boxes of scanning would have
+to be redone. Type the names exactly as printed here.
+
+
+-------------------------------------------------------------------------------
+PART 1 — Install the software
+-------------------------------------------------------------------------------
+
+1. Follow READ-ME-FIRST.txt to install FG Scanner and confirm the scanner works.
+   Use the INSTALLER (not the portable copy) on a dedicated station — it sets up
+   the scanner button, file associations and updates.
+
+2. Confirm the version. This matters: the evidence features did not exist before
+   0.3.2, and an older build produces folders the importer will refuse.
+
+       Settings -> Apps -> "FG Scanner" should read 0.3.2 or newer.
+
+   Or right-click C:\Program Files\FGScanner\FgScanner.exe -> Properties ->
+   Details -> File version.
+
+3. Decide where scans live. Use a dedicated folder on the largest drive, e.g.
+
+       D:\Evidence-Scans\
+
+   Create it now. Preserve-originals (Part 2) keeps a second copy of every
+   edited page, so allow roughly double the space you would otherwise expect.
+   Budget about 1 GB per thousand pages at 300 DPI, doubled to be safe.
+
+
+-------------------------------------------------------------------------------
+PART 2 — Application settings (once per machine)
+-------------------------------------------------------------------------------
+
+Open FG Scanner -> Settings. Work down the page. Nothing here saves until you
+press "Save profile & settings" at the very bottom, so do the whole part first.
+
+2.1 Preserve originals — THE MOST IMPORTANT SETTING
+
+    Under "OCR", tick:
+
+        [x] Keep an untouched copy of every image before its first edit
+            (for evidence work)
+
+    What it does: before anything ever modifies a page image, FG Scanner copies
+    the untouched scan into an "originals" folder beside the page and records
+    its SHA-256 checksum. The scan as it came off the glass survives and can be
+    proven unaltered.
+
+    It is OFF by default and it only protects pages edited AFTER it is on. A
+    page already edited has lost its original permanently. Turn it on before
+    the first sheet — that is the whole point.
+
+2.2 Auto-orient — leave it ON
+
+    Under "OCR", leave ticked:
+
+        [x] Turn misfed pages upright before reading them
+
+    A sheet fed in the wrong way round reads as confident nonsense that nothing
+    downstream can distinguish from a clean read. Auto-orient turns it upright.
+
+    NOTE, if you are comparing against the older JimsStuff runbook: that text
+    said to turn auto-orient OFF "until original preservation ships". It has now
+    shipped (0.3.2) and you enabled it in 2.1, so auto-orient is safe and should
+    stay on. The two settings are a pair — auto-orient rewrites the image, and
+    preserve-originals is what keeps the pre-rotation capture. Never run
+    auto-orient ON with preserve-originals OFF on evidence work.
+
+    Side effect worth knowing: a page that was auto-rotated will show a filled-in
+    "originalChecksum" in index.json while an untouched page shows null. That is
+    expected and is not a sign of tampering — it is the record that the rotation
+    happened and the original was kept.
+
+2.3 Features section (near the bottom, "Features (v1.1)")
+
+        [x] Blank-page policy      <- REQUIRED, see 4.4. Without this tick the
+                                      blank setting in the profile does nothing.
+        [ ] Patch-T separator detection    <- leave OFF
+        [ ] Commit hook                    <- leave OFF (import is pull-based;
+                                              this machine sends nothing anywhere)
+        [x] Full-text search               <- optional, handy for finding a page
+
+2.4 AI descriptions — leave completely alone
+
+    Do NOT enter a Gemini API key. With no key stored, AI descriptions never
+    run. The portal writes its own titles and summaries; paying twice for worse
+    ones helps nobody.
+
+2.5 Trash retention
+
+    "Keep deleted pages for" — raise it from 30 days to 365. On evidence work
+    you want a long window to recover a page deleted by mistake.
+
+Press "Save profile & settings".
+
+
+-------------------------------------------------------------------------------
+PART 3 — Create the Evidence profile
+-------------------------------------------------------------------------------
+
+Still in Settings, at the top under "Profiles & index fields".
+
+1. Type this into the box next to the profile dropdown, then press "New profile":
+
+       JimsStuff Evidence
+
+2. Make sure it is the profile selected in the dropdown before you continue.
+   Everything below applies to the SELECTED profile.
+
+3. "Base folder for new groups" -> Browse... -> pick D:\Evidence-Scans
+   (or whatever you created in Part 1.3). This stops FG Scanner asking where to
+   put every new group, which is one less thing to get wrong at 200 pages in.
+
+
+-------------------------------------------------------------------------------
+PART 4 — The nine fields (THE CONTRACT)
+-------------------------------------------------------------------------------
+
+Under "Custom fields (up to 12...)", press "Add field" nine times and fill in
+the grid to match the table below exactly. Nine of the twelve allowed slots,
+leaving headroom.
+
+Columns in the grid: Name | Type | Required | Sticky | Default | Choices
+
+  #  Name       Type     Required  Sticky  Default   Choices
+  -  ---------  -------  --------  ------  --------  ---------------------------
+  1  DocNo      Number      YES     YES      -       -
+  2  DocDate    Text        no      no       -       -
+  3  DocType    List        no      YES      -       (see 4.1 below)
+  4  Title      Text        no      no       -       -
+  5  Parties    Text        no      YES      -       -
+  6  Operator   Text        YES     YES    $(user)   -
+  7  Redact     List        no      no       -       identifier;phi
+  8  Box        Text        YES     YES      -       -
+  9  Notes      Text        no      no       -       -
+
+Spelling reference — these nine strings are the contract. Capital letters as
+shown, no spaces, no plurals:
+
+       DocNo
+       DocDate
+       DocType
+       Title
+       Parties
+       Operator
+       Redact
+       Box
+       Notes
+
+4.1 DocType choices
+
+    In the Choices cell for DocType, enter this as ONE line, separated by
+    semicolons, no spaces around the semicolons:
+
+trust_document;deposition_transcript;financial_record;property_record;personal_letter;court_filing;attorney_correspondence;billing_statement;photograph_map;handwritten_note;word_index;cover_page;other
+
+    That is 13 values. They are the portal's vocabulary — a value outside this
+    list does not import. Lower case with underscores, exactly as printed.
+
+4.2 Redact choices
+
+    In the Choices cell for Redact:
+
+       identifier;phi
+
+    "identifier" = an account number, SSN, password or similar is visible on the
+    page. "phi" = medical information is visible. Blank = not assessed.
+
+    Rule: say WHERE, never WHAT. Never type an actual account number into any
+    field. The field marks that the page needs redacting; the portal handles it.
+
+4.3 Two type choices that look wrong but are not
+
+    DocDate is Text, NOT Date.
+        The Date type accepts only strict YYYY-MM-DD. The case corpus needs
+        approximate dates the portal understands — ~1990, ~2023-10, ~YYYY-08-18
+        — and the Date type would reject every one of them. Text it is.
+        Write the date printed ON the document. If the page shows no date,
+        leave it blank. Never guess a date.
+
+    DocNo is Number and Required.
+        It is the document boundary: pages sharing a DocNo are the same paper
+        document. Start at 1 in each box and increment when a new document
+        starts.
+
+4.4 What "Sticky" does, and why five fields use it
+
+    A sticky field carries its value forward to the next page automatically. So
+    Box is typed once per box, Operator once ever, DocNo stays put until you
+    change it at a document boundary, and DocType and Parties carry through a
+    multi-page document. Non-sticky fields (DocDate, Title, Redact, Notes) clear
+    for each page, because they describe that sheet.
+
+4.5 Saving
+
+    Press "Save profile & settings".
+
+    Saving the field list creates a new schema version. That is normal. Groups
+    already scanned keep the version they were created with, which is why you
+    finish the field setup BEFORE Jim starts rather than adjusting it later.
+
+
+-------------------------------------------------------------------------------
+PART 5 — Profile settings (same page, still on JimsStuff Evidence)
+-------------------------------------------------------------------------------
+
+5.1 Index file formats — the single most important tick on this page
+
+        [x] CSV                <- for humans
+        [ ] Excel (.xlsx)
+        [ ] XML
+        [x] JSON               <- THE IMPORTER READS THIS. It is OFF by default.
+
+    If JSON is not ticked, the folder Jim produces has no index.json, and the
+    importer has nothing to read. Everything else can be fixed later; this one
+    means rescanning. Check it twice.
+
+    CSV delimiter: leave as a comma.
+
+5.2 OCR
+
+        [x] Run OCR automatically on pages saved with this profile
+        Languages: eng
+
+5.3 Capture policy — separator sheets
+
+        [ ] Detect Patch-T separator sheets     <- OFF
+
+    Document boundaries are recorded with the DocNo field, not with separator
+    sheets. Leave this off so no physical page is ever treated as a divider.
+
+5.4 Capture policy — blank pages
+
+        Blank pages: Flag
+
+    NOT "Drop". Drop discards the page. A blank back of a sheet is part of the
+    record — it proves the back was blank. "Flag" keeps the page, marks it, and
+    skips OCR on it to save time. Flagged blanks still appear in index.json with
+    "isBlank": true, so the importer sees every physical sheet.
+
+    This only works if "Blank-page policy" is ticked in the Features section
+    (Part 2.3). If it is not ticked, this dropdown does nothing.
+
+    Watch for: a very faint page misjudged as blank gets skipped for OCR.
+    Flagged pages are visible in the page grid — glance over them before
+    committing a group.
+
+Press "Save profile & settings".
+
+
+-------------------------------------------------------------------------------
+PART 6 — Scanner settings
+-------------------------------------------------------------------------------
+
+Go to the Scan section.
+
+    Driver:            TWAIN  (use WIA only if TWAIN cannot see the scanner)
+    Device:            the scanner
+    Source:            Feeder for stacks, Flatbed for fragile or odd-sized paper
+    Resolution (DPI):  300      <- the standard for document evidence
+    Bit depth:         Color    <- capture what is there; highlighter, ink
+                                   colour and coloured stamps are all evidence
+    Page size:         Letter, or Auto if the scanner supports it
+
+Scan one throwaway page and check it looks right before going further.
+
+
+-------------------------------------------------------------------------------
+PART 7 — PROVE THE SETUP BEFORE JIM STARTS
+-------------------------------------------------------------------------------
+
+Do not skip this. It takes five minutes and it is the only thing standing
+between a spelling mistake and rescanning two boxes.
+
+1. Groups -> create a group called   setup-test
+   (Make sure the JimsStuff Evidence profile is the one in use.)
+
+2. Scan two pages into it. Any junk paper will do.
+
+3. Fill in the fields on both pages: DocNo 1, Box test, and anything in the
+   rest. Pick a DocType from the dropdown — confirm the dropdown actually offers
+   the 13 values.
+
+4. Commit the group.
+
+5. Open the group folder in File Explorer (D:\Evidence-Scans\setup-test) and
+   check ALL of the following:
+
+   [ ] index.json exists
+   [ ] index.csv exists
+   [ ] manifest.json exists
+
+6. Open manifest.json in Notepad. Confirm you can see:
+
+       "evidenceExport": 1
+
+   If that line is missing you are running a build older than 0.3.2. Stop and
+   fix the install.
+
+7. Open index.json in Notepad. In each row confirm these keys are present:
+
+       "sequence"          a number, the page order
+       "pageId"            a long id
+       "checksum"          a long string of letters and digits
+       "isBlank"           true or false
+       "originalChecksum"  null, or a long string if the page was edited
+
+   Then find the "fields" section of a row and check the nine names are spelled
+   exactly right:
+
+       "DocNo", "DocDate", "DocType", "Title", "Parties",
+       "Operator", "Redact", "Box", "Notes"
+
+   Compare them character by character against Part 4. This is the check that
+   catches the silent failure. "Doc No", "Docno", "Parties " with a trailing
+   space, "Note" — all of these look fine in the app and break the import.
+
+   Also confirm "Operator" filled itself in with the Windows username. If it is
+   empty, the $(user) default was not entered correctly.
+
+8. Edit one page (rotate it), then look in the group folder for an "originals"
+   subfolder containing an untouched copy of that page. If the folder does not
+   appear, preserve-originals is not on — go back to Part 2.1.
+
+9. When all of that checks out, delete the setup-test group and empty the Trash.
+   Then you are ready.
+
+If anything in step 7 is wrong, fix the field in Settings and repeat Part 7 with
+a fresh test group. Do not fix it halfway through real scanning.
+
+
+-------------------------------------------------------------------------------
+PART 8 — How Jim runs it, per box
+-------------------------------------------------------------------------------
+
+ 1. ONE GROUP PER BOX. Name it exactly:  loepp-box1, loepp-box2
+    The group name becomes the permanent batch name in the case record, so it
+    must be unique and must not be renamed afterwards.
+
+ 2. Fill in the paper custody card first: where the paper came from and the date
+    received. The standing answers are: originals held = yes, disposition =
+    "originals remain boxed with Jim Tomaiko".
+
+ 3. COUNT THE SHEETS BY HAND before feeding, and write the count on the card.
+    The importer compares the counted number against what arrived. This is how a
+    page that jammed and never scanned gets noticed.
+
+ 4. Type Box once (e.g. box1, or box1-folder03 if the folder is labelled). It is
+    sticky, so it carries down the whole batch.
+
+ 5. Scan in order. When a new paper document starts, increment DocNo. The sticky
+    fields carry the rest forward.
+
+ 6. Key DocDate / DocType / Title / Parties from the page in hand. Set Redact if
+    an account number, SSN, password or medical content is visible.
+
+ 7. SCAN EVERYTHING. Nothing is held back or set aside — not duplicates, not
+    blank pages, not the odd or embarrassing ones. Anything unusual goes in
+    Notes, not in a separate pile.
+
+ 8. Do not rotate, crop, delete or otherwise edit pages. Originals are preserved
+    now, so an accidental edit is recoverable, but the discipline still stands:
+    a bad feed gets a note in Notes and the sheet is rescanned as an additional
+    page. Let review sort it out later.
+
+ 9. COMMIT the group when the box is done. Validation will stop you if DocNo,
+    Operator or Box is missing anywhere.
+
+10. Copy the whole group folder — including the originals subfolder — to the
+    transfer drive. Then DO NOT TOUCH IT. Editing a field after committing
+    quietly rewrites the index files, and the copy you handed over no longer
+    matches.
+
+
+-------------------------------------------------------------------------------
+PART 9 — What silently breaks the pipeline
+-------------------------------------------------------------------------------
+
+Everything in this list produces no error message. That is why they are listed.
+
+  * JSON export not ticked (Part 5.1). No index.json, nothing to import.
+  * A field name misspelled (Part 4). That column imports empty.
+  * DocDate set to type Date instead of Text. Approximate dates get rejected.
+  * A DocType value outside the 13. It does not import.
+  * Blank policy set to Drop. Pages vanish from the record entirely.
+  * Preserve-originals left off. Every edit destroys the capture, permanently.
+  * Editing fields after committing. The handed-over folder goes stale.
+  * Renaming a group after scanning. The batch name is permanent.
+  * Running a build older than 0.3.2. No evidence keys in index.json — check for
+    "evidenceExport": 1 in manifest.json.
+
+Where the logs are, if something needs diagnosing:
+
+    %LOCALAPPDATA%\FGScanner\logs\app-<date>.log
+
+The database and all scans live under:
+
+    %APPDATA%\FGScanner        (database, trash)
+    D:\Evidence-Scans          (the group folders themselves)
+
+Back up both. The group folders are the evidence; the database is the index and
+working state.

@@ -45,6 +45,15 @@ is written back to the USB unless you put a group folder there yourself.
 IF THIS MACHINE IS FOR EVIDENCE CAPTURE — do this first
 -------------------------------------------------------
 
+Setting up the dedicated evidence scanning station is a separate, longer job:
+creating the Evidence profile, its nine index fields, and the export settings
+the case pipeline depends on. That is its own document on this stick:
+
+    EVIDENCE-SETUP.txt
+
+Work through that one instead of improvising from this page. The one setting
+worth repeating here, because it cannot be fixed after the fact:
+
 Turn on preserve-originals BEFORE scanning anything:
 
     Settings -> "Keep an untouched copy of every image before its first edit
