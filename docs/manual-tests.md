@@ -17,11 +17,15 @@ Run before each release, and after any change to FgScanner.Scanning. Automated t
       scanner with a WIA driver to actually exercise.
 - [x] TWAIN: 8 Pantum sources enumerated via `fgscanner list-devices --driver twain`;
       two 32-bit `NAPS2.Worker` processes spawned and exited cleanly afterwards. 2026-08-24
+      · **re-verified 2026-08-27**, same 8 sources, workers again exited cleanly.
 - [x] eSCL: `M6550NW series (192.168.0.114)` discovered over the network. 2026-08-24
+      · **re-verified 2026-08-27**, same device and address.
 
 ## Scanning
 - [ ] WIA flatbed scan at 300 DPI Color → one page thumbnail, file in %APPDATA%\FGScanner\recovery\<session>\
       — blocked, see above
+- [x] TWAIN flatbed scan at 300 DPI Color — one page, 2480x3507 px, **JFIF density 300x300**.
+      This is the BUG-1 regression case and it now passes; see the 2026-08-27 findings. 2026-08-27
 - [x] Feeder scan with 3+ pages — 3 pages captured twice via CLI, exit 0, all 2480x3507 px.
       **The "thumbnails stream in one at a time" half is GUI-only and still untested.** 2026-08-24
 - [ ] Duplex scan (if hardware supports) → front/back pages in order
@@ -42,9 +46,13 @@ Run before each release, and after any change to FgScanner.Scanning. Automated t
 - [ ] Unplugging device mid-scan → error in status, no app crash
 
 ## Known issues to watch
-- [ ] After force-killing FgScanner.exe, verify no NAPS2.Worker.exe processes linger
+- [~] After force-killing FgScanner.exe, verify no NAPS2.Worker.exe processes linger
       (observed once during phase 1 when killing seconds after startup — likely a race
       before Job-object assignment; workers are normally tied to the parent's lifetime).
+      **2026-08-27, partial:** not reproduced on a *clean* path — the CLI TWAIN runs spawned
+      workers that exited on their own. One live `NAPS2.Worker.exe` was found, but its parent
+      `FgScanner.exe` was alive, so it was legitimate. **The force-kill half is untested**,
+      because it needs a GUI scan to kill mid-run.
 
 ## Phase 4 — editing & export (manual checks)
 
@@ -130,7 +138,14 @@ Run before each release, and after any change to FgScanner.Scanning. Automated t
 Hardware: Pantum M6550NW (TWAIN sources + eSCL at 192.168.0.114). Driven via `fgscanner.exe`.
 What passed is ticked above; what follows is what the pass *found*.
 
-### BUG-1 — first TWAIN page carries 96 DPI metadata on 300 DPI pixels
+### BUG-1 — first TWAIN page carries 96 DPI metadata on 300 DPI pixels — FIXED 2026-08-25, VERIFIED ON HARDWARE 2026-08-27
+
+**Verification (2026-08-27):** the fix landed in `8ffcb3c` *"Stamp scan DPI when the driver reports
+none (first TWAIN page)"*. Re-ran the exact failing case — a **TWAIN flatbed** scan at 300 DPI,
+which is page 1 of a run and so always hit the bug. The saved JPEG now carries **JFIF units=1,
+Xdensity=300, Ydensity=300** on 2480x3507 px. Was 96. Closed.
+
+The original report follows, for the record.
 
 Reproduced 3/3, and TWAIN-specific:
 
@@ -205,3 +220,59 @@ so it affects the XSD, the manifest, and the Verify snapshots.
 
 Thumbnail streaming, cancel mid-run, the crash-recovery prompt, duplex, empty-feeder error surfacing,
 `--fake-scanner` startup, and everything in the phase 4-10 sections.
+
+## Findings from the 2026-08-27 pass (pre-hand-off, on the Pantum M6550NW)
+
+Driven headlessly through `fgscanner.exe` again, so every GUI-only row above is still open. The
+point of this pass was the **evidence path**, ahead of handing the USB stick to the scanning
+station. No new defects.
+
+**Use the right binary.** `src/FgScanner.Cli/bin/Release/net10.0-windows/fgscanner.exe` is the
+current one (0.3.2). The sibling `win-x64/` directory holds a **stale 0.1.0 publish from
+2026-08-24**; running it produced a `manifest.json` stamped `"appVersion": "0.1.0"` and briefly
+looked like a phase-18 regression. It is not one — re-running with the 0.3.2 binary produced
+`"appVersion": "0.3.2"`. Worth deleting that stale publish dir so it cannot mislead again.
+
+### Verified
+
+- **BUG-1 closed on hardware** — see above.
+- **Phase 16 / 18 output on a real capture** — `manifest.json` from a genuinely scanned page carries
+  `"evidenceExport": 1` and `"appVersion": "0.3.2"`.
+- **The JimsStuff importer accepts FG Scanner's export shape.** This had never been run end to end.
+  A folder holding the real TWAIN capture plus an `index.json` in the 0.3.2 export shape — the
+  Phase-16 row keys and all nine Evidence field names — was passed to the actual
+  `JimsStuff/pipeline/import_fgscanner.py --dry-run`. It parsed the row, **re-verified the SHA-256
+  against the image bytes on disk**, resolved one document, and emitted the `batches.jsonl` line and
+  the `SCAN0001 <- scan_00001.jpg` mapping. **Zero warnings.** The contract in CLAUDE.md is real and
+  currently satisfied.
+- **The typo failure mode is exactly as documented.** Re-running with `Operator` misspelled
+  `Opperator` and `Box` as `Bx` produced `warning: 1 sheet(s) have no Operator field value` (and the
+  same for Box) — **and then imported anyway**, with those columns empty. It warns; it does not
+  fail. That is why the walkthrough's closing read-back step exists, and why a typo caught after
+  4,000 sheets is expensive. Note the importer takes the batch name from `manifest.json`'s `group`,
+  not from the folder name.
+
+### Setup state on this machine (not a defect — but read before testing the evidence path here)
+
+- **There is no `Evidence` profile on this dev machine.** Profiles are `Default`, `JimsStuff`, `s`.
+  The `JimsStuff` profile carries four fields (`Came From`, `Recieved`, `Original Yes No`,
+  `If Not Original Where is Original`) — **not** the nine contract names. The nine-field Evidence
+  profile that `build/installer/evidence-setup-walkthrough.txt` describes has never actually been
+  built and exercised by anyone.
+- **All three profiles have JSON export OFF** (`ExportJson = 0`), so none of them currently writes
+  an `index.json` at all. The walkthrough is right to call this out as "the single most important
+  tick on this page" — it is off by default and the importer reads that file.
+- `Feature.PreserveOriginals = true` is set, as ADR-0003 requires for evidence groups.
+  `Feature.AutoOrient` has no row in `Settings`, which is correct — it defaults on when absent.
+
+### Still open on this pass — all need a human at the scanner
+
+Feeder 3+ pages with thumbnail streaming · duplex · cancel mid-run · empty-feeder error ·
+BlackWhite 150 DPI over real text (still the `[~]` row) · all four crash-recovery rows ·
+32-bit-only vendor TWAIN driver · unplug mid-scan · WIA (no WIA device on this machine).
+
+**And the one that matters most before hand-off:** walk
+`build/installer/evidence-setup-walkthrough.txt` top to bottom in the GUI, building the Evidence
+profile from scratch, and confirm its own closing test-group check passes. That validates the
+document Jim will actually follow — the contract itself is now proven, but the path a human takes
+to produce it is not.
