@@ -4,21 +4,33 @@
 ;   $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup*","$env:ProgramFiles\Inno Setup*",
 ;     "$env:LOCALAPPDATA\Programs\Inno Setup*" -Filter ISCC.exe -Recurse -EA SilentlyContinue |
 ;     Sort-Object FullName -Descending | Select-Object -First 1
-;   & $iscc.FullName /DAppVersion=0.1.0 build\installer\setup.iss
+;   & $iscc.FullName build\installer\setup.iss
+;
+; The version is read off the published FgScanner.exe, whose number comes from <Version> in
+; Directory.Build.props — bump it there and nowhere else. /DAppVersion=x.y.z still overrides,
+; but a hand-typed number that disagrees with the payload is exactly what this avoids.
 ;
 ; Silent install (documented per PLAN prompt 9):
 ;   fgscanner-<ver>-win-x64.exe /VERYSILENT /NORESTART /SUPPRESSMSGBOXES
 ;   add /MERGETASKS="!desktopicon" to skip the desktop icon, /TASKS="aioptout" to disable AI.
 ;   /LOG="path" writes a setup log. Uninstall: "unins000.exe" /VERYSILENT.
 
-#ifndef AppVersion
-  #define AppVersion "0.0.0"
-#endif
 #define AppName "FG Scanner"
 #define Publisher "Franz Gerster"
 #define ExeName "FgScanner.exe"
 #define PublishDir "..\..\publish\win-x64"
 #define ProgId "FGScanner.Document"
+
+#ifndef AppVersion
+  #define ExePath AddBackslash(SourcePath) + PublishDir + "\" + ExeName
+  #if FileExists(ExePath)
+    ; A FileVersion resource is always four-part; the release number is the first three.
+    #define FourPart GetFileVersion(ExePath)
+    #define AppVersion Copy(FourPart, 1, RPos(".", FourPart) - 1)
+  #else
+    #define AppVersion "0.0.0"
+  #endif
+#endif
 
 [Setup]
 AppId={{77A2D51A-B7C2-452F-A125-84191C2ABA38}

@@ -1,5 +1,9 @@
 <Project>
   <PropertyGroup>
+    <!-- Single source of truth for the release number. It reaches the compiled assemblies, and
+         build/installer/setup.iss reads it back off the published exe, so the installer name and
+         the version stamped into every exported manifest.json can never disagree. Bump here. -->
+    <Version>0.3.2</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

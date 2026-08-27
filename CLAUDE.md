@@ -24,7 +24,7 @@ installed machine-wide *or* per-user under `%LOCALAPPDATA%\Programs`):
 $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup*","$env:ProgramFiles\Inno Setup*",
   "$env:LOCALAPPDATA\Programs\Inno Setup*" -Filter ISCC.exe -Recurse -EA SilentlyContinue |
   Sort-Object FullName -Descending | Select-Object -First 1
-& $iscc.FullName /DAppVersion=0.1.0 build\installer\setup.iss   # → dist\
+& $iscc.FullName build\installer\setup.iss   # → dist\ (version read from the published exe)
 ```
 
 ## Architecture (docs/PLAN.md §8)
@@ -55,7 +55,7 @@ FgScanner.Cli  (headless fgscanner.exe; Core/Scanning/Data/Ocr/Ai — never App/
 - Business logic must run without a scanner (FakeScanService). OCR tests run real Tesseract (deterministic — never mock the engine). AI tests use MockHttp — never live keys, never network in CI. CSV/PDF assertions via Verify snapshots (scrub PDF /CreationDate /ModDate /ID).
 - `dotnet test` runs in MTP mode: test projects are Exe, no `Microsoft.NET.Test.Sdk`, opt-in is the `"test"` section in global.json.
 
-**Process:** feature branch per phase (`phase-N-name`), CI green before merge, update FEATURE-PARITY.md and docs/adr/ when a decision lands.
+**Process:** feature branch per phase (`phase-N-name`), CI green before merge, update FEATURE-PARITY.md and docs/adr/ when a decision lands. The release number lives only in `<Version>` in Directory.Build.props — the installer reads it back off the published exe.
 
 ## Evidence work for JimsStuff
 

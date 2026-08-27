@@ -33,3 +33,4 @@ Tracks FG Scanner against the NAPS2 8.3.2 inventory (docs/research/research-1-na
 | Commit hook (command + webhook) | FG core | ☑ (cmd line w/ $(group)/$(dir)/$(manifest) tokens; webhook POSTs index.json payload; journaled; feature-flagged) | 10 |
 | Evidence-grade index.json | FG core | ☑ (rows carry sequence/pageId/checksum/isBlank; blank-flagged rows included in JSON+webhook only, CSV/XLSX/XML unchanged; manifest evidenceExport:1) | 16 |
 | Preserve originals (evidence) | FG core | ☑ (Feature.PreserveOriginals, default off; first edit copies capture to originals\; OriginalChecksum set once; archive travels through move/trash; originalChecksum in index.json; ADR-0003) | 17 |
+| Real release number in exports | FG core | ☑ (single <Version> in Directory.Build.props reaches every assembly; installer derives its version from the published exe; manifest.json/index.xml appVersion now name the actual build) | 18 |
