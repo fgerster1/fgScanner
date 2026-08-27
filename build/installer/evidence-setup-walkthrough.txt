@@ -86,7 +86,7 @@ press "Save profile & settings" at the very bottom, so do the whole part first.
 
 2.3 Features section (near the bottom, "Features (v1.1)")
 
-        [x] Blank-page policy      <- REQUIRED, see 4.4. Without this tick the
+        [x] Blank-page policy      <- REQUIRED, see 5.4. Without this tick the
                                       blank setting in the profile does nothing.
         [ ] Patch-T separator detection    <- leave OFF
         [ ] Commit hook                    <- leave OFF (import is pull-based;
@@ -167,8 +167,15 @@ shown, no spaces, no plurals:
 
 trust_document;deposition_transcript;financial_record;property_record;personal_letter;court_filing;attorney_correspondence;billing_statement;photograph_map;handwritten_note;word_index;cover_page;other
 
-    That is 13 values. They are the portal's vocabulary — a value outside this
-    list does not import. Lower case with underscores, exactly as printed.
+    That is 13 values. They are the portal's vocabulary. Lower case with
+    underscores, exactly as printed.
+
+    Nothing rejects a wrong value. A DocType outside this list imports with no
+    error and no warning, and the document then files itself under "other" in
+    the portal instead of where it belongs. You will not find out from a message
+    — you find out when a trust document is missing from the trust list. That is
+    why the list goes in the profile as List-type Choices: so the value is picked
+    from a dropdown and never typed.
 
 4.2 Redact choices
 
@@ -273,7 +280,14 @@ Go to the Scan section.
     Resolution (DPI):  300      <- the standard for document evidence
     Bit depth:         Color    <- capture what is there; highlighter, ink
                                    colour and coloured stamps are all evidence
-    Page size:         Letter, or Auto if the scanner supports it
+    Page size:         Letter
+
+                       There is no "Auto" and no custom size — the list is
+                       Letter, Legal, A4, A5, A3, B4, B5 and nothing else. For
+                       paper that is not one of those, pick the next size UP so
+                       nothing is cropped, and crop the margin off afterwards in
+                       the page editor. A cropped-off edge cannot be recovered
+                       without rescanning the sheet.
 
 Scan one throwaway page and check it looks right before going further.
 
