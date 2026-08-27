@@ -110,6 +110,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     private bool _featureAutoOrient = true;
 
     [ObservableProperty]
+    private bool _featurePreserveOriginals;
+
+    [ObservableProperty]
     private string _hookCommandLine = "";
 
     [ObservableProperty]
@@ -124,6 +127,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             FeatureSearch = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.Search);
             FeatureCommitHook = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.CommitHook);
             FeatureAutoOrient = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.AutoOrient);
+            FeaturePreserveOriginals = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.PreserveOriginals);
             HookCommandLine = await _appSettings.GetAsync(CommitHookRunner.CommandKey, "");
             HookWebhookUrl = await _appSettings.GetAsync(CommitHookRunner.WebhookUrlKey, "");
         }
@@ -659,6 +663,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             await _appSettings.SetAsync(FeatureFlags.Search, FeatureSearch ? "true" : "false");
             await _appSettings.SetAsync(FeatureFlags.CommitHook, FeatureCommitHook ? "true" : "false");
             await _appSettings.SetAsync(FeatureFlags.AutoOrient, FeatureAutoOrient ? "true" : "false");
+            await _appSettings.SetAsync(FeatureFlags.PreserveOriginals, FeaturePreserveOriginals ? "true" : "false");
             await _appSettings.SetAsync(CommitHookRunner.CommandKey, HookCommandLine.Trim());
             await _appSettings.SetAsync(CommitHookRunner.WebhookUrlKey, HookWebhookUrl.Trim());
             await _trashService.SetRetentionDaysAsync(Math.Max(1, RetentionDays));

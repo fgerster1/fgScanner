@@ -126,7 +126,9 @@ public partial class App : Application
                     sp.GetRequiredService<TrashService>(),
                     sp.GetRequiredService<FgScanner.Core.IPdfRenderer>()));
                 services.AddSingleton(sp => new PageEditingToolset(
-                    new FgScanner.Scanning.Editing.ImageEditor(),
+                    new FgScanner.Scanning.Editing.ImageEditor(
+                        preserveOriginals: ct => FeatureFlags.IsEnabledAsync(
+                            sp.GetRequiredService<AppSettingsService>(), FeatureFlags.PreserveOriginals, ct)),
                     new FgScanner.Scanning.Export.PdfExportService(),
                     new FgScanner.Scanning.Export.ImageExportService(),
                     sp.GetRequiredService<FgScanner.Scanning.Import.FileImportService>(),
@@ -144,7 +146,9 @@ public partial class App : Application
                 services.AddSingleton(sp => new FgScanner.Ocr.OcrPipeline(
                     sp.GetRequiredService<FgScanner.Ocr.TesseractRunner>(),
                     new FgScanner.Scanning.Editing.ImageEditorPageRotator(
-                        new FgScanner.Scanning.Editing.ImageEditor()),
+                        new FgScanner.Scanning.Editing.ImageEditor(
+                            preserveOriginals: ct => FeatureFlags.IsEnabledAsync(
+                                sp.GetRequiredService<AppSettingsService>(), FeatureFlags.PreserveOriginals, ct))),
                     ct => FeatureFlags.IsEnabledAsync(
                         sp.GetRequiredService<AppSettingsService>(), FeatureFlags.AutoOrient, ct)));
                 services.AddSingleton<ProfileOcrTrigger>();

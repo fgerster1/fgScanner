@@ -521,6 +521,16 @@ public sealed class GroupService(IDbContextFactory<FgScannerDbContext> dbFactory
             }
         }
 
+        // The untouched capture (Feature.PreserveOriginals) is a sidecar too: it belongs to the
+        // page wherever the page lives, under the page's current (possibly renamed) file name.
+        var archive = Core.Imaging.OriginalArchive.PathFor(sourceFile);
+        if (File.Exists(archive))
+        {
+            var targetArchive = Core.Imaging.OriginalArchive.PathFor(Path.Combine(targetDirectory, newFileName));
+            Directory.CreateDirectory(Path.GetDirectoryName(targetArchive)!);
+            File.Move(archive, targetArchive, overwrite: true);
+        }
+
         return newFileName;
     }
 

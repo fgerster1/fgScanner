@@ -69,6 +69,27 @@ public sealed class TrashServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Preserved_original_rides_through_trash_and_restore()
+    {
+        var (group, page) = await CreateGroupWithOnePageAsync();
+        var archive = Core.Imaging.OriginalArchive.PathFor(Path.Combine(group.DirectoryPath, page.FileName));
+        Directory.CreateDirectory(Path.GetDirectoryName(archive)!);
+        await File.WriteAllBytesAsync(archive, [4, 4, 4], Ct);
+
+        var item = await _trash.DeleteDocumentAsync(page.DocumentId, Ct);
+
+        // In the trash it keeps the originals\ prefix — flat would collide with the page itself.
+        Assert.False(File.Exists(archive));
+        Assert.True(File.Exists(Path.Combine(
+            item.TrashFolderPath, Core.Imaging.OriginalArchive.FolderName, page.FileName)));
+
+        await _trash.RestoreAsync(item.Id, Ct);
+
+        Assert.Equal([4, 4, 4], await File.ReadAllBytesAsync(archive, Ct));
+        Assert.False(Directory.Exists(item.TrashFolderPath));
+    }
+
+    [Fact]
     public async Task Purge_honors_injected_clock_and_configured_retention()
     {
         var (_, page) = await CreateGroupWithOnePageAsync();

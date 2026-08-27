@@ -56,3 +56,18 @@ FgScanner.Cli  (headless fgscanner.exe; Core/Scanning/Data/Ocr/Ai — never App/
 - `dotnet test` runs in MTP mode: test projects are Exe, no `Microsoft.NET.Test.Sdk`, opt-in is the `"test"` section in global.json.
 
 **Process:** feature branch per phase (`phase-N-name`), CI green before merge, update FEATURE-PARITY.md and docs/adr/ when a decision lands.
+
+## Evidence work for JimsStuff
+
+FG Scanner is the capture station for a legal-evidence pipeline (`docs/spec-evidence-export.md`);
+the JimsStuff portal (`JimsStuff/pipeline/import_fgscanner.py`) parses committed group folders.
+
+- **Stable external contracts — renaming silently breaks a legal pipeline:** the `index.json`
+  row keys (`sequence`, `pageId`, `checksum`, `isBlank`, `originalChecksum`, plus the original
+  six), `manifest.json`'s `evidenceExport`, and the Evidence profile's field names (`DocNo`,
+  `DocDate`, `DocType`, `Title`, `Parties`, `Operator`, `Redact`, `Box`, `Notes`).
+- `Feature.PreserveOriginals` stays ON for evidence groups (ADR-0003); the `originals\`
+  subfolder and its checksums are part of the folder's evidentiary integrity.
+- FG Scanner deliberately has **no Bates support** and none should be added to the capture
+  path — identifiers live in the portal's register and display layer; stamped pixels can never
+  be reorganized, and re-stamping is evidence alteration.

@@ -55,7 +55,9 @@ internal static class ExporterTestData
                 ["Amount"] = "99999.99",
                 ["Category"] = "Archive",
             }, Sequence: 4, PageId: new Guid("44444444-4444-4444-4444-444444444444"),
-               Checksum: "dd44cc9c0f1c21f1ce2c11a1e1f11b1d1e1f1a1b1c1d1e1f1a1b1c1d1e1f1a1b"),
+               Checksum: "dd44cc9c0f1c21f1ce2c11a1e1f11b1d1e1f1a1b1c1d1e1f1a1b1c1d1e1f1a1b",
+               // This row was edited with Feature.PreserveOriginals on: the capture's own hash.
+               OriginalChecksum: "0044cc9c0f1c21f1ce2c11a1e1f11b1d1e1f1a1b1c1d1e1f1a1b1c1d1e1f1a1b"),
             // A flag-policy blank sheet: present in index.json (isBlank true) so an evidence
             // importer sees every physical page, absent from the three human-facing formats.
             new IndexRow("scan_00005.png", "No", null, null, "Skipped", new Dictionary<string, string?>

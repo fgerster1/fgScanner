@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FgScanner.Core.Index;
 using FgScanner.Data;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace FgScanner.Data.Tests;
@@ -214,6 +215,27 @@ public sealed class IndexingServiceTests : IDisposable
             Path.Combine(group.DirectoryPath, row.GetProperty("imageName").GetString()!), Ct);
         Assert.Equal(recomputed, row.GetProperty("checksum").GetString());
         Assert.NotEqual(Guid.Empty, Guid.Parse(row.GetProperty("pageId").GetString()!));
+        // Never edited: the live file IS the original, and the contract says null, not "".
+        Assert.Equal(JsonValueKind.Null, row.GetProperty("originalChecksum").ValueKind);
+    }
+
+    [Fact]
+    public async Task Json_carries_the_original_checksum_once_recorded()
+    {
+        var (profile, schema) = await CreateProfileWithFieldsAsync(json: true);
+        var group = await CreateGroupWithPagesAsync(schema, profile.Id, pages: 1);
+        await using (var db = _db.Factory.CreateDbContext())
+        {
+            (await db.Pages.SingleAsync(Ct)).OriginalChecksum = new string('a', 64);
+            await db.SaveChangesAsync(Ct);
+        }
+
+        await _indexing.ReexportAsync(group.Id, Ct);
+
+        var json = JsonDocument.Parse(
+            await File.ReadAllTextAsync(Path.Combine(group.DirectoryPath, "index.json"), Ct));
+        var row = json.RootElement.GetProperty("rows").EnumerateArray().Single();
+        Assert.Equal(new string('a', 64), row.GetProperty("originalChecksum").GetString());
     }
 
     [Fact]

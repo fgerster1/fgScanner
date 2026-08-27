@@ -302,7 +302,8 @@ public static class CliRunner
         var settings = new AppSettingsService(services.Factory);
         var pipeline = new OcrPipeline(
             runner,
-            new Scanning.Editing.ImageEditorPageRotator(new Scanning.Editing.ImageEditor()),
+            new Scanning.Editing.ImageEditorPageRotator(new Scanning.Editing.ImageEditor(
+                preserveOriginals: ct => FeatureFlags.IsEnabledAsync(settings, FeatureFlags.PreserveOriginals, ct))),
             ct => FeatureFlags.IsEnabledAsync(settings, FeatureFlags.AutoOrient, ct));
         var reorder = new ReorderService(services.Factory);
         var queue = new OcrQueueService(services.Factory);

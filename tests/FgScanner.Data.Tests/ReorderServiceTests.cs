@@ -121,6 +121,42 @@ public sealed class ReorderServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RefreshChecksum_records_the_archived_original_exactly_once()
+    {
+        var (group, pages) = await CreateGroupWithPagesAsync(1);
+        var imagePath = Path.Combine(group.DirectoryPath, pages[0].FileName);
+        var archive = GroupService.ComputeSha256Async(imagePath, Ct); // capture hash before "edit"
+        var archivePath = Core.Imaging.OriginalArchive.PathFor(imagePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(archivePath)!);
+        File.Copy(imagePath, archivePath);
+        await File.WriteAllBytesAsync(imagePath, [9, 9, 9], Ct);
+
+        await _reorder.RefreshChecksumAsync(pages[0].Id, Ct);
+
+        var refreshed = (await _groups.GetPagesAsync(group.Id, Ct))[0];
+        Assert.Equal(await archive, refreshed.OriginalChecksum);
+
+        // A second edit re-refreshes the live checksum but must not move the original's anchor.
+        await File.WriteAllBytesAsync(imagePath, [8, 8, 8], Ct);
+        await File.WriteAllBytesAsync(archivePath, [6, 6, 6], Ct); // even if the file were tampered
+        await _reorder.RefreshChecksumAsync(pages[0].Id, Ct);
+
+        Assert.Equal(await archive, (await _groups.GetPagesAsync(group.Id, Ct))[0].OriginalChecksum);
+    }
+
+    [Fact]
+    public async Task RefreshChecksum_leaves_original_checksum_null_without_an_archive()
+    {
+        var (group, pages) = await CreateGroupWithPagesAsync(1);
+        await File.WriteAllBytesAsync(
+            Path.Combine(group.DirectoryPath, pages[0].FileName), [9, 9, 9], Ct);
+
+        await _reorder.RefreshChecksumAsync(pages[0].Id, Ct);
+
+        Assert.Null((await _groups.GetPagesAsync(group.Id, Ct))[0].OriginalChecksum);
+    }
+
+    [Fact]
     public async Task RefreshChecksum_discards_the_perceptual_hash_of_the_previous_image()
     {
         // The hash describes a picture, not a file. Keeping it after an edit would have duplicate

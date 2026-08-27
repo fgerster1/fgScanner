@@ -33,7 +33,8 @@ public sealed record IndexRow(
     int Sequence = 0,
     Guid PageId = default,
     string Checksum = "",
-    bool IsBlank = false);
+    bool IsBlank = false,
+    string? OriginalChecksum = null);
 
 public sealed record IndexExportData(
     string GroupName,

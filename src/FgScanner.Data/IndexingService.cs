@@ -319,7 +319,8 @@ public sealed class IndexingService(
                 doc.Sequence,
                 page.Id,
                 page.Checksum,
-                page.IsBlank));
+                page.IsBlank,
+                page.OriginalChecksum));
         }
 
         return new IndexExportData(

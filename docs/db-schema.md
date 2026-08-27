@@ -97,6 +97,7 @@ is taken automatically before every schema migration).
 | OcrMeanConfidence | REAL | yes |  |
 | OcrStatus | INTEGER | no | enum: 0=No, 1=Pending, 2=Yes, 3=Failed |
 | OcrText | TEXT | yes |  |
+| OriginalChecksum | TEXT | yes |  |
 | Sequence | INTEGER | no |  |
 
 - Index: Checksum

@@ -193,6 +193,13 @@ public class Page
     /// <summary>SHA-256 of file content, lower-case hex. Survives renames; drives duplicate detection.</summary>
     public required string Checksum { get; set; }
 
+    /// <summary>
+    /// SHA-256 of the archived pre-edit capture in originals\ (Feature.PreserveOriginals), set once
+    /// when the archive copy is made and never updated. Null = the page was never pixel-edited
+    /// while the flag was on, so the live file IS the original.
+    /// </summary>
+    public string? OriginalChecksum { get; set; }
+
     public int Sequence { get; set; }
 
     public bool IsBlank { get; set; }

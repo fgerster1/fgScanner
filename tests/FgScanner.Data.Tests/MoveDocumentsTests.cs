@@ -88,6 +88,32 @@ public sealed class MoveDocumentsTests : IDisposable
     }
 
     [Fact]
+    public async Task The_preserved_original_travels_with_the_image()
+    {
+        var source = await CreateGroupAsync("Source");
+        var target = await CreateGroupAsync("Target");
+        var documentId = await AddPageAsync(source, 1);
+        await using (var db = new FgScannerDbContext(DbBootstrapper.BuildOptions(_dbPath)))
+        {
+            var sourceName = (await db.Pages.SingleAsync(TestContext.Current.CancellationToken)).FileName;
+            var archive = Core.Imaging.OriginalArchive.PathFor(Path.Combine(source.DirectoryPath, sourceName));
+            Directory.CreateDirectory(Path.GetDirectoryName(archive)!);
+            await File.WriteAllBytesAsync(archive, [7, 7, 7], TestContext.Current.CancellationToken);
+        }
+
+        await _groups.MoveDocumentsAsync(
+            source.Id, target.Id, [documentId], TestContext.Current.CancellationToken);
+
+        await using var check = new FgScannerDbContext(DbBootstrapper.BuildOptions(_dbPath));
+        var fileName = (await check.Pages.SingleAsync(TestContext.Current.CancellationToken)).FileName;
+        var moved = Core.Imaging.OriginalArchive.PathFor(Path.Combine(target.DirectoryPath, fileName));
+        Assert.True(File.Exists(moved), "the untouched capture must move with its page, under the page's new name");
+        Assert.Equal([7, 7, 7], await File.ReadAllBytesAsync(moved, TestContext.Current.CancellationToken));
+        Assert.False(Directory.EnumerateFiles(
+            Path.Combine(source.DirectoryPath, Core.Imaging.OriginalArchive.FolderName)).Any());
+    }
+
+    [Fact]
     public async Task The_ocr_sidecar_travels_with_the_image()
     {
         var source = await CreateGroupAsync("Source");

@@ -19,6 +19,14 @@ public static class FeatureFlags
     /// </summary>
     public const string AutoOrient = "Feature.AutoOrient";
 
+    /// <summary>
+    /// Copy the untouched bytes of a page image to originals\ before its first pixel edit, so the
+    /// capture survives for evidence work (Ohio Evid.R. 1003: a duplicate is admissible unless
+    /// authenticity is questioned — the pristine capture answers that question). Off by default:
+    /// non-evidence users would double their disk use for nothing.
+    /// </summary>
+    public const string PreserveOriginals = "Feature.PreserveOriginals";
+
     /// <summary>Flags that are on unless the user turns them off.</summary>
     private static readonly string[] DefaultOn = [Search, AutoOrient];
 

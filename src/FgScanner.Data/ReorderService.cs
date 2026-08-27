@@ -108,6 +108,15 @@ public sealed class ReorderService(IDbContextFactory<FgScannerDbContext> dbFacto
         var filePath = Path.Combine(page.Document!.Group!.DirectoryPath, page.FileName);
         page.Checksum = await GroupService.ComputeSha256Async(filePath, cancellationToken).ConfigureAwait(false);
         page.ImageHash = null;
+
+        // The first edit with Feature.PreserveOriginals on left the untouched capture in
+        // originals\; record its hash exactly once — later edits must not move that anchor.
+        var archivePath = Core.Imaging.OriginalArchive.PathFor(filePath);
+        if (page.OriginalChecksum is null && File.Exists(archivePath))
+        {
+            page.OriginalChecksum = await GroupService.ComputeSha256Async(archivePath, cancellationToken).ConfigureAwait(false);
+        }
+
         page.Document.Group.UpdatedUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }

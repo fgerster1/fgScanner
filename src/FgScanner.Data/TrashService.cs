@@ -46,6 +46,14 @@ public sealed class TrashService(
             {
                 MoveIfExists(Path.Combine(group.DirectoryPath, baseName + ext), folder, movedFiles);
             }
+
+            // The untouched capture keeps its originals\ prefix inside the trash folder — it
+            // shares the page's file name, so flattening it would collide with the page itself.
+            MoveRelativeIfExists(
+                group.DirectoryPath,
+                Path.Combine(Core.Imaging.OriginalArchive.FolderName, page.FileName),
+                folder,
+                movedFiles);
         }
 
         var item = new TrashItem
@@ -118,6 +126,8 @@ public sealed class TrashService(
             var target = Path.Combine(item.GroupDirectoryPath, fileName);
             if (File.Exists(source) && !File.Exists(target))
             {
+                // An entry may carry a subfolder (originals\ archives) that the group lost.
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 File.Move(source, target);
             }
         }
@@ -200,6 +210,20 @@ public sealed class TrashService(
             var name = Path.GetFileName(sourcePath);
             File.Move(sourcePath, Path.Combine(trashFolder, name));
             movedFiles.Add(name);
+        }
+    }
+
+    /// <summary>Moves a file keeping its subfolder, recorded as a relative path so restore mirrors it.</summary>
+    private static void MoveRelativeIfExists(
+        string sourceRoot, string relativePath, string trashFolder, List<string> movedFiles)
+    {
+        var sourcePath = Path.Combine(sourceRoot, relativePath);
+        if (File.Exists(sourcePath))
+        {
+            var target = Path.Combine(trashFolder, relativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Move(sourcePath, target);
+            movedFiles.Add(relativePath);
         }
     }
 

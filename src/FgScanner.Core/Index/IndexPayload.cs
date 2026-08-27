@@ -31,6 +31,7 @@ public static class IndexPayload
             PageId = r.PageId.ToString(),
             r.Checksum,
             r.IsBlank,
+            r.OriginalChecksum,
             Fields = data.Fields.ToDictionary(f => f.Name, f => r.CustomValues.GetValueOrDefault(f.Name) ?? ""),
         }),
     };

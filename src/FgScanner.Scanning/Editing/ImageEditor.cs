@@ -1,3 +1,4 @@
+using FgScanner.Core.Imaging;
 using FgScanner.Core.Index;
 using NAPS2.Images;
 using NAPS2.Images.Gdi;
@@ -8,8 +9,15 @@ namespace FgScanner.Scanning.Editing;
 /// <summary>
 /// Applies NAPS2.Sdk transforms to page images on disk. Every write is atomic (temp + replace with
 /// lock-retry) so a crash or an open viewer never corrupts a page.
+/// This is the single seam every pixel-modifying write passes through — manual edits, auto-orient
+/// (via ImageEditorPageRotator), split and combine — so Feature.PreserveOriginals is enforced here:
+/// when <paramref name="preserveOriginals"/> reports true, the current bytes of an existing target
+/// are copied to originals\&lt;name&gt; before its first overwrite. First write wins; that copy IS
+/// the capture and is never replaced by a later edit.
 /// </summary>
-public sealed class ImageEditor(ImageContext? imageContext = null)
+public sealed class ImageEditor(
+    ImageContext? imageContext = null,
+    Func<CancellationToken, Task<bool>>? preserveOriginals = null)
 {
     private readonly ImageContext _imageContext = imageContext ?? new GdiImageContext();
     private readonly AtomicFileWriter _writer = new();
@@ -77,6 +85,7 @@ public sealed class ImageEditor(ImageContext? imageContext = null)
 
     private async Task SaveAtomicAsync(IMemoryImage image, string targetPath, CancellationToken cancellationToken)
     {
+        await ArchiveOriginalAsync(targetPath, cancellationToken).ConfigureAwait(false);
         var format = ImageContext.GetFileFormatFromExtension(targetPath);
         var (outcome, message) = await _writer.WriteAsync(
             targetPath,
@@ -90,5 +99,24 @@ public sealed class ImageEditor(ImageContext? imageContext = null)
         {
             throw new IOException(message ?? $"Could not write {targetPath}.");
         }
+    }
+
+    private async Task ArchiveOriginalAsync(string targetPath, CancellationToken cancellationToken)
+    {
+        // A target that does not exist yet (the second half of a split) is a new file, not an
+        // edit of a capture — there is nothing to preserve.
+        if (preserveOriginals is null || !File.Exists(targetPath))
+        {
+            return;
+        }
+
+        var archivePath = OriginalArchive.PathFor(targetPath);
+        if (File.Exists(archivePath) || !await preserveOriginals(cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(archivePath)!);
+        File.Copy(targetPath, archivePath);
     }
 }
