@@ -1,6 +1,8 @@
 # FG Scanner — Status & Remaining Work
 
-**Reviewed:** 2026-08-24 · **Branch:** `main` @ `9829c2c` · **Reviewer:** Claude (repo audit)
+**Reviewed:** 2026-08-27 · **Branch:** `main` @ `ce26c89` · **Reviewer:** Claude (repo audit)
+**Supersedes:** the 2026-08-24 review at `9829c2c`. Twenty-nine commits and eight phases (11–18)
+have landed since; several claims in that version are now factually wrong and are corrected below.
 
 Purpose: a plain account of where the app actually stands, and a prioritized punch list of
 everything that must be closed out before it is safe/sensible to start adding *new* features.
@@ -13,28 +15,32 @@ Every claim below was verified against the repo today — the evidence is quoted
 | Check | Command | Result |
 |---|---|---|
 | Release build | `dotnet build -c Release` | **Succeeded — 0 warnings, 0 errors** (warnings-as-errors is on in Release) |
-| Test suite | `dotnet test -c Release` | **253 passed, 0 failed** (MTP mode) |
+| Test suite | `dotnet test -c Release` | **430 passed, 0 failed, 0 skipped** (MTP mode; was 253 on 08-24) |
 | Format gate | `dotnet format --verify-no-changes` | **Clean (exit 0)** |
-| CI on main | `gh run list` | **Green** on the last 3 pushes (latest: run 32414182652, 2026-08-20) |
-| Working tree | `git status` | **Clean** |
-| Code TODOs | `grep TODO/FIXME/NotImplemented src/**/*.cs` | **None** (3 hits are legitimate `NotSupportedException` in one-way value converters) |
-| Parity checklist | `docs/FEATURE-PARITY.md` | 20 rows: **16 ☑ done, 4 ◐ partial**, 0 ☐ todo |
+| CI on main | `gh run list` | **Green** on the last 3 pushes (latest: run 33106962528, 2026-08-27) |
+| Working tree | `git status` | **Clean**, `main` in sync with `origin/main` |
+| Declared version | `Directory.Build.props` | **`<Version>0.3.2</Version>`** |
+| Local installers | `ls dist/` | 5 built: 0.1.0 → **0.3.2** (99.2 MB, 2026-08-27 10:20) |
+| Parity checklist | `docs/FEATURE-PARITY.md` | 30 rows: **25 ☑ done, 5 ◐ partial**, 0 ☐ todo |
 
-**Bottom line:** the codebase is healthy. All ten planned phases are implemented, merged, and
-CI-green. Nothing is broken. What is *missing* is everything downstream of "code complete":
-the product has never actually been released, never been proven on real scanner hardware in a
-recorded pass, and carries a small pile of process/quality debt that will get more expensive
-the more feature code you pile on top of it.
+**Bottom line:** the codebase is healthier than it was three days ago — the test count has grown
+70 %, the App layer is no longer untested, the localization question is settled, and `docs/adr/`
+exists. Nothing is broken. What is *still* missing is everything downstream of "code complete."
 
 **Two facts that anchor this whole document:**
 
-1. `git tag -l` → **empty**. `gh release list` → **empty**. **v0.1.0 was never cut.** The entire
-   phase-9 shipping apparatus (installer, auto-update, appcast, provenance, winget) has never
-   executed once end-to-end.
-2. `find src -name "*.resx"` → **empty**. The CLAUDE.md hard rule *"User-visible strings go in
-   .resx from phase 3 onward"* has been violated since phase 3, and there are now ~9,650 lines
-   of App code with hardcoded strings. This is the single largest and fastest-growing piece of
-   debt in the project.
+1. `git tag -l` → **empty**. `gh release list` → **empty**. **Nothing has ever been released.**
+   Eighteen phases are merged and five installers sit in `dist/`, all built by hand on this
+   machine. The entire phase-9 shipping apparatus (`release.yml`: sign → portable ZIP → Inno
+   installer → appcast → SHA256SUMS → provenance → draft release) has **never executed once**.
+   Every day this stays true, more of that pipeline rots untested.
+2. **FG Scanner now has a downstream consumer and an imminent hardware hand-off.** It is the
+   capture station for the JimsStuff legal-evidence pipeline (`docs/spec-evidence-export.md`),
+   whose importer parses committed group folders. A USB stick with the 0.3.2 installer, the
+   portable build, and the operator walkthrough is staged for a dedicated TWAIN scanning machine.
+   That reorders the list below: **R2 (hardware smoke) is now the highest-stakes item in the
+   project**, and winget/SmartScreen polish matters less than it did when the audience was
+   the public.
 
 ---
 
@@ -42,114 +48,133 @@ the more feature code you pile on top of it.
 
 ### R1 — ✅ DONE 2026-08-24 — Inno Setup installed, installer builds clean
 
-**Why it mattered:** `release.yml` builds the installer in CI via `choco install innosetup`, but
-`setup.iss` had never been compiled even once. A script error would have surfaced *after* pushing a
-tag — a failed release run and a burned tag.
+Kept for the record; the corrections it captured still hold. Inno Setup 7.1.0 installs **per-user**
+to `%LOCALAPPDATA%\Programs\Inno Setup 7` when run unelevated, *not* Program Files — CLAUDE.md,
+`docs/release.md`, and the `setup.iss` header all carry a discovery snippet that searches both
+roots. `release.yml` was deliberately left alone: CI installs machine-wide via choco.
 
-**What was done:**
-1. `winget install JRSoftware.InnoSetup.7` → 7.1.0. Note it installs **per-user** to
-   `%LOCALAPPDATA%\Programs\Inno Setup 7` when run unelevated, *not* Program Files.
-2. `dotnet publish src/FgScanner.App -p:PublishProfile=win-x64` → 353 files / 318.8 MB, with the
-   10 NAPS2 DLLs as separate files (LGPL separation intact — non-single-file, non-trimmed).
-3. ISCC compile → **`dist\fgscanner-0.1.0-win-x64.exe`, 91.6 MB, exit 0, zero errors.**
+Also fixed then: `setup.iss` set no `VersionInfo*` directives, so the setup exe shipped a blank
+FileVersion resource. `VersionInfoVersion={#AppVersion}` closed that.
 
-**Corrections to the original audit** (both were wrong, recorded here so the doc stays honest):
-- **Inno Setup 6 was already installed** per-user at `%LOCALAPPDATA%\Programs\Inno Setup 6`. The
-  original claim that ISCC was "absent" only checked the two Program Files roots.
-- The docs' ISCC invocation assumed a Program Files path. Fixed in CLAUDE.md, `docs/release.md`, and
-  the `setup.iss` header — all three now use a discovery snippet that searches both roots plus
-  `%LOCALAPPDATA%\Programs` and prefers the highest version. `release.yml` was left alone: CI
-  installs machine-wide via choco, so its narrower search is correct there.
-
-**Fixed along the way:** `setup.iss` set no `VersionInfo*` directives, so the setup exe shipped a
-**blank FileVersion** resource (`ProductVersion` was `0.1.0`, `FileVersion` was empty). Added
-`VersionInfoVersion={#AppVersion}`. Blank version info hurts support triage and scores badly against
-AV/SmartScreen heuristics on an already-unsigned binary.
-
-**Still open from this item:** the built installer has only been *compiled*, not *installed*. Running
-it on a clean Win11 VM is part of R2/R4's checklist (`docs/manual-tests.md` § Phase 9).
-
-**Observation for later:** the payload carries the full cross-platform Tesseract/pdfium set
-(`_linux`, `_linuxarm`, `_mac`, `_macarm`, `_win32`, `_win64`) inside a Windows-only installer.
-Harmless, but it is a meaningful slice of the 91.6 MB if you ever want to slim the download.
+**Superseded since:** phase 18 replaced the hand-typed `/DAppVersion=`. `setup.iss` now reads the
+version off the published exe by default (`GetFileVersion`), whose number comes from `<Version>`
+in `Directory.Build.props`. See **R3a** — CI has not caught up with this.
 
 ---
 
-### R2 — Run the full manual hardware smoke test and record the result
+### R2 — Run the full manual hardware smoke test and record the result 🔴 **highest risk**
 
-**Why:** `docs/manual-tests.md` is a 9-section checklist with **every box unchecked**. The parity
-row *"WIA / TWAIN / eSCL scanning"* is explicitly `◐ (logic done; hardware smoke pending)`.
-Automated tests all run against `FakeScanService` — by design, they prove *zero* about real
-drivers. Shipping without this pass is the biggest single risk in the project.
+**Why:** `docs/manual-tests.md` is **6 boxes ticked out of 62**. The parity row *"WIA / TWAIN /
+eSCL scanning"* is still `◐ (logic done; hardware smoke pending)`. All 430 automated tests run
+against `FakeScanService` — by design, they prove **zero** about real drivers.
+
+**Why it is more urgent than it was on 08-24:** the 0.3.2 build is about to be carried to a
+scanning station with *different TWAIN hardware than this machine*, to capture *legal evidence*.
+An unproven driver path there does not produce a bug report, it produces a gap in an evidence
+record. The doc's own closing note is honest about the size of this: *"Thumbnail streaming, cancel
+mid-run, the crash-recovery prompt, duplex, empty-feeder error surfacing, `--fake-scanner` startup,
+and everything in the phase 4–10 sections"* still require a human at the GUI.
 
 **Steps:**
 1. Work top-to-bottom through `docs/manual-tests.md`, ticking boxes in the file as you go.
-   Prioritize, in this order, because these are the ones with no automated backstop at all:
+   Prioritize, in this order, because these have no automated backstop at all:
    - **Setup + Device discovery** (WIA, TWAIN 32-bit worker, eSCL over mDNS)
    - **Scanning** (flatbed 300 DPI, 3+ page feeder, duplex, cancel mid-run, empty feeder)
    - **Crash recovery** (kill mid-scan → relaunch → recovery prompt)
    - **TWAIN specifics** (32-bit-only vendor driver; unplug mid-scan)
-2. Watch specifically for the known issue already logged in that file: after force-killing
-   `FgScanner.exe`, check Task Manager for lingering `NAPS2.Worker.exe` processes. If any linger,
-   that is a real bug in the Job-object assignment race and must be filed before release.
-3. For anything that fails, open a GitHub issue rather than fixing inline — you want the smoke
+2. Then the **evidence path specifically**, since that is what the station exists for: Evidence
+   profile with all nine field names → scan → commit → confirm `index.json` carries `sequence`,
+   `pageId`, `checksum`, `isBlank`, `originalChecksum`, that `manifest.json` has `evidenceExport`,
+   and that `originals\` is populated with `Feature.PreserveOriginals` on.
+3. Watch for the known issue already logged in that file: after force-killing `FgScanner.exe`,
+   check Task Manager for lingering `NAPS2.Worker.exe`. If any linger, that is a real bug in the
+   Job-object assignment race and must be filed.
+4. For anything that fails, open a GitHub issue rather than fixing inline — you want the smoke
    pass to produce a written record.
-4. Commit the ticked checklist: `git commit -am "Hardware smoke pass for v0.1.0"`.
+5. Commit the ticked checklist.
 
 **Done when:** Setup / Device discovery / Scanning / Crash recovery / TWAIN sections are fully
-ticked, and `docs/FEATURE-PARITY.md` row 1 is upgraded from `◐` to `☑`.
+ticked on the *station's* hardware, the evidence round-trip in step 2 is confirmed, and
+`docs/FEATURE-PARITY.md` row 1 is upgraded from `◐` to `☑`.
 
 ---
 
-### R3 — Cut the v0.1.0 release and verify the pipeline
+### R3 — Cut the first release and verify the pipeline
 
-**Why:** this is the first exercise of `release.yml`. It does eight things in sequence (publish
-app → publish CLI → sign → portable ZIP → Inno installer → appcast → SHA256SUMS → provenance
-attestation → draft release). Any one of them can fail on first contact.
+**Why:** unchanged from 08-24, and now three months of features deep. `release.yml` does eight
+things in sequence and any one of them can fail on first contact.
 
 **Steps:**
-1. Confirm the pre-conditions from `docs/release.md`: `dotnet test -c Release` green locally
-   (✅ verified today, 253/253), CI green on main (✅), R1 and R2 done.
-2. Decide the version. Note that `Directory.Build.props` contains **no `<Version>` property** —
-   the version is injected entirely by the *"Version from tag"* step in `release.yml`. So the tag
-   **is** the version; there is nothing else to bump.
-3. Tag and push:
+1. Confirm pre-conditions from `docs/release.md`: `dotnet test -c Release` green locally
+   (✅ verified today, 430/430), CI green on main (✅), R1 (✅) and R2 done.
+2. **Fix R3a below first**, then tag to match `<Version>`:
    ```powershell
-   git tag v0.1.0
-   git push origin v0.1.0
+   git tag v0.3.2
+   git push origin v0.3.2
    ```
-4. Watch it: `gh run watch` (or `gh run list --workflow=release.yml`).
-5. Expected non-fatal skips on this first run: the two **SignPath** steps skip (see R5) and
-   **winget** does not fire until you publish (see R6). The **appcast** step *will* run —
-   `APPCAST_ENABLED=true` and `SPARKLE_ED25519_PRIVATE_KEY` are both already set on the repo
-   (verified via `gh variable list` / `gh secret list`).
-6. Review the **draft** release. Confirm the assets: setup exe, portable ZIP, `appcast.xml`,
+3. Watch it: `gh run watch` (or `gh run list --workflow=release.yml`).
+4. Expected non-fatal skips on this first run: the two **SignPath** steps skip (R5) and **winget**
+   does not fire until you publish (R6). The **appcast** step *will* run — `APPCAST_ENABLED=true`
+   and `SPARKLE_ED25519_PRIVATE_KEY` are both set on the repo (re-verified today via
+   `gh variable list` / `gh secret list`).
+5. Review the **draft** release. Confirm the assets: setup exe, portable ZIP, `appcast.xml`,
    `SHA256SUMS`. Write the release notes. Then publish.
 
-**Done when:** <https://github.com/fgerster1/fgScanner/releases> shows a published v0.1.0 with all
-four asset types attached.
+**Correction to the 08-24 version of this item:** it said *"`Directory.Build.props` contains no
+`<Version>` property — the tag **is** the version; there is nothing else to bump."* **That is no
+longer true.** Phase 18 (`530ffa5`) made `<Version>` in `Directory.Build.props` the single source,
+and CLAUDE.md now states it as a hard rule. Bump it there *and* tag to match.
+
+**Done when:** the releases page shows a published v0.3.2 with all four asset types attached.
+
+---
+
+### R3a — Reconcile the two version sources before tagging 🟠 *(new finding)*
+
+**Evidence:** `.github/workflows/release.yml:21-24` still derives the version from the tag name
+and passes `-p:Version=` to both publishes (lines 30, 37) and `/DAppVersion=` to ISCC (line 87).
+That **overrides** `<Version>` in `Directory.Build.props`, which phase 18 established as the single
+source of truth and which CLAUDE.md states as a hard rule. `setup.iss` documents the override as
+deliberate, so the installer is fine either way — but nothing checks that the tag and the props
+file agree.
+
+**Why it matters:** tag `v0.4.0` against a repo declaring `0.3.2` ships artifacts stamped `0.4.0`
+while the source says otherwise, silently. The evidence exports carry `appVersion` into
+`manifest.json` and `index.xml`, so a mismatch ends up written into evidence records that a portal
+parses — the one place a wrong build number is expensive rather than cosmetic.
+
+**Steps (pick one, ~15 minutes either way):**
+- **Preferred:** add a guard step to `release.yml` right after *"Version from tag"* that reads
+  `<Version>` out of `Directory.Build.props` and fails the run if it differs from the trimmed tag.
+  Keeps the tag as the artifact name and makes drift impossible.
+- **Or:** drop the `-p:Version=` overrides entirely and let the props file flow through, using the
+  tag only for asset filenames. Simpler, but then a forgotten props bump ships a duplicate number.
+
+**Done when:** a tag that disagrees with `Directory.Build.props` cannot produce a release.
 
 ---
 
 ### R4 — Prove the auto-update loop end to end
 
-**Why:** the Ed25519 public key is live and real in the binary
-(`src/FgScanner.App/Services/UpdateService.cs:22` = `AYGJKjx0kHdK1dPayOwD71kSEa4yS7j0iVMofJ9RVm4=`,
-no longer the `REPLACE...` placeholder), and `SecurityMode.Strict` means the app will **silently
-refuse** any appcast it cannot verify. That failure mode is invisible — a signing mismatch looks
-identical to "no update available". You must observe a successful update once.
+**Why:** unchanged. The Ed25519 public key is live and real in the binary
+(`src/FgScanner.App/Services/UpdateService.cs:22`), and `SecurityMode.Strict` means the app will
+**silently refuse** any appcast it cannot verify. That failure mode is invisible — a signing
+mismatch looks identical to "no update available." You must observe a successful update once.
 
 **Steps:**
-1. After v0.1.0 is published, install it from the setup exe on a machine (ideally a clean Win11 VM —
+1. After the first release is published, install it from the setup exe (ideally a clean Win11 VM —
    this doubles as the phase-9 checklist item).
-2. Tag and publish a throwaway `v0.1.1` (a docs-only commit is enough).
-3. Launch the installed **v0.1.0** build. Within a few seconds of startup it should offer the update.
-4. Accept it, and confirm the silent upgrade (`/VERYSILENT /NORESTART`) completes and the app
-   relaunches at 0.1.1.
+2. Tag and publish a throwaway patch (a docs-only commit is enough).
+3. Launch the installed older build. Within a few seconds of startup it should offer the update.
+4. Accept it, confirm the silent upgrade (`/VERYSILENT /NORESTART`) completes and the app relaunches
+   at the new number.
 5. Confirm the upgrade preserved state: groups, `fgscanner.db`, settings, and the stored Gemini key
-   in Credential Manager all survive. (There should also be a `fgscanner.db.bak-<version>` file —
-   the automatic pre-migration backup.)
+   in Credential Manager all survive. There should be a `fgscanner.db.bak-<version>` file — the
+   automatic pre-migration backup (observed working on 2026-08-27).
 6. Tick the corresponding boxes in `docs/manual-tests.md` § Phase 9.
+
+**Extra check now that evidence groups exist:** confirm an upgrade leaves committed group folders
+and their `originals\` subfolders untouched.
 
 **Done when:** an installed old build has visibly self-updated to a newer one.
 
@@ -157,28 +182,28 @@ identical to "no update available". You must observe a successful update once.
 
 ### R5 — Apply to SignPath Foundation (unsigned = SmartScreen wall)
 
-**Why:** `gh secret list` shows only `SPARKLE_ED25519_PRIVATE_KEY`. **`SIGNPATH_API_TOKEN`,
-`SIGNPATH_ORG_ID`, and `SIGNPATH_ENABLED` are all absent**, so both signing steps in `release.yml`
-are skipped and every release ships unsigned. Users will hit a SmartScreen "Windows protected your
-PC" dialog and most will bounce.
+**Re-verified today:** `gh secret list` shows **only** `SPARKLE_ED25519_PRIVATE_KEY`;
+`gh variable list` shows **only** `APPCAST_ENABLED`. `SIGNPATH_API_TOKEN`, `SIGNPATH_ORG_ID`, and
+`SIGNPATH_ENABLED` are all still absent, so both signing steps skip and every build ships unsigned.
 
-This is the longest-lead item in the whole list — the application is reviewed by humans and can
-take weeks. **Start it today, in parallel with everything else.**
+Longest-lead item in the list — human review, can take weeks. **Start it in parallel with
+everything else.**
 
 **Steps:**
-1. Apply at <https://signpath.org/apply>. Free for OSS. Your repo already satisfies the
-   eligibility bar: it is **public**, MIT-licensed, ships an install-time privacy policy plus the
-   Gemini AI opt-out, and `THIRD-PARTY-NOTICES.md` is complete.
+1. Apply at <https://signpath.org/apply>. Free for OSS; the repo is public, MIT-licensed, ships an
+   install-time privacy policy plus the Gemini AI opt-out, and `THIRD-PARTY-NOTICES.md` is complete.
 2. When accepted, create project `fgScanner` with signing policy `release-signing` and **two**
    artifact configurations, named exactly as `release.yml` expects:
    - `publish-payload` — the exe/dll set, signed *before* the installer is packed
    - `installer` — the setup exe
-3. Add to GitHub → Settings → Secrets and variables → Actions:
-   - secret `SIGNPATH_API_TOKEN`
-   - variable `SIGNPATH_ORG_ID`
-   - variable `SIGNPATH_ENABLED` = `true`
-4. Cut a new patch release and confirm both signing steps now run and the installer shows a
-   verified publisher in its properties.
+3. Add secret `SIGNPATH_API_TOKEN`, variables `SIGNPATH_ORG_ID` and `SIGNPATH_ENABLED=true`.
+4. Cut a patch release and confirm both signing steps run and the installer shows a verified
+   publisher.
+
+**Note on priority:** this is now *lower* urgency than it looked on 08-24. The immediate audience is
+one known operator installing from a USB stick, not the public — a SmartScreen prompt they can be
+told about in advance is an inconvenience, not a bounce. Still start the application, because the
+lead time is the whole cost.
 
 **Done when:** a downloaded setup exe shows "Verified publisher" and no SmartScreen block.
 
@@ -186,298 +211,261 @@ take weeks. **Start it today, in parallel with everything else.**
 
 ### R6 — First winget submission (manual, one time)
 
-**Why:** `winget.yml` auto-submits *updates*, but it cannot create a package that does not exist yet.
+Unchanged and still last. `winget.yml` auto-submits *updates* but cannot create a package that does
+not exist. `WINGET_TOKEN` is still absent.
 
-**Steps:**
-1. Create a GitHub PAT with `public_repo` scope; add it as the repo secret **`WINGET_TOKEN`**
-   (currently absent).
-2. After v0.1.0 is published, run once locally:
-   ```powershell
-   wingetcreate new https://github.com/fgerster1/fgScanner/releases/download/v0.1.0/<setup-exe-name>
-   ```
-   Use identifier **`FranzGerster.FGScanner`** (this exact string is what `winget.yml` expects).
-3. Submit the generated manifest PR to `microsoft/winget-pkgs` and wait for the merge.
-4. From then on, every published release auto-submits its version bump.
-
-**Note:** winget submissions of unsigned installers get more scrutiny. Consider doing R5 before R6.
+**Steps:** create a PAT with `public_repo` scope as repo secret `WINGET_TOKEN`; after the first
+release, run `wingetcreate new <installer-url>` once locally with identifier
+**`FranzGerster.FGScanner`** (the exact string `winget.yml` expects); submit the manifest PR to
+`microsoft/winget-pkgs`. Do R5 first — unsigned installers get more scrutiny.
 
 **Done when:** `winget install FranzGerster.FGScanner` works from a clean machine.
 
 ---
 
-## 3. Engineering debt — close these before writing new feature code
+## 3. Engineering debt — status since 08-24
 
-These are the items that make *future* work more expensive. R1–R6 are one-time chores; the items
-below compound.
+### D1 — Localization — ✅ **RESOLVED 2026-08-25 (Option B)**
 
-### D1 — Localization: no `.resx` exists anywhere (CLAUDE.md hard-rule violation) 🔴
-
-**Evidence:** `find src -name "*.resx"` returns nothing. `src/FgScanner.App` is 175 files /
-9,652 lines with every user-visible string hardcoded in XAML and view-models. PLAN §9 phase 9 also
-specified a first-run wizard step for **language** — `FirstRunDialog.xaml` has no language step,
-because there is nothing to switch between.
-
-**Why it matters now:** every new feature you add multiplies the eventual extraction cost. This is
-the clearest case in the repo of "fix it before you grow it".
-
-**Decision to make first:** are you actually shipping non-English UI? Two honest options:
-
-- **Option A — do the extraction (recommended if localization is ever real).** Effort: 1–2 focused days.
-- **Option B — formally drop the requirement.** Effort: 10 minutes. Edit the CLAUDE.md hard rule to
-  say English-only, write an ADR recording the decision and why (see D2), and remove the language
-  step from the PLAN. *This is a legitimate choice — but make it explicitly, don't let it stay a
-  silently-violated rule.*
-
-**If Option A, the mechanics:**
-1. Add `src/FgScanner.App/Resources/Strings.resx` (+ `Strings.Designer.cs`, public access modifier)
-   and matching files in `FgScanner.Core` / `FgScanner.Cli` for their own user-facing text.
-2. Extract in vertical slices, one view at a time, so each commit is reviewable — Settings first
-   (largest string surface), then Groups, Scan, Search, and the dialogs.
-3. In XAML, bind via a static resource wrapper:
-   `Content="{x:Static res:Strings.Settings_AiSectionHeader}"`.
-4. Naming convention: `<Area>_<Element>_<Purpose>` — keeps the resx browsable at 400+ entries.
-5. Add a guard test so this cannot regress: walk every `.xaml` under `src/FgScanner.App` and fail
-   on any literal `Content="…"` / `Header="…"` / `Text="…"` containing a space and a letter, with an
-   explicit allowlist for symbols and glyphs.
-6. Add `Strings.de.resx` (or whichever language) only *after* the neutral file is complete.
-
-**Done when:** the guard test passes and CLAUDE.md's rule is either satisfied or formally amended.
+`ac24d05` *"Settle the localization question: English-only, and start docs/adr/"* took the explicit
+drop. `find src -name "*.resx"` → still **0**, and that is now correct rather than a violation:
+**ADR-0001** records the decision, and CLAUDE.md's hard rule was amended to *"UI is English-only;
+user-visible strings are written inline, no .resx (docs/adr/0001)."* Nothing further to do.
 
 ---
 
-### D2 — `docs/adr/` does not exist 🔴
+### D2 — ADRs — ◐ **PARTIAL: the directory exists, the backfill does not** 🟡
 
-**Evidence:** `ls docs/adr` → *No such file or directory*. But CLAUDE.md's process rule says
-*"update FEATURE-PARITY.md and docs/adr/ when a decision lands"*, and PLAN §6 lists **10 resolved
-decisions** with no ADR behind any of them. All the reasoning currently lives in PLAN prose and in
-commit messages — which is fine for you today and useless in six months.
+**Evidence:** `docs/adr/` now holds a `README.md` plus **three** ADRs — 0001 (English-only UI),
+0002 (auto-orient to any angle), 0003 (preserve originals). The process rule is being followed
+*going forward*: each was written in the same phase as the code it justifies.
 
-**Steps:**
-1. `mkdir docs/adr`, add `docs/adr/README.md` explaining the format (MADR is fine: Context /
-   Decision / Status / Consequences).
-2. Backfill the decisions that a future reader would otherwise re-litigate. At minimum these seven:
-   - **ADR-0001** — SDK-over-fork: use NAPS2.Sdk (LGPL) and write our own MIT app rather than fork
-     the GPL NAPS2 application. *This is the load-bearing licensing decision of the whole project*
-     (PLAN §3) and it must be findable in one file, not buried in a plan.
-   - **ADR-0002** — .NET 10 / WPF over Python (PLAN §3).
-   - **ADR-0003** — one page = one document in v1 (PLAN §5.1, decision #2).
-   - **ADR-0004** — Gemini-only for v1 behind an `IChatClient` seam; BYO-key, Credential Manager storage.
-   - **ADR-0005** — Tesseract via shell-out rather than in-process bindings, and why OCR tests never
-     mock the engine.
-   - **ADR-0006** — SQLite/EF Core as a first-class deliverable behind the index files, with stable
-     `v_index` / `v_pages` / `v_ocr_text` read views.
-   - **ADR-0007** — Ed25519-signed appcast in `SecurityMode.Strict`; never accept an unsigned update.
-3. Going forward: one ADR per decision, in the same commit as the code that implements it.
+**What is still missing:** the backfill. PLAN §6 lists ten resolved decisions with no ADR behind
+them. Of the seven the 08-24 audit named, only the localization one got written. Still unrecorded:
 
-**Done when:** `docs/adr/` holds those seven files and CLAUDE.md's process rule is true again.
+- **SDK-over-fork** — NAPS2.Sdk (LGPL) + our own MIT app rather than forking the GPL NAPS2 app.
+  *This is the load-bearing licensing decision of the whole project* (PLAN §3) and it is findable
+  only in plan prose and in CLAUDE.md's hard-rules list.
+- **.NET 10 / WPF over Python** (PLAN §3).
+- **One page = one document in v1** (PLAN §5.1, decision #2).
+- **Gemini-only for v1** behind an `IChatClient` seam; BYO-key, Credential Manager storage.
+- **Tesseract via shell-out** rather than in-process bindings, and why OCR tests never mock it.
+- **SQLite/EF Core as a first-class deliverable** behind the index files, with stable `v_index` /
+  `v_pages` / `v_ocr_text` read views.
+- **Ed25519-signed appcast in `SecurityMode.Strict`** — never accept an unsigned update.
 
----
+Add an eighth now that it exists: **the evidence-export contract** — why `index.json` row keys,
+`manifest.json`'s `evidenceExport`, and the nine Evidence field names are frozen, and why FG Scanner
+deliberately has no Bates support. That reasoning currently lives only in CLAUDE.md and
+`docs/spec-evidence-export.md`; it is exactly the kind of thing a future contributor would
+"helpfully" rename.
 
-### D3 — The WPF layer is effectively untested; FlaUI is declared but unused 🟠
-
-**Evidence:** `tests/FgScanner.App.Tests/` contains exactly **two** files (`ShellTests.cs`,
-`RetroPdfIntegrationTests.cs`) against **9,652 lines** of App code. CLAUDE.md lists **FlaUI** in the
-stack, but `grep FlaUI Directory.Packages.props tests/*/*.csproj` returns **nothing** — it was never
-added. Meanwhile `FgScanner.Data.Tests` has 14 test files and `FgScanner.Scanning.Tests` has 8, so
-the discipline is real everywhere *except* the layer where new features will actually land.
-
-**Why it matters now:** every new feature you described wanting to add is a UI feature. Without
-view-model tests, each one is a manual-regression tax forever.
-
-**Steps (do the cheap half first):**
-1. **View-model unit tests (high value, no new dependency).** The view-models are already
-   MVVM/CommunityToolkit and constructor-injected, so they are testable as-is. Cover, in priority
-   order: `SettingsViewModel` (largest, 300+ lines, holds the AI/feature-flag/shortcut logic),
-   `GroupDetailViewModel` and its `.Editing` partial (undo/redo stack correctness — this is
-   genuinely tricky logic with zero coverage), and the Search view-model.
-2. **Then FlaUI, if you want the declared stack to be true.** Add `FlaUI.Core` + `FlaUI.UIA3` to
-   `Directory.Packages.props`, create `tests/FgScanner.UiTests`, and write **three** smoke tests
-   only — launch with `--fake-scanner`, scan → commit → assert `index.csv` on disk; open Settings
-   and toggle a feature flag; open a group and rotate a page. Keep them out of the default
-   `dotnet test` run (separate CI job) so they never make the inner loop slow or flaky.
-3. **Add coverage visibility to CI.** `ci.yml` runs build/test/format/CodeQL but collects no
-   coverage. Add `--coverage` to the test step and publish the report as an artifact — you don't
-   need a hard gate, you need to be able to *see* the App number stop being ~0%.
-
-**Done when:** `FgScanner.App.Tests` covers the three view-models above, and CI publishes a coverage
-artifact.
+**Done when:** those eight files exist in `docs/adr/`.
 
 ---
 
-### D4 — Repo hygiene files are missing 🟡
+### D3 — WPF test coverage — ◐ **MUCH IMPROVED; FlaUI and coverage still missing** 🟡
 
-**Evidence:** no `CHANGELOG.md`, no `CONTRIBUTING.md`, no `SECURITY.md`, and `.github/` contains
-*only* `workflows/` — no `dependabot.yml`, no issue templates.
+**Evidence, re-measured today:** `tests/FgScanner.App.Tests/` now holds **11 test files** (was 2),
+**7 of which exercise view-models** — `ShellTests`, `ScanReturnTests`, `SchemaNoticeTests`,
+`TrashMultiSelectTests`, `PendingFieldValueTests`, `BlankRowFieldValueTests`,
+`RowContentVisibilityTests` — against 59 source files / 7,044 lines of App code. The phases-11–18
+work carried its own view-model tests, which is exactly what the 08-24 item asked for. Consider
+**step 1 of that item effectively done.**
 
-For a **public** repo (confirmed `PUBLIC` via `gh repo view`) that is about to have a downloadable
-installer and an auto-updater, two of these are not optional:
+**Still open, both from the original step list:**
+1. **FlaUI is declared but unused.** CLAUDE.md lists it in the stack;
+   `grep FlaUI Directory.Packages.props tests/*/*.csproj` returns **nothing**. Either add
+   `FlaUI.Core` + `FlaUI.UIA3`, create `tests/FgScanner.UiTests`, and write **three** smoke tests
+   (launch with `--fake-scanner`, scan → commit → assert `index.csv`; toggle a feature flag in
+   Settings; open a group and rotate a page), kept out of the default `dotnet test` run so the
+   inner loop stays fast — **or** strike FlaUI from CLAUDE.md's stack list. A declared-but-absent
+   dependency is the same class of lie D1 was.
+2. **No coverage visibility.** `.github/workflows/ci.yml` runs build / test / format / CodeQL and
+   collects no coverage. Add `--coverage` to the test step and publish the report as an artifact —
+   no hard gate needed, you just want to *see* the App number move.
 
-**Steps:**
+---
+
+### D4 — Repo hygiene files — 🔴 **UNCHANGED, all four still missing**
+
+**Re-verified today:** no `CHANGELOG.md`, no `SECURITY.md`, no `CONTRIBUTING.md`. `.github/`
+contains **only** `workflows/` — no `dependabot.yml`, no issue templates.
+
+For a public repo about to publish a downloadable installer and an auto-updater, two of these are
+not optional:
+
 1. **`SECURITY.md`** — required, because you ship a signed auto-updater and handle a user's Gemini
    API key in Credential Manager. State a private reporting channel (enable GitHub Private
-   Vulnerability Reporting in repo settings) and your supported-version policy.
-2. **`.github/dependabot.yml`** — you have a large third-party surface (NAPS2.Sdk, PDFsharp,
-   ClosedXML, Google.GenAI, SQLitePCLRaw, ZXing) plus GitHub Actions pins. Weekly `nuget` +
-   `github-actions` update PRs. Note the licensing guard: **review every bump against the CLAUDE.md
-   forbidden list** — a Dependabot PR must never pull in `FluentAssertions ≥8`, `iText*`,
-   `EPPlus ≥5`, `Emgu.CV`, `System.Data.SQLite`, or `NAPS2.Images.ImageSharp`. Consider adding a CI
-   step that greps the restored package graph for those names and fails the build.
-3. **`CHANGELOG.md`** — Keep-a-Changelog format; the auto-updater shows release notes to users, so
-   you want one canonical source. Seed it with a `0.1.0` entry summarizing phases 0–10.
-4. **`CONTRIBUTING.md`** and issue templates — lower priority, do them if/when you take outside
+   Vulnerability Reporting) and a supported-version policy.
+2. **`.github/dependabot.yml`** — large third-party surface (NAPS2.Sdk, PDFsharp, ClosedXML,
+   Google.GenAI, SQLitePCLRaw, ZXing) plus Actions pins. Weekly `nuget` + `github-actions` PRs.
+   **Licensing guard:** review every bump against CLAUDE.md's forbidden list. A CI step that greps
+   the restored package graph for `FluentAssertions` ≥8, `iText*`, `EPPlus` ≥5, `Emgu.CV`,
+   `System.Data.SQLite`, and `NAPS2.Images.ImageSharp` and fails the build would make that
+   automatic — **verified today that no such check exists in any workflow.** With Dependabot on,
+   it stops being optional.
+3. **`CHANGELOG.md`** — Keep-a-Changelog. The auto-updater shows release notes to users, so you
+   want one canonical source. It would now need to cover eighteen phases; seeding it is easiest
+   immediately before R3.
+4. **`CONTRIBUTING.md`** and issue templates — lower priority, do them if you take outside
    contributions.
 
-**Done when:** `SECURITY.md`, `dependabot.yml`, and `CHANGELOG.md` exist on main.
+**Done when:** `SECURITY.md`, `dependabot.yml` (+ the forbidden-package CI grep), and
+`CHANGELOG.md` exist on main.
 
 ---
 
-### D5 — Decide and document the feature-flag policy 🟡
+### D5 — Feature-flag policy — ◐ **PARTIAL; the flag set has doubled** 🟡
 
-**Evidence:** `src/FgScanner.Data/FeatureFlags.cs` ships all four phase-10 differentiators behind
-flags. `Search` defaults **on**; `PatchT`, `BlankPolicy`, and `CommitHook` default **off**.
+**Evidence:** `src/FgScanner.Data/FeatureFlags.cs` now carries **six** flags, not four:
 
-That was correct for phase 10, but it leaves three of your four differentiators invisible to a new
-user out of the box — including the two that are the strongest selling points against NAPS2.
+| Flag | Default | Terminal state documented? |
+|---|---|---|
+| `Feature.Search` | on | ☐ no |
+| `Feature.PatchT` | off | ☐ no |
+| `Feature.BlankPolicy` | off | ☐ no |
+| `Feature.CommitHook` | off | ☐ no |
+| `Feature.AutoOrient` | **on** | ☑ ADR-0002 |
+| `Feature.PreserveOriginals` | off | ☑ ADR-0003 (+ CLAUDE.md: stays **on** for evidence groups) |
 
-**Steps:**
-1. Decide per flag: stays opt-in permanently, or flips on by default in a future version once the
-   manual checks in `docs/manual-tests.md` § Phase 10 pass on real hardware.
-   - *Suggested:* `BlankPolicy` → default on after hardware validation (it is pure win on a duplex
-     feeder); `PatchT` and `CommitHook` → stay opt-in (they need user setup to be meaningful).
-2. Record the decision as an ADR (D2) and reflect it in `docs/user-guide.md`.
-3. If any flag graduates to default-on, remove it from `FeatureFlags` entirely rather than flipping
-   the fallback string — dead flags are worse than no flags.
+The two new flags arrived with ADRs, so the *practice* has improved. The four phase-10 flags still
+have no documented terminal state, and three of the four differentiators remain invisible to a new
+user out of the box.
 
-**Done when:** each of the four flags has a documented terminal state.
+**Steps:** decide per flag — permanently opt-in, or default-on once the `docs/manual-tests.md`
+§ Phase 10 checks pass on real hardware (R2). *Suggested:* `BlankPolicy` → default on after
+hardware validation (pure win on a duplex feeder — and note it is now load-bearing for evidence
+exports, since phase 16 made blank-flagged rows appear in `index.json`); `PatchT` and `CommitHook`
+→ stay opt-in (they need user setup to mean anything). Record it as an ADR and reflect it in
+`docs/user-guide.md`. If a flag graduates, delete it from `FeatureFlags` rather than flipping the
+fallback — dead flags are worse than no flags.
+
+**Done when:** each of the six flags has a documented terminal state.
 
 ---
 
 ## 4. Parity gaps still marked `◐` — scope them or close them
 
-Four rows in `docs/FEATURE-PARITY.md` are partial. Two of them (scanning hardware, installer/signing)
-are covered by R2/R5 above. The other two are genuine unbuilt scope:
+Five rows are partial. Two (scanning hardware, installer/signing) are R2/R5. `Import PDF/images;
+file associations` is covered by the installer work. The other two are genuine unbuilt scope, and
+**neither has moved since 08-24.**
 
-### P1 — Profile settings surface is thin
+### P1 — Profile settings surface is thin (unchanged)
 
-**Evidence:** `src/FgScanner.Scanning/ScanModels.cs` — `ScanProfileOptions` has **six** knobs:
-`Source`, `Dpi`, `BitDepth`, `PageSize`, `Brightness`, `Contrast`. `ScanPageSize` is a fixed enum of
-seven sizes with **no custom size**.
+**Re-verified:** `src/FgScanner.Scanning/ScanModels.cs:39-49` — `ScanProfileOptions` still has
+**six** knobs: `Source`, `Dpi`, `BitDepth`, `PageSize`, `Brightness`, `Contrast`. `ScanPageSize` is
+still a fixed enum with **no custom size**.
 
-Against NAPS2's profile surface the notable absences are: custom page size (W×H + units),
+Against NAPS2's profile surface the notable absences: custom page size (W×H + units),
 auto-deskew-at-scan-time, horizontal alignment for feeder scans, flip-duplexed-back-pages, JPEG
-quality / max-quality for the captured image, "use native TWAIN UI", and per-driver WIA offsets.
+quality for the captured image, "use native TWAIN UI", and per-driver WIA offsets.
 
-**Steps:**
-1. Open `docs/research/research-1-naps2.md` and extract the full NAPS2 8.3.2 profile field list into
-   a table in `docs/FEATURE-PARITY.md` — one row per field, marked keep / drop / defer. **Do this
-   before writing code**; the value here is deciding what you *don't* want.
-2. Implement only the keeps. Realistically the high-value four are: **custom page size**,
-   **auto-deskew on scan**, **flip duplexed back pages**, **use native TWAIN UI**.
-3. Each new field needs: the `ScanProfileOptions` property, the NAPS2.Sdk mapping in
-   `Naps2ScanService`, the profile editor UI, a `.fgprofile` round-trip test (the import/export
-   format is schema-versioned — **bump the schema version and add a migration test for the old
-   version**), and a `FakeScanService` assertion.
-4. Update the parity row to `☑` with the deliberate-drop list noted inline.
+**Steps:** extract the full NAPS2 8.3.2 profile field list from `docs/research/research-1-naps2.md`
+into a keep/drop/defer table in `docs/FEATURE-PARITY.md` **before writing code** — the value is in
+deciding what you *don't* want. Then build only the keeps; realistically **custom page size**,
+**auto-deskew on scan**, **flip duplexed back pages**, **use native TWAIN UI**. Each needs the
+property, the `Naps2ScanService` mapping, the profile-editor UI, a `.fgprofile` round-trip test
+(**bump the schema version and add a migration test for the old one**), and a `FakeScanService`
+assertion.
 
----
+**Note for the evidence path:** "use native TWAIN UI" is the one most likely to matter on Jim's
+machine, where a vendor driver may expose settings the six knobs cannot reach. Let R2 tell you
+whether it is needed before you build it.
 
-### P2 — MAPI email is not implemented
+### P2 — MAPI email is not implemented (unchanged)
 
-**Evidence:** the parity row reads `◐ (print + clipboard + drag-out done; MAPI email in 9)` but
-phase 9 shipped without it — `grep -ri "mapi\|MailTo\|SendMail" src` returns **zero** hits in any
-production path.
+**Re-verified:** `grep -rilE "mapi32|MAPISendMail|SendMail"` across `src/**/*.cs|*.xaml` (excluding
+`bin`/`obj`) → **zero hits**. The parity row still reads *"MAPI email in 9"*; phase 9 shipped
+without it and eight further phases have gone by.
 
-**Steps (pick one):**
-- **Build it (~half a day).** P/Invoke `MAPISendMail` from `mapi32.dll`, attach the exported
-  PDF/images from the existing export pipeline, and add an "Email…" command next to Print in
-  `GroupDetailViewModel.Editing`. Guard it: MAPI fails silently when no MAPI client is registered,
-  so detect that and fall back to a `mailto:` shell-execute with the file paths in the body, or grey
-  the command out.
-- **Or drop it.** Mark the row `[D]` (deliberately different) with a note that Print + drag-out cover
-  the workflow, and write it up in an ADR. Given that MAPI is a dying API and most users are on
-  webmail, **this is the defensible choice** — but make it explicitly.
+**Pick one:** build it (~half a day: P/Invoke `MAPISendMail`, attach from the existing export
+pipeline, guard the no-MAPI-client case with a `mailto:` fallback) — **or drop it**, mark the row
+`[D]` with a note that Print + drag-out cover the workflow, and write the ADR. MAPI is a dying API
+and this app's actual user hands over a USB stick; **dropping it is the defensible choice.** Make
+it explicitly.
 
----
+### P3 — Two phase-10 items were never built, and are *still* invisible (unchanged) 🟠
 
-### P3 — Two phase-10 items in the PLAN were never built
+**Re-verified:** `grep -rilE "FileSystemWatcher|WatchFolder"` and
+`grep -rilE "BatchLevelField|GroupField"` across source → **zero hits each**. PLAN §9 phase 10
+promised six deliverables; four shipped.
 
-**Evidence:** PLAN §9 phase 10 lists **six** deliverables: *"Patch-T/barcode separation + printable
-sheets, blank-page policies, FTS search UI, webhook-on-commit, batch-level fields, watch folder."*
-Four shipped. `grep -ri "watchfolder\|FileSystemWatcher" src` → **nothing**;
-`grep -ri "BatchLevelField\|GroupField" src` → **nothing**.
+The 08-24 audit called step 1 *"a 5-minute edit and the honest thing to do"* — **it was not done.**
+`docs/FEATURE-PARITY.md` still has zero `☐` rows, which reads as "phase 10 was 100 % complete."
+Add both as explicit `☐` rows targeted at a future version. Then treat them as feature work (§6).
 
-Neither is a bug — they simply weren't built, and `FEATURE-PARITY.md` doesn't mention them, so
-they are currently invisible work. Both are also on the §7 backlog (items **#7 batch-level fields, S**
-and **#20 watch folders, M**).
+### P4 — Local clutter (unchanged, 2 minutes)
 
-**Steps:**
-1. **Right now:** add both to `docs/FEATURE-PARITY.md` as explicit `☐` rows targeted at v1.2, so the
-   checklist stops implying phase 10 was 100% complete. This is a 5-minute edit and it is the
-   honest thing to do.
-2. Then treat them as feature work, not cleanup — see §6.
-
----
-
-### P4 — Local clutter (trivial, 2 minutes)
-
-`git status --ignored` shows `dist/`, `publish/`, and `ss1.html` as ignored-but-present. All three
-are correctly in `.gitignore`, so nothing leaks. But `ss1.html` is an untracked stray in the repo
-root — delete it if it's a leftover scratch file, or move it under `docs/` if it's a real asset.
+`ss1.html` is **still** an untracked stray in the repo root. Delete it if it is scratch, move it
+under `docs/` if it is a real asset. `dist/` and `publish/` remain correctly gitignored.
 
 ---
 
 ## 5. Suggested order of execution
 
-The dependency chain matters more than the priority labels:
+The dependency chain matters more than the priority labels. The evidence hand-off dominates it now.
 
-**Start today, in parallel (both are blocked on other people, not on you):**
-- **R5** SignPath application — longest lead time in the list, weeks of human review
-- **D1 decision** — Option A or Option B on localization; the *decision* is 10 minutes and unblocks
-  every subsequent UI commit
+**Start today, in parallel (blocked on other people, not on you):**
+- **R5** SignPath application — weeks of human review, and the only thing here with a lead time
 
-**Week 1 — get to a real release:**
-1. ~~R1 (Inno Setup local build)~~ → ✅ **done 2026-08-24**
-2. R2 (hardware smoke pass) → half a day, and the highest-risk item in the project
-3. R3 (tag v0.1.0, publish) → 1 hour
-4. R4 (prove auto-update with a throwaway v0.1.1) → 1 hour
-5. P4 (delete `ss1.html`), P3 step 1 (add the two missing rows to the parity checklist) → 15 minutes
+**Next, because a scanning station is waiting on it:**
+1. **R2** hardware smoke pass on the station's TWAIN hardware, including the evidence round-trip →
+   half a day, and by far the highest-risk item in the project
+2. **P3 step 1** + **P4** — add the two `☐` rows, delete `ss1.html` → 15 minutes, do them while
+   waiting on hardware
 
-**Week 2 — pay down what compounds:**
-6. D2 (backfill 7 ADRs) → half a day
-7. D4 (SECURITY.md, dependabot.yml + forbidden-package CI grep, CHANGELOG.md) → half a day
-8. D1 Option A if chosen (resx extraction + guard test) → 1–2 days
-9. D3 step 1 (view-model tests for Settings / GroupDetail-Editing / Search) → 1 day
+**Then get to a real release:**
+3. **R3a** version-source guard → 15 minutes, and it must land before any tag
+4. **D4** `CHANGELOG.md` seed (R3 wants it anyway), `SECURITY.md`, `dependabot.yml` + the
+   forbidden-package grep → half a day
+5. **R3** tag v0.3.2 and publish → 1 hour
+6. **R4** prove auto-update with a throwaway patch → 1 hour
 
-**Week 3 — then and only then, new features:**
-10. D3 step 2–3 (FlaUI smoke tests + CI coverage artifact)
-11. D5 (feature-flag terminal states)
-12. R6 (winget), once R5 has landed
-13. P1 / P2 decisions, then §6
+**Then pay down what compounds:**
+7. **D2** backfill the eight ADRs → half a day
+8. **D3** FlaUI decision (build the three smokes or strike it from CLAUDE.md) + CI coverage
+   artifact → half a day
+9. **D5** terminal state for all six flags → 1 hour, once R2 has validated `BlankPolicy`
+
+**Then and only then, new features:**
+10. **R6** winget, once R5 has landed
+11. **P1 / P2** decisions, then §6
 
 ---
 
 ## 6. Where new features should come from
 
-Do **not** invent a new backlog. `docs/PLAN.md` §7 already contains a research-grounded, effort-sized
-v1.1–v2 list of **29 items** with prior-art attribution for each, and phase 10 consumed only four of
-them. The highest-value unbuilt entries, by effort:
+Do **not** invent a new backlog. `docs/PLAN.md` §7 holds a research-grounded, effort-sized v1.1–v2
+list of **29 items** with prior-art attribution. Phase 10 consumed four of them (#1 Patch-T, #19
+webhook, #22 FTS search, plus the blank-page policy from the adopted set); phases 11–18 were driven
+by the v0.2 gap analysis and the evidence spec rather than by §7, so the list is largely intact.
+
+Highest-value unbuilt entries, by effort:
 
 | # | Feature | Effort | Note |
 |---|---|---|---|
-| 7 | Batch-level fields stamped on every row (box number, operator) | **S** | Already promised in phase 10 — see P3 |
-| 4 | Rescan-in-place ("replace this page") | **S** | Small, and an obvious gap in the editing surface |
-| 9 | Tags column (multi-valued, `;`-separated) | **S** | Slots straight into the existing schema editor |
-| 10 | Operator identity per row (Windows username) | **S** | The `$(user)` naming token already exists |
+| 7 | Batch-level fields stamped on every row (box number, operator) | **S** | Promised in phase 10 — see P3. **Now doubly relevant:** the Evidence profile already asks for `Box` and `Operator` on every page, by hand |
+| 4 | Rescan-in-place ("replace this page") | **S** | Obvious gap in the editing surface; on an evidence station a bad feed currently means rebuilding the group |
+| 10 | Operator identity per row (Windows username) | **S** | The `$(user)` token already backs the Evidence `Operator` default — this generalizes it |
+| 9 | Tags column (multi-valued, `;`-separated) | **S** | Slots into the existing schema editor |
 | 2 | Barcode value → index field | **M** | ZXing is already a dependency from Patch-T |
-| 20 | Watch folders (drop file → pipeline runs) | **M** | Already promised in phase 10 — see P3 |
+| 20 | Watch folders (drop file → pipeline runs) | **M** | Promised in phase 10 — see P3 |
 | 6 | Lookup auto-fill from a CSV/database table | **M** | Strong differentiator vs. Epson DCP |
-| 16 | Gemini Batch API mode (50% cost on backfills) | **M** | The AI queue is already durable |
+| 16 | Gemini Batch API mode (50 % cost on backfills) | **M** | The AI queue is already durable |
+| 25 | Audit log of field changes (who/when/from/to) | **M** | Was low priority on 08-24; an evidence capture station is exactly where it earns its keep |
 
-**Suggested first feature after cleanup:** items **#7 + #10 + #9** together as a single "batch and
-row metadata" phase. All three are **S**, they share the schema-editor and index-exporter code paths,
-one of them is already an unfulfilled phase-10 promise, and they will immediately exercise whatever
-you decided in D1 (resx) and D3 (view-model tests) — which is exactly the validation you want on
-fresh process changes before attempting something large.
+**Suggested next phase:** items **#7 + #10** together as "batch and row metadata." Both are **S**,
+they share the schema-editor and index-exporter paths, one is an unfulfilled phase-10 promise, and
+they directly remove hand-typing from the evidence workflow that is about to go live — the
+operator currently types `Box` and `Operator` on every single page. Add **#4 rescan-in-place**
+if the R2 pass shows misfeeds are common on the station's feeder.
 
-When you start it: new branch `phase-11-<name>` per the CLAUDE.md process rule, CI green before
-merge, and update **both** `FEATURE-PARITY.md` and `docs/adr/` on the way out.
+**Anything touching the index exporters must respect the frozen contract** in CLAUDE.md: the
+`index.json` row keys, `manifest.json`'s `evidenceExport`, and the nine Evidence field names
+(`DocNo`, `DocDate`, `DocType`, `Title`, `Parties`, `Operator`, `Redact`, `Box`, `Notes`) are
+external API for the JimsStuff importer. Adding columns is safe; renaming any of those breaks a
+legal pipeline silently.
+
+When you start: new branch `phase-N-<name>` per the CLAUDE.md process rule, CI green before merge,
+and update **both** `FEATURE-PARITY.md` and `docs/adr/` on the way out.
