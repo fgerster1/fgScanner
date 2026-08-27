@@ -174,10 +174,13 @@ public sealed class CaptureTriageServiceTests : IDisposable
         var queued = await new OcrQueueService(_db.Factory).EnqueueGroupAsync(group.Id, cancellationToken: Ct);
         Assert.Equal(1, queued);
 
-        // …and from the index rows.
+        // …while the export rows carry the blank flagged (Phase 16: index.json lists every
+        // sheet; the CSV/XLSX/XML writers are what hide flagged blanks now).
         var indexing = new IndexingService(_db.Factory, _profiles, new Core.Index.IndexExporter());
         var data = await indexing.BuildExportDataAsync(group.Id, Ct);
-        Assert.Single(data.Rows);
-        Assert.Equal(adopted.Adopted[1].FileName, data.Rows[0].ImageName);
+        Assert.Equal(2, data.Rows.Count);
+        Assert.True(data.Rows[0].IsBlank);
+        Assert.Equal(adopted.Adopted[1].FileName, data.Rows[1].ImageName);
+        Assert.False(data.Rows[1].IsBlank);
     }
 }

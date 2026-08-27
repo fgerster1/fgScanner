@@ -28,6 +28,7 @@ Tracks FG Scanner against the NAPS2 8.3.2 inventory (docs/research/research-1-na
 | Dark/light theme | [F] | ☑ | 0 |
 | Walking skeleton (solution, CI, installer stub) | — | ☑ | 0 |
 | Patch-T separator detection + printable sheets | [P]+ | ☑ (ZXing Code 39 "PATCHT"; per-profile drop/keep; NAPS2/Paperless-compatible sheets; feature-flagged) | 10 |
-| Blank-page policy per profile | [P]+ | ☑ (drop journaled / flag excluded from OCR+AI+index / treat-as-separator; feature-flagged) | 10 |
+| Blank-page policy per profile | [P]+ | ☑ (drop journaled / flag excluded from OCR+AI+CSV/XLSX/XML (in index.json flagged since 16) / treat-as-separator; feature-flagged) | 10 |
 | Full-text search (FTS5) over OCR + fields + AI | FG core | ☑ (Search section; snippet highlighting; results open group/page; feature-flagged) | 10 |
 | Commit hook (command + webhook) | FG core | ☑ (cmd line w/ $(group)/$(dir)/$(manifest) tokens; webhook POSTs index.json payload; journaled; feature-flagged) | 10 |
+| Evidence-grade index.json | FG core | ☑ (rows carry sequence/pageId/checksum/isBlank; blank-flagged rows included in JSON+webhook only, CSV/XLSX/XML unchanged; manifest evidenceExport:1) | 16 |

@@ -2,6 +2,7 @@
   "manifest": {
     "group": "Invoices 2026",
     "profile": "Accounting",
+    "evidenceExport": 1,
     "schemaVersion": 3,
     "appVersion": "1.2.3",
     "generatedUtc": "2026-08-20T12:00:00.0000000Z",
@@ -39,6 +40,10 @@
       "ocrConfidence": 96.4,
       "aiDescription": "A plain description.",
       "aiStatus": "Done",
+      "sequence": 1,
+      "pageId": "11111111-1111-1111-1111-111111111111",
+      "checksum": "aa11cc9c0f1c21f1ce2c11a1e1f11b1d1e1f1a1b1c1d1e1f1a1b1c1d1e1f1a1b",
+      "isBlank": false,
       "fields": {
         "Vendor": "Acme Corp",
         "InvoiceDate": "2026-08-19",
@@ -53,6 +58,10 @@
       "ocrConfidence": null,
       "aiDescription": "Comma, \u0022quotes\u0022 and\r\na new line.",
       "aiStatus": "Pending",
+      "sequence": 2,
+      "pageId": "22222222-2222-2222-2222-222222222222",
+      "checksum": "bb22cc9c0f1c21f1ce2c11a1e1f11b1d1e1f1a1b1c1d1e1f1a1b1c1d1e1f1a1b",
+      "isBlank": false,
       "fields": {
         "Vendor": "M\u00FCller \u0026 S\u00F6hne GmbH \u2014 \u65E5\u672C\u8A9E",
         "InvoiceDate": "",
@@ -67,6 +76,10 @@
       "ocrConfidence": null,
       "aiDescription": "=1\u002B2\u002Bcmd|\u0027 /C calc\u0027!A0",
       "aiStatus": "Skipped",
+      "sequence": 3,
+      "pageId": "33333333-3333-3333-3333-333333333333",
+      "checksum": "cc33cc9c0f1c21f1ce2c11a1e1f11b1d1e1f1a1b1c1d1e1f1a1b1c1d1e1f1a1b",
+      "isBlank": false,
       "fields": {
         "Vendor": "@SUM(A1:A9)",
         "InvoiceDate": "2026-01-02",
@@ -81,11 +94,33 @@
       "ocrConfidence": 21.3,
       "aiDescription": "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
       "aiStatus": "Done",
+      "sequence": 4,
+      "pageId": "44444444-4444-4444-4444-444444444444",
+      "checksum": "dd44cc9c0f1c21f1ce2c11a1e1f11b1d1e1f1a1b1c1d1e1f1a1b1c1d1e1f1a1b",
+      "isBlank": false,
       "fields": {
         "Vendor": "Long Description Test",
         "InvoiceDate": "2026-12-31",
         "Amount": "99999.99",
         "Category": "Archive"
+      }
+    },
+    {
+      "group": "Invoices 2026",
+      "imageName": "scan_00005.png",
+      "ocRed": "No",
+      "ocrConfidence": null,
+      "aiDescription": "",
+      "aiStatus": "Skipped",
+      "sequence": 5,
+      "pageId": "55555555-5555-5555-5555-555555555555",
+      "checksum": "ee55cc9c0f1c21f1ce2c11a1e1f11b1d1e1f1a1b1c1d1e1f1a1b1c1d1e1f1a1b",
+      "isBlank": true,
+      "fields": {
+        "Vendor": "",
+        "InvoiceDate": "",
+        "Amount": "",
+        "Category": ""
       }
     }
   ]

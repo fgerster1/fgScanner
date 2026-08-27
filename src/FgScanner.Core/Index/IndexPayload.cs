@@ -17,6 +17,8 @@ public static class IndexPayload
     public static object Build(IndexExportData data) => new
     {
         Manifest = ManifestBuilder.Build(data),
+        // JSON is the machine contract: unlike the human-facing formats it carries blank-flagged
+        // rows and the DB-held order/identity/integrity facts, so a copied folder stands alone.
         Rows = data.Rows.Select(r => new
         {
             Group = data.GroupName,
@@ -25,6 +27,10 @@ public static class IndexPayload
             OCRConfidence = r.OcrConfidence,
             AiDescription = r.AiDescription ?? "",
             r.AiStatus,
+            r.Sequence,
+            PageId = r.PageId.ToString(),
+            r.Checksum,
+            r.IsBlank,
             Fields = data.Fields.ToDictionary(f => f.Name, f => r.CustomValues.GetValueOrDefault(f.Name) ?? ""),
         }),
     };

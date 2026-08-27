@@ -1,6 +1,7 @@
 ﻿{
   "group": "Invoices 2026",
   "profile": "Accounting",
+  "evidenceExport": 1,
   "schemaVersion": 3,
   "appVersion": "1.2.3",
   "generatedUtc": "2026-08-20T12:00:00.0000000Z",

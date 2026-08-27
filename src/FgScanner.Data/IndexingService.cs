@@ -264,7 +264,7 @@ public sealed class IndexingService(
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         var group = await db.Groups.Include(g => g.Profile).FirstAsync(g => g.Id == groupId, cancellationToken).ConfigureAwait(false);
-        var documents = await LoadDocumentsAsync(db, groupId, cancellationToken).ConfigureAwait(false);
+        var documents = await LoadDocumentsAsync(db, groupId, cancellationToken, includeBlanks: true).ConfigureAwait(false);
 
         IReadOnlyList<IndexFieldDef> fields = [];
         var formats = new List<IndexFormat> { IndexFormat.Csv };
@@ -315,7 +315,11 @@ public sealed class IndexingService(
                 page.OcrMeanConfidence,
                 page.AiDescription,
                 page.AiStatus.ToString(),
-                JsonSerializer.Deserialize<Dictionary<string, string?>>(doc.CustomFieldsJson) ?? []));
+                JsonSerializer.Deserialize<Dictionary<string, string?>>(doc.CustomFieldsJson) ?? [],
+                doc.Sequence,
+                page.Id,
+                page.Checksum,
+                page.IsBlank));
         }
 
         return new IndexExportData(
@@ -439,7 +443,7 @@ public sealed class IndexingService(
         listChoicesJson is null ? null : JsonSerializer.Deserialize<List<string>>(listChoicesJson);
 
     private static async Task<List<(Document Doc, string ImageName)>> LoadDocumentsAsync(
-        FgScannerDbContext db, Guid groupId, CancellationToken cancellationToken)
+        FgScannerDbContext db, Guid groupId, CancellationToken cancellationToken, bool includeBlanks = false)
     {
         var documents = await db.Documents
             .Include(d => d.Pages)
@@ -447,10 +451,12 @@ public sealed class IndexingService(
             .OrderBy(d => d.Sequence)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
         // Flag-policy blanks stay in the group and the grid but never reach validation or the
-        // index files (PLAN prompt 10: excluded from OCR/AI/index).
+        // human-facing index files (PLAN prompt 10: excluded from OCR/AI/index). Since Phase 16
+        // the export DOES load them — index.json carries every sheet, flagged, so a copied folder
+        // is complete evidence; the CSV/XLSX/XML writers filter them back out.
         return [.. documents
             .Where(d => d.Pages.Count > 0)
-            .Where(d => !d.Pages.OrderBy(p => p.Sequence).First().IsBlank)
+            .Where(d => includeBlanks || !d.Pages.OrderBy(p => p.Sequence).First().IsBlank)
             .Select(d => (d, d.Pages.OrderBy(p => p.Sequence).First().FileName))];
     }
 }

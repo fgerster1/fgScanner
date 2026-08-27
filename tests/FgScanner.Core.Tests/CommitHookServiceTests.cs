@@ -86,7 +86,9 @@ public sealed class CommitHookServiceTests : IDisposable
 
         using var payload = JsonDocument.Parse(handler.CapturedBody!);
         Assert.Equal("Invoices 2026", payload.RootElement.GetProperty("manifest").GetProperty("group").GetString());
-        Assert.Equal(4, payload.RootElement.GetProperty("rows").GetArrayLength());
+        // 5 = the four data rows plus the blank-flagged sheet: the webhook body is the machine
+        // contract, identical to index.json, so it carries blanks too.
+        Assert.Equal(5, payload.RootElement.GetProperty("rows").GetArrayLength());
         // Same shape as index.json, byte for byte.
         Assert.Equal(IndexPayload.ToJson(Data()), handler.CapturedBody);
     }

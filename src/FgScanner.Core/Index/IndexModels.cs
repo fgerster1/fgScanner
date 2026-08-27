@@ -18,14 +18,22 @@ public enum IndexFieldType
 
 public sealed record IndexFieldDef(string Name, IndexFieldType Type, bool Required);
 
-/// <summary>One export row (= one document). Custom values are canonical strings: ISO dates, invariant numbers.</summary>
+/// <summary>
+/// One export row (= one document). Custom values are canonical strings: ISO dates, invariant numbers.
+/// Sequence/PageId/Checksum/IsBlank exist so a copied group folder is self-contained for an external
+/// importer (evidence export) — order, identity and integrity must not live only in the local DB.
+/// </summary>
 public sealed record IndexRow(
     string ImageName,
     string Ocred,
     double? OcrConfidence,
     string? AiDescription,
     string AiStatus,
-    IReadOnlyDictionary<string, string?> CustomValues);
+    IReadOnlyDictionary<string, string?> CustomValues,
+    int Sequence = 0,
+    Guid PageId = default,
+    string Checksum = "",
+    bool IsBlank = false);
 
 public sealed record IndexExportData(
     string GroupName,

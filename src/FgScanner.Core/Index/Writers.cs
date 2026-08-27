@@ -43,6 +43,13 @@ internal static class ColumnOrder
     /// <summary>Empty for a page that was never read — a 0 would sort as "read very badly".</summary>
     public static string? FormatConfidence(double? confidence) =>
         confidence?.ToString("0.##", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Blank-flagged rows travel only in index.json (the machine contract, so an evidence importer
+    /// sees every sheet); the human-facing formats keep hiding them exactly as before Phase 16.
+    /// </summary>
+    public static IEnumerable<IndexRow> HumanFacing(IndexExportData data) =>
+        data.Rows.Where(r => !r.IsBlank);
 }
 
 /// <summary>RFC 4180: UTF-8 with BOM, CRLF, quoting, "" escaping — plus formula-injection prefixing.</summary>
@@ -59,7 +66,7 @@ internal sealed class CsvFormatWriter : IFormatWriter
         };
         var delimiter = data.CsvDelimiter;
         await writer.WriteLineAsync(string.Join(delimiter, ColumnOrder.Headers(data).Select(h => Encode(h, delimiter)))).ConfigureAwait(false);
-        foreach (var row in data.Rows)
+        foreach (var row in ColumnOrder.HumanFacing(data))
         {
             await writer.WriteLineAsync(string.Join(delimiter, ColumnOrder.Cells(data, row).Select(c => Encode(c, delimiter)))).ConfigureAwait(false);
         }
@@ -95,6 +102,7 @@ internal sealed class XlsxFormatWriter : IFormatWriter
     {
         using var workbook = new XLWorkbook();
         var sheet = workbook.Worksheets.Add("Index");
+        var rows = ColumnOrder.HumanFacing(data).ToList();
         var headers = ColumnOrder.Headers(data).ToList();
         for (var c = 0; c < headers.Count; c++)
         {
@@ -112,9 +120,9 @@ internal sealed class XlsxFormatWriter : IFormatWriter
             fieldTypeByColumn[fixedColumns + i] = data.Fields[i].Type;
         }
 
-        for (var r = 0; r < data.Rows.Count; r++)
+        for (var r = 0; r < rows.Count; r++)
         {
-            var cells = ColumnOrder.Cells(data, data.Rows[r]).ToList();
+            var cells = ColumnOrder.Cells(data, rows[r]).ToList();
             for (var c = 0; c < cells.Count; c++)
             {
                 var cell = sheet.Cell(r + 2, c + 1);
@@ -149,9 +157,9 @@ internal sealed class XlsxFormatWriter : IFormatWriter
         }
 
         sheet.SheetView.FreezeRows(1);
-        if (data.Rows.Count > 0)
+        if (rows.Count > 0)
         {
-            sheet.Range(1, 1, data.Rows.Count + 1, headers.Count).SetAutoFilter();
+            sheet.Range(1, 1, rows.Count + 1, headers.Count).SetAutoFilter();
         }
 
         sheet.Columns().AdjustToContents(minWidth: 8, maxWidth: 60);
@@ -177,7 +185,7 @@ internal sealed class XmlFormatWriter : IFormatWriter
         await xml.WriteAttributeStringAsync(null, "generatedUtc", null, data.GeneratedUtc.ToString("O")).ConfigureAwait(false);
 
         var sequence = 0;
-        foreach (var row in data.Rows)
+        foreach (var row in ColumnOrder.HumanFacing(data))
         {
             sequence++;
             await xml.WriteStartElementAsync(null, "document", null).ConfigureAwait(false);
@@ -224,6 +232,9 @@ internal static class ManifestBuilder
         Group = data.GroupName,
         Directory = data.GroupDirectory,
         Profile = data.ProfileName,
+        // Contract marker: lets an external importer refuse a pre-Phase-16 folder outright
+        // instead of mis-reading one whose JSON lacks sequence/checksum/blank rows.
+        EvidenceExport = 1,
         data.SchemaVersion,
         data.AppVersion,
         GeneratedUtc = data.GeneratedUtc.ToString("O"),

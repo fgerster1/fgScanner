@@ -156,6 +156,84 @@ public sealed class IndexingServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Blank_page_reaches_json_flagged_but_stays_out_of_csv()
+    {
+        var (profile, schema) = await CreateProfileWithFieldsAsync(json: true);
+        var group = await _groups.CreateGroupAsync(_groupsRoot, "Evidence", (profile.Id, schema.Version), Ct);
+        var incoming = Path.Combine(_db.Root, "in-blank");
+        Directory.CreateDirectory(incoming);
+        var real = Path.Combine(incoming, "real.png");
+        var blank = Path.Combine(incoming, "blank.png");
+        await File.WriteAllBytesAsync(real, [1, 2, 3], Ct);
+        await File.WriteAllBytesAsync(blank, [9], Ct);
+        var adopted = await _groups.AdoptPagesAsync(
+            group.Id, [real, blank], f => f.EndsWith("blank.png", StringComparison.Ordinal), Ct);
+        await _indexing.ApplyInitialValuesAsync(
+            group.Id, [.. adopted.Adopted.Select(p => p.DocumentId)], null, Ct);
+        foreach (var doc in (await _indexing.ValidateAsync(group.Id, Ct)).Documents)
+        {
+            await _indexing.SetFieldValuesAsync(doc.DocumentId, new Dictionary<string, string?>
+            {
+                ["Vendor"] = "Acme",
+                ["Amount"] = "5",
+            }, Ct);
+        }
+
+        var (validation, export) = await _indexing.CommitGroupAsync(group.Id, Ct);
+
+        Assert.False(validation.HasErrors); // the blank page never reaches validation
+        Assert.NotNull(export);
+        var json = JsonDocument.Parse(
+            await File.ReadAllTextAsync(Path.Combine(group.DirectoryPath, "index.json"), Ct));
+        var rows = json.RootElement.GetProperty("rows").EnumerateArray().ToList();
+        Assert.Equal(2, rows.Count);
+        var blankRow = Assert.Single(rows, r => r.GetProperty("isBlank").GetBoolean());
+        Assert.Equal("scan_00002.png", blankRow.GetProperty("imageName").GetString());
+
+        var csv = await File.ReadAllTextAsync(Path.Combine(group.DirectoryPath, "index.csv"), Ct);
+        Assert.Contains("scan_00001.png", csv);
+        Assert.DoesNotContain("scan_00002.png", csv);
+
+        var manifest = JsonDocument.Parse(
+            await File.ReadAllTextAsync(Path.Combine(group.DirectoryPath, "manifest.json"), Ct));
+        Assert.Equal(1, manifest.RootElement.GetProperty("evidenceExport").GetInt32());
+    }
+
+    [Fact]
+    public async Task Json_checksum_matches_the_bytes_on_disk()
+    {
+        var (profile, schema) = await CreateProfileWithFieldsAsync(json: true);
+        var group = await CreateGroupWithPagesAsync(schema, profile.Id, pages: 1);
+
+        await _indexing.ReexportAsync(group.Id, Ct);
+
+        var json = JsonDocument.Parse(
+            await File.ReadAllTextAsync(Path.Combine(group.DirectoryPath, "index.json"), Ct));
+        var row = json.RootElement.GetProperty("rows").EnumerateArray().Single();
+        var recomputed = await GroupService.ComputeSha256Async(
+            Path.Combine(group.DirectoryPath, row.GetProperty("imageName").GetString()!), Ct);
+        Assert.Equal(recomputed, row.GetProperty("checksum").GetString());
+        Assert.NotEqual(Guid.Empty, Guid.Parse(row.GetProperty("pageId").GetString()!));
+    }
+
+    [Fact]
+    public async Task Json_sequence_follows_reorder_not_filename()
+    {
+        var (profile, schema) = await CreateProfileWithFieldsAsync(json: true);
+        var group = await CreateGroupWithPagesAsync(schema, profile.Id, pages: 3);
+        await new ReorderService(_db.Factory).ReverseAsync(group.Id, Ct);
+
+        await _indexing.ReexportAsync(group.Id, Ct);
+
+        var json = JsonDocument.Parse(
+            await File.ReadAllTextAsync(Path.Combine(group.DirectoryPath, "index.json"), Ct));
+        var rows = json.RootElement.GetProperty("rows").EnumerateArray().ToList();
+        Assert.Equal(["scan_00003.png", "scan_00002.png", "scan_00001.png"],
+            rows.Select(r => r.GetProperty("imageName").GetString()));
+        Assert.Equal([1, 2, 3], rows.Select(r => r.GetProperty("sequence").GetInt32()));
+    }
+
+    [Fact]
     public async Task Schema_rejects_more_than_twelve_fields_and_duplicate_names()
     {
         var profile = await _profiles.CreateAsync("Limits", Ct);
