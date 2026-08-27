@@ -1,0 +1,111 @@
+FG Scanner — read me first
+==========================
+
+This USB carries two ways to run FG Scanner. You only need one.
+
+  fgscanner-<version>-win-x64.exe   Installer. Needs an administrator password.
+  portable\FgScanner.exe            Runs straight off the stick. No admin, nothing installed.
+
+Use the portable copy if you cannot install software on the machine. Everything
+works the same except file associations, the scanner-button integration and
+auto-update, which only the installer sets up.
+
+
+Before you start
+----------------
+
+* Windows 10 (1607 or newer) or Windows 11, 64-bit.
+* You do NOT need to install .NET. FgScanner.exe carries its own copy.
+* You DO need your scanner's TWAIN or WIA driver installed — the one from the
+  scanner manufacturer, the same one its own software uses. FG Scanner talks to
+  that driver; it does not ship scanner drivers.
+* Windows will warn about an unrecognised app, because this build is not yet
+  code-signed. Click "More info", then "Run anyway". If that choice is missing,
+  right-click the file, choose Properties, tick "Unblock" at the bottom, Apply.
+
+
+Setting up (about a minute)
+---------------------------
+
+1. Start FG Scanner (installed shortcut, or portable\FgScanner.exe).
+2. The first-run wizard asks for theme and creates a starting profile. Accept
+   the defaults if you are only testing.
+3. Go to Scan, choose your scanner from the device list, and pick TWAIN or WIA
+   to match your driver.
+4. Scan a page. It appears in the page list on the left.
+
+Your data (database, scans, trash, logs) lives in your Windows account, not on
+this stick:
+    %APPDATA%\FGScanner            database, scanned groups, trash
+    %LOCALAPPDATA%\FGScanner\logs  logs
+So a portable run on a different machine always starts empty. Nothing you scan
+is written back to the USB unless you put a group folder there yourself.
+
+
+IF THIS MACHINE IS FOR EVIDENCE CAPTURE — do this first
+-------------------------------------------------------
+
+Turn on preserve-originals BEFORE scanning anything:
+
+    Settings -> "Keep an untouched copy of every image before its first edit
+                 (for evidence work)"  -> tick it -> Save
+
+Why it matters: every edit (including automatic straightening) rewrites the
+image file in place. With this setting on, FG Scanner first copies the
+untouched scan into an "originals" folder beside the page and records its
+SHA-256 checksum, so the capture as it came off the glass still exists and can
+be verified. It is off by default because it doubles disk use, and it only
+protects pages edited AFTER you turn it on — a page already edited has lost its
+original for good. So: turn it on before the first sheet, not after.
+
+The setting is per machine and per Windows account. A portable run on a new
+machine starts with it OFF.
+
+
+What to check when testing a new scanner
+----------------------------------------
+
+  [ ] The scanner appears in the device list (TWAIN and/or WIA).
+  [ ] A flatbed scan works.
+  [ ] The document feeder works, including a multi-page batch.
+  [ ] Feed one page deliberately upside down. After OCR it should be stored
+      the right way up (this is Auto-orient, on by default).
+  [ ] At 300 DPI, a full US Letter page comes out near 2550 x 3300 pixels.
+      Check with right-click -> Properties on the file, or the page viewer.
+  [ ] OCR confidence lands in the 80s or 90s for a clean printed page. A much
+      lower number on a clean page is worth reporting.
+  [ ] Double-click a page: it opens full size in its own window.
+
+
+If something goes wrong
+-----------------------
+
+Copy the log back onto this stick and send it over:
+
+    %LOCALAPPDATA%\FGScanner\logs\app-<date>.log
+
+Type that path into the File Explorer address bar to get there. The log holds
+no page images or document text — only what the program did and any errors.
+
+Common problems:
+
+  Scanner missing from the list
+      Its driver is not installed, or you picked the wrong backend. Try the
+      other one (TWAIN vs WIA). Confirm the manufacturer's own scan software
+      sees the scanner.
+
+  "You must install .NET" when running fgscanner.exe
+      That is the command-line tool, which does need the .NET 10 Desktop
+      Runtime. The main app, FgScanner.exe, does not. Use FgScanner.exe.
+
+  Windows blocks the file
+      See the Unblock instructions above.
+
+
+Removing it afterwards
+----------------------
+
+Installed copy: Settings -> Apps -> FG Scanner -> Uninstall.
+Portable copy:  just delete the folder.
+Either way, your scans and database stay in %APPDATA%\FGScanner until you
+delete that folder yourself.
