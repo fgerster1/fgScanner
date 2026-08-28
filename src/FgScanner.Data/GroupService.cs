@@ -349,6 +349,7 @@ public sealed class GroupService(IDbContextFactory<FgScannerDbContext> dbFactory
                 Sequence = 1,
                 IsBlank = isBlank?.Invoke(sourceFile) ?? false,
                 CreatedUtc = DateTime.UtcNow,
+                CapturedBy = Environment.UserName,
             };
             db.Documents.Add(document);
             db.Pages.Add(page);

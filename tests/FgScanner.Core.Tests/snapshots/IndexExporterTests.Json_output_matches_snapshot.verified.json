@@ -49,6 +49,7 @@
       "checksum": "aa11cc9c0f1c21f1ce2c11a1e1f11b1d1e1f1a1b1c1d1e1f1a1b1c1d1e1f1a1b",
       "isBlank": false,
       "originalChecksum": null,
+      "capturedBy": null,
       "fields": {
         "Vendor": "Acme Corp",
         "InvoiceDate": "2026-08-19",
@@ -68,6 +69,7 @@
       "checksum": "bb22cc9c0f1c21f1ce2c11a1e1f11b1d1e1f1a1b1c1d1e1f1a1b1c1d1e1f1a1b",
       "isBlank": false,
       "originalChecksum": null,
+      "capturedBy": null,
       "fields": {
         "Vendor": "M\u00FCller \u0026 S\u00F6hne GmbH \u2014 \u65E5\u672C\u8A9E",
         "InvoiceDate": "",
@@ -87,6 +89,7 @@
       "checksum": "cc33cc9c0f1c21f1ce2c11a1e1f11b1d1e1f1a1b1c1d1e1f1a1b1c1d1e1f1a1b",
       "isBlank": false,
       "originalChecksum": null,
+      "capturedBy": null,
       "fields": {
         "Vendor": "@SUM(A1:A9)",
         "InvoiceDate": "2026-01-02",
@@ -106,6 +109,7 @@
       "checksum": "dd44cc9c0f1c21f1ce2c11a1e1f11b1d1e1f1a1b1c1d1e1f1a1b1c1d1e1f1a1b",
       "isBlank": false,
       "originalChecksum": "0044cc9c0f1c21f1ce2c11a1e1f11b1d1e1f1a1b1c1d1e1f1a1b1c1d1e1f1a1b",
+      "capturedBy": null,
       "fields": {
         "Vendor": "Long Description Test",
         "InvoiceDate": "2026-12-31",
@@ -125,6 +129,7 @@
       "checksum": "ee55cc9c0f1c21f1ce2c11a1e1f11b1d1e1f1a1b1c1d1e1f1a1b1c1d1e1f1a1b",
       "isBlank": true,
       "originalChecksum": null,
+      "capturedBy": null,
       "fields": {
         "Vendor": "",
         "InvoiceDate": "",

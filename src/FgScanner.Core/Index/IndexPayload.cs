@@ -32,6 +32,7 @@ public static class IndexPayload
             r.Checksum,
             r.IsBlank,
             r.OriginalChecksum,
+            r.CapturedBy,
             Fields = data.Fields.ToDictionary(f => f.Name, f => r.CustomValues.GetValueOrDefault(f.Name) ?? ""),
         }),
     };

@@ -325,7 +325,8 @@ public sealed class IndexingService(
                 page.Id,
                 page.Checksum,
                 page.IsBlank,
-                page.OriginalChecksum));
+                page.OriginalChecksum,
+                page.CapturedBy));
         }
 
         return new IndexExportData(
@@ -437,6 +438,7 @@ public sealed class IndexingService(
             Checksum = checksum,
             Sequence = 1,
             CreatedUtc = DateTime.UtcNow,
+            CapturedBy = Environment.UserName,
         });
         group.UpdatedUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);

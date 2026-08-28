@@ -46,7 +46,8 @@ public sealed record IndexRow(
     Guid PageId = default,
     string Checksum = "",
     bool IsBlank = false,
-    string? OriginalChecksum = null);
+    string? OriginalChecksum = null,
+    string? CapturedBy = null);
 
 public sealed record IndexExportData(
     string GroupName,
