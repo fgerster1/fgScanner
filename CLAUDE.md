@@ -63,10 +63,13 @@ FG Scanner is the capture station for a legal-evidence pipeline (`docs/spec-evid
 the JimsStuff portal (`JimsStuff/pipeline/import_fgscanner.py`) parses committed group folders.
 
 - **Stable external contracts — renaming silently breaks a legal pipeline:** the `index.json`
-  row keys (`sequence`, `pageId`, `checksum`, `isBlank`, `originalChecksum`, plus the original
-  six), `manifest.json`'s `evidenceExport`, and the Evidence profile's field names (`DocNo`,
-  `DocDate`, `DocType`, `Title`, `Parties`, `Operator`, `Redact`, `Box`, `Notes`,
-  `NoteState`, `NoteAuthor`, `NoteBasis`, `NoteWhen`).
+  row keys (`sequence`, `pageId`, `checksum`, `isBlank`, `originalChecksum`, `capturedBy`, plus
+  the original six), `manifest.json`'s `evidenceExport`, and the Evidence profile's field names
+  (`DocNo`, `DocDate`, `DocType`, `Title`, `Parties`, `Operator`, `Redact`, `Box`, `Notes`,
+  `NoteState`, `NoteAuthor`, `NoteBasis`, `NoteWhen`). `manifest.json`'s field entries also carry
+  a `scope` (`row`/`batch`) — see `docs/spec-batch-row-metadata.md` and ADR-0004 for what field
+  scope is and why `Box`/`Operator` are `batch`; ADR-0005 for why `capturedBy` is null on
+  retro-processed pages.
 - **`FgScanner.Core.Evidence.EvidenceProfile` is that field contract as code, and
   `ProfileService.EnsureEvidenceProfileAsync` creates or repairs the profile from it.** The
   operator used to hand-enter all of them, which made one typo (`NoteAuthour`) a silent break:

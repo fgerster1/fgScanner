@@ -3,6 +3,7 @@ using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FgScanner.App.Services;
+using FgScanner.Core.Index;
 using FgScanner.Data;
 using FgScanner.Ocr;
 using Serilog;
@@ -740,6 +741,21 @@ public sealed partial class FieldRow : ObservableObject
     private bool _sticky;
 
     [ObservableProperty]
+    private FieldScope _scope;
+
+    /// <summary>
+    /// Sticky ("chain to the next row") is meaningless for a value the group owns, so ticking
+    /// Batch clears it rather than letting the schema express both at once.
+    /// </summary>
+    partial void OnScopeChanged(FieldScope value)
+    {
+        if (value == FieldScope.Batch)
+        {
+            Sticky = false;
+        }
+    }
+
+    [ObservableProperty]
     private string? _defaultValue;
 
     /// <summary>Semicolon-separated choices for List fields.</summary>
@@ -752,6 +768,7 @@ public sealed partial class FieldRow : ObservableObject
         Type = field.Type,
         Required = field.Required,
         Sticky = field.Sticky,
+        Scope = field.Scope,
         DefaultValue = field.DefaultValue,
         Choices = field.ListChoicesJson is null
             ? null
@@ -764,6 +781,7 @@ public sealed partial class FieldRow : ObservableObject
         Type = Type,
         Required = Required,
         Sticky = Sticky,
+        Scope = Scope,
         DefaultValue = string.IsNullOrWhiteSpace(DefaultValue) ? null : DefaultValue,
         ListChoicesJson = Type == FieldType.List && !string.IsNullOrWhiteSpace(Choices)
             ? JsonSerializer.Serialize(Choices.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))

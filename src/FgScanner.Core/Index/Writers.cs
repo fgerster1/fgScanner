@@ -244,6 +244,7 @@ internal static class ManifestBuilder
             f.Name,
             Type = f.Type.ToString().ToLowerInvariant(),
             f.Required,
+            Scope = f.Scope.ToString().ToLowerInvariant(),
         }),
     };
 }

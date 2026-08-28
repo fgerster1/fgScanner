@@ -55,8 +55,16 @@ public sealed partial class GroupDetailViewModel : ObservableObject
 
     public ObservableCollection<DocumentRow> Rows { get; } = [];
 
-    /// <summary>Field editors for "values for the next scan" (pre-scan entry, PLAN §5.4).</summary>
+    /// <summary>Field editors for "values for the next scan" (pre-scan entry, PLAN §5.4). Row-scoped only — a batch field belongs to <see cref="BatchFields"/> instead.</summary>
     public ObservableCollection<PendingFieldEditor> PendingFields { get; } = [];
+
+    /// <summary>
+    /// Editors for this group's batch-scoped fields (Phase 19) — answered once per group, not once
+    /// per page. Reuses PendingFieldEditor: it already does the "one editor per field" job; only
+    /// what happens when a value changes differs (persisted to Group.BatchFieldsJson, not queued
+    /// for the next scan).
+    /// </summary>
+    public ObservableCollection<PendingFieldEditor> BatchFields { get; } = [];
 
     public IReadOnlyList<FieldDefinition> Fields { get; private set; } = [];
 
@@ -108,11 +116,25 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         }
 
         PendingFields.Clear();
-        foreach (var field in Fields)
+        foreach (var field in Fields.Where(f => f.Scope != FieldScope.Batch))
         {
             var editor = new PendingFieldEditor(field);
             editor.PropertyChanged += OnPendingFieldChanged;
             PendingFields.Add(editor);
+        }
+
+        foreach (var stale in BatchFields)
+        {
+            stale.PropertyChanged -= OnBatchFieldChanged;
+        }
+
+        BatchFields.Clear();
+        var batchBag = JsonSerializer.Deserialize<Dictionary<string, string?>>(Group.BatchFieldsJson) ?? [];
+        foreach (var field in Fields.Where(f => f.Scope == FieldScope.Batch))
+        {
+            var editor = new PendingFieldEditor(field) { Value = batchBag.GetValueOrDefault(field.Name) };
+            editor.PropertyChanged += OnBatchFieldChanged;
+            BatchFields.Add(editor);
         }
 
         await ReloadRowsAsync();
@@ -134,15 +156,22 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         // Read stored values straight from the documents, keyed by id. Sourcing them from the
         // export projection skipped blank-flagged rows entirely (BUG-3).
         var storedValues = await _indexingService.GetStoredFieldValuesAsync(Group.Id);
+        // A batch field has no entry in the document's own JSON — it lives only in the group's
+        // bag (Entities.cs). Merging with the same helper the exporter uses means the grid and
+        // the export agree by construction: what an operator sees is what index.csv gets.
+        var batchValues = JsonSerializer.Deserialize<Dictionary<string, string?>>(Group.BatchFieldsJson) ?? [];
+        var indexFields = Fields
+            .Select(f => new IndexFieldDef(f.Name, (IndexFieldType)f.Type, f.Required, f.Scope))
+            .ToList();
         var sequence = 0;
         foreach (var page in pages)
         {
             sequence++;
             var values = new RowValues(Fields);
-            if (storedValues.TryGetValue(page.DocumentId, out var stored))
-            {
-                values.Load(stored);
-            }
+            var documentValues = storedValues.TryGetValue(page.DocumentId, out var stored)
+                ? stored
+                : new Dictionary<string, string?>();
+            values.Load(BatchFieldMerge.Effective(indexFields, batchValues, documentValues));
 
             var documentRow = new DocumentRow
             {
@@ -187,9 +216,24 @@ public sealed partial class GroupDetailViewModel : ObservableObject
                     + "need values before this group can be committed. Fill them in one step with "
                     + "\"Apply to all rows\"."
                 : "";
+
+            // A field the new layout made batch-scoped stops being read from the rows, so saying
+            // only "values are kept" would be a half-truth about where they went.
+            var becomingBatch = latest.Fields
+                .Where(f => f.Scope == FieldScope.Batch)
+                .Where(f => Fields.FirstOrDefault(c =>
+                    string.Equals(c.Name, f.Name, StringComparison.OrdinalIgnoreCase))?.Scope != FieldScope.Batch)
+                .Select(f => f.Name)
+                .ToList();
+            var scopeNote = becomingBatch.Count == 0
+                ? "\n\nValues already entered are kept."
+                : $"\n\nValues already entered are kept, except that {string.Join(", ", becomingBatch)} "
+                    + $"become box-level value{(becomingBatch.Count == 1 ? "" : "s")} for the whole group, "
+                    + "entered once in the Batch values panel. The first value already on a row is "
+                    + "carried up there — check it before committing.";
             var answer = System.Windows.MessageBox.Show(
                 $"Move this group from field layout v{Group.SchemaVersion} to v{latest.Version} "
-                    + $"({latest.Fields.Count} field(s))?{warning}\n\nValues already entered are kept.",
+                    + $"({latest.Fields.Count} field(s))?{warning}{scopeNote}",
                 "Use latest field layout",
                 System.Windows.MessageBoxButton.OKCancel,
                 System.Windows.MessageBoxImage.Question);
@@ -200,6 +244,13 @@ public sealed partial class GroupDetailViewModel : ObservableObject
 
             await _groupService.UpgradeSchemaVersionAsync(Group.Id, latest.Version);
             Group.SchemaVersion = latest.Version;
+            // The upgrade may have seeded the group's bag, and this view model holds its own Group
+            // instance — reloading without re-reading it would show an empty Batch values panel.
+            if (await _groupService.FindAsync(Group.Id) is { } refreshed)
+            {
+                Group.BatchFieldsJson = refreshed.BatchFieldsJson;
+            }
+
             await LoadAsync();
             StatusText = $"Now using field layout v{latest.Version}.";
         }
@@ -558,7 +609,17 @@ public sealed partial class GroupDetailViewModel : ObservableObject
     {
         try
         {
-            await _indexingService.SetFieldValuesAsync(row.DocumentId, row.Values.Snapshot());
+            // The grid renders a batch field's merged value (ReloadRowsAsync), but the row does not
+            // own it — writing it into Document.CustomFieldsJson would leave a private copy that
+            // could drift from the group's bag, the one place a batch value is meant to live.
+            var rowOnlyValues = row.Values.Snapshot()
+                .Where(kv => Fields.FirstOrDefault(f =>
+                    string.Equals(f.Name, kv.Key, StringComparison.OrdinalIgnoreCase))?.Scope != FieldScope.Batch)
+                .ToDictionary(kv => kv.Key, kv => kv.Value);
+            // Merged, not replaced: the grid only ever holds this layout's fields, and anything
+            // else the document stores — including per-row values stranded by a field that became
+            // batch-scoped — must survive an edit to a neighbouring cell.
+            await _indexingService.MergeFieldValuesAsync(row.DocumentId, rowOnlyValues);
             if (Group.State == GroupState.Committed)
             {
                 await _indexingService.ReexportAsync(Group.Id);
@@ -568,6 +629,40 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         {
             Log.Error(ex, "Persisting row {Doc}", row.DocumentId);
             StatusText = $"Save failed: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Writes this group's batch-scoped values and refreshes the grid so every row reflects the
+    /// new value immediately — the whole point of a batch field is that typing it once is enough.
+    /// </summary>
+    private async Task PersistBatchFieldsAsync()
+    {
+        try
+        {
+            var values = BatchFields
+                .Where(f => !string.IsNullOrEmpty(f.Value))
+                .ToDictionary(f => f.Field.Name, f => (string?)f.Value);
+            await _indexingService.SetBatchFieldValuesAsync(Group.Id, values);
+            Group.BatchFieldsJson = JsonSerializer.Serialize(values);
+            await ReloadRowsAsync();
+            if (Group.State == GroupState.Committed)
+            {
+                await _indexingService.ReexportAsync(Group.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Persisting batch fields for {Group}", Group.Name);
+            StatusText = $"Save failed: {ex.Message}";
+        }
+    }
+
+    private void OnBatchFieldChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PendingFieldEditor.Value))
+        {
+            _ = PersistBatchFieldsAsync();
         }
     }
 
@@ -595,9 +690,13 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         var validation = await _indexingService.ValidateAsync(Group.Id);
         if (validation.HasErrors)
         {
+            // Group-level (batch-field) problems have no image to name, so they lead the list
+            // unprefixed; a group that refuses to commit with no stated reason is worse than the
+            // per-row duplicates this split replaced.
             ValidationSummary = $"{validation.ErrorCount} problem(s) block the commit:\n" + string.Join("\n",
-                validation.Documents.Where(d => d.Errors.Count > 0)
-                    .SelectMany(d => d.Errors.Select(e => $"  {d.ImageName}: {e}"))
+                validation.GroupErrors.Select(e => $"  {e}")
+                    .Concat(validation.Documents.Where(d => d.Errors.Count > 0)
+                        .SelectMany(d => d.Errors.Select(e => $"  {d.ImageName}: {e}")))
                     .Take(12));
             StatusText = "Fix the highlighted fields, then commit again.";
             return;

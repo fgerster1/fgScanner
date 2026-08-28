@@ -131,6 +131,16 @@ Run before each release, and after any change to FgScanner.Scanning. Automated t
 - [ ] Search: after OCR, find a word from a scanned page; the snippet highlights it; double-click opens the group with the page selected. Field values and AI descriptions are also found. Turn the feature off: section is gone on next launch.
 - [ ] Commit hook: set command `echo %date% >> committed.txt` and a webhook (e.g. webhook.site); commit a group: file appears in the group folder, webhook receives the index.json payload, journal.txt records both.
 
+## Phase 19 — batch row metadata (manual checks)
+
+- [ ] Settings → "Build the Evidence profile", then create a new group on that profile: a "Batch
+      values" panel appears above the entry grid offering `Box` and `Operator`; `Operator` is
+      pre-filled with the current Windows username.
+- [ ] Type a value into `Box` in the Batch values panel: every row already in the grid updates its
+      `Box` cell to that value; scan or add a page afterwards and it carries the same value.
+- [ ] In the entry grid, try to edit a cell in the `Box` or `Operator` column: the cell refuses
+      editing — the Batch values panel is the only place those two are set.
+
 ---
 
 ## Findings from the 2026-08-24 pass

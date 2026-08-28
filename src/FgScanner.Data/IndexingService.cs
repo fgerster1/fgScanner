@@ -6,11 +6,13 @@ namespace FgScanner.Data;
 
 public sealed record DocumentValidation(Guid DocumentId, string ImageName, IReadOnlyList<string> Errors);
 
-public sealed record GroupValidation(IReadOnlyList<DocumentValidation> Documents)
+public sealed record GroupValidation(
+    IReadOnlyList<DocumentValidation> Documents,
+    IReadOnlyList<string> GroupErrors)
 {
-    public bool HasErrors => Documents.Any(d => d.Errors.Count > 0);
+    public bool HasErrors => GroupErrors.Count > 0 || Documents.Any(d => d.Errors.Count > 0);
 
-    public int ErrorCount => Documents.Sum(d => d.Errors.Count);
+    public int ErrorCount => GroupErrors.Count + Documents.Sum(d => d.Errors.Count);
 }
 
 /// <summary>
@@ -61,6 +63,53 @@ public sealed class IndexingService(
     }
 
     /// <summary>
+    /// Overlays <paramref name="values"/> onto what the document already stores instead of
+    /// replacing the blob, and is what a caller holding only part of a document's keys must use.
+    ///
+    /// The entry grid holds exactly the pinned layout's fields, so writing its snapshot wholesale
+    /// erases every other key the document carries. That is reachable: once a field flips to batch
+    /// scope its per-row values fall outside the layout, and on a committed group the next cell
+    /// edit re-exports index.json with them gone. A null value still clears its key, so emptying a
+    /// cell works exactly as it does through <see cref="SetFieldValuesAsync"/>.
+    /// </summary>
+    public async Task MergeFieldValuesAsync(
+        Guid documentId, IReadOnlyDictionary<string, string?> values, CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var document = await db.Documents.FirstAsync(d => d.Id == documentId, cancellationToken).ConfigureAwait(false);
+        var merged = JsonSerializer.Deserialize<Dictionary<string, string?>>(document.CustomFieldsJson) ?? [];
+        foreach (var (name, value) in values)
+        {
+            if (value is null)
+            {
+                merged.Remove(name);
+            }
+            else
+            {
+                merged[name] = value;
+            }
+        }
+
+        document.CustomFieldsJson = JsonSerializer.Serialize(merged, JsonOptions);
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Writes a group's batch-scoped values (e.g. Box, Operator) — the one place they live, and
+    /// answered once per group rather than once per row (mirrors SetFieldValuesAsync above, on
+    /// Group.BatchFieldsJson instead of Document.CustomFieldsJson).
+    /// </summary>
+    public async Task SetBatchFieldValuesAsync(
+        Guid groupId, IReadOnlyDictionary<string, string?> values, CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var group = await db.Groups.FirstAsync(g => g.Id == groupId, cancellationToken).ConfigureAwait(false);
+        group.BatchFieldsJson = JsonSerializer.Serialize(
+            values.Where(kv => kv.Value is not null).ToDictionary(kv => kv.Key, kv => kv.Value), JsonOptions);
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Writes the same field values across every document in a group, and returns how many rows
     /// changed.
     ///
@@ -90,9 +139,11 @@ public sealed class IndexingService(
             .GetSchemaAsync(group.ProfileId.Value, group.SchemaVersion, cancellationToken).ConfigureAwait(false);
 
         // A value for a field this group's layout does not have would never be shown or exported,
-        // so it is dropped rather than written into a row where nothing could reach it again.
+        // so it is dropped rather than written into a row where nothing could reach it again. A
+        // batch field is dropped too: the group's bag owns it, and a per-row copy is exactly the
+        // drift that ownership exists to prevent (mirrors ApplyInitialValuesAsync below).
         var applicable = new Dictionary<string, string?>();
-        foreach (var field in schema.Fields)
+        foreach (var field in schema.Fields.Where(f => f.Scope != FgScanner.Core.Index.FieldScope.Batch))
         {
             if (!values.TryGetValue(field.Name, out var value) || string.IsNullOrEmpty(value))
             {
@@ -191,7 +242,7 @@ public sealed class IndexingService(
         foreach (var document in newDocs)
         {
             var values = new Dictionary<string, string?>();
-            foreach (var field in schema.Fields)
+            foreach (var field in schema.Fields.Where(f => f.Scope != FgScanner.Core.Index.FieldScope.Batch))
             {
                 string? value = null;
                 if (pendingValues is not null && pendingValues.TryGetValue(field.Name, out var pending) && !string.IsNullOrEmpty(pending))
@@ -230,16 +281,33 @@ public sealed class IndexingService(
         if (group.ProfileId is null)
         {
             return new GroupValidation([.. documents.Select(d =>
-                new DocumentValidation(d.Doc.Id, d.ImageName, []))]);
+                new DocumentValidation(d.Doc.Id, d.ImageName, []))], []);
         }
 
         var schema = await profileService.GetSchemaAsync(group.ProfileId.Value, group.SchemaVersion, cancellationToken).ConfigureAwait(false);
+
+        // A batch field is answered once per group, so it is checked once against the group's
+        // bag rather than once per row — a missing Box must not produce one identical error per page.
+        var batchValues = JsonSerializer.Deserialize<Dictionary<string, string?>>(group.BatchFieldsJson) ?? [];
+        var groupErrors = new List<string>();
+        foreach (var field in schema.Fields.Where(f => f.Scope == FgScanner.Core.Index.FieldScope.Batch))
+        {
+            var error = FieldValidator.Validate(
+                new IndexFieldDef(field.Name, (IndexFieldType)field.Type, field.Required, field.Scope),
+                batchValues.GetValueOrDefault(field.Name),
+                ParseChoices(field.ListChoicesJson));
+            if (error is not null)
+            {
+                groupErrors.Add(error);
+            }
+        }
+
         var results = new List<DocumentValidation>();
         foreach (var (doc, imageName) in documents)
         {
             var values = JsonSerializer.Deserialize<Dictionary<string, string?>>(doc.CustomFieldsJson) ?? [];
             var errors = new List<string>();
-            foreach (var field in schema.Fields)
+            foreach (var field in schema.Fields.Where(f => f.Scope == FgScanner.Core.Index.FieldScope.Row))
             {
                 var choices = ParseChoices(field.ListChoicesJson);
                 var error = FieldValidator.Validate(
@@ -255,7 +323,7 @@ public sealed class IndexingService(
             results.Add(new DocumentValidation(doc.Id, imageName, errors));
         }
 
-        return new GroupValidation(results);
+        return new GroupValidation(results, groupErrors);
     }
 
     // ---- export & commit ----
@@ -274,7 +342,7 @@ public sealed class IndexingService(
         {
             profileName = profile.Name;
             var schema = await profileService.GetSchemaAsync(profile.Id, group.SchemaVersion, cancellationToken).ConfigureAwait(false);
-            fields = [.. schema.Fields.Select(f => new IndexFieldDef(f.Name, (IndexFieldType)f.Type, f.Required))];
+            fields = [.. schema.Fields.Select(f => new IndexFieldDef(f.Name, (IndexFieldType)f.Type, f.Required, f.Scope))];
             formats.Clear();
             if (profile.ExportCsv)
             {
@@ -299,6 +367,8 @@ public sealed class IndexingService(
             delimiter = profile.CsvDelimiter.Length > 0 ? profile.CsvDelimiter[0] : ',';
         }
 
+        var batchValues = JsonSerializer.Deserialize<Dictionary<string, string?>>(group.BatchFieldsJson) ?? [];
+
         var rows = new List<IndexRow>();
         foreach (var (doc, imageName) in documents)
         {
@@ -315,12 +385,16 @@ public sealed class IndexingService(
                 page.OcrMeanConfidence,
                 page.AiDescription,
                 page.AiStatus.ToString(),
-                JsonSerializer.Deserialize<Dictionary<string, string?>>(doc.CustomFieldsJson) ?? [],
+                BatchFieldMerge.Effective(
+                    fields,
+                    batchValues,
+                    JsonSerializer.Deserialize<Dictionary<string, string?>>(doc.CustomFieldsJson) ?? []),
                 doc.Sequence,
                 page.Id,
                 page.Checksum,
                 page.IsBlank,
-                page.OriginalChecksum));
+                page.OriginalChecksum,
+                page.CapturedBy));
         }
 
         return new IndexExportData(
@@ -432,6 +506,7 @@ public sealed class IndexingService(
             Checksum = checksum,
             Sequence = 1,
             CreatedUtc = DateTime.UtcNow,
+            CapturedBy = Environment.UserName,
         });
         group.UpdatedUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);

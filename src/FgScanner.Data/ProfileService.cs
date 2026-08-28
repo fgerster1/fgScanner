@@ -86,6 +86,7 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
                 Type = (FieldType)spec.Type,
                 Required = spec.Required,
                 Sticky = spec.Sticky,
+                Scope = spec.Scope,
                 DefaultValue = spec.DefaultValue,
                 ListChoicesJson = spec.ListChoices is { Count: > 0 } choices
                     ? JsonSerializer.Serialize(choices)
@@ -243,6 +244,7 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
                 Type = field.Type,
                 Required = field.Required,
                 Sticky = field.Sticky,
+                Scope = field.Scope,
                 DefaultValue = field.DefaultValue,
                 ListChoicesJson = field.ListChoicesJson,
             });
@@ -270,6 +272,7 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
             || field.Type != submitted[i].Type
             || field.Required != submitted[i].Required
             || field.Sticky != submitted[i].Sticky
+            || field.Scope != submitted[i].Scope
             || field.DefaultValue != submitted[i].DefaultValue
             || field.ListChoicesJson != submitted[i].ListChoicesJson).Any();
     }
@@ -328,7 +331,11 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
     }
 
     private sealed record FgProfileField(
-        string Name, string Type, bool Required, bool Sticky, string? DefaultValue, string? ListChoicesJson);
+        string Name, string Type, bool Required, bool Sticky, string? DefaultValue, string? ListChoicesJson)
+    {
+        /// <summary>Init-prop with a default so version-1 files without it still load as row-scoped.</summary>
+        public string Scope { get; init; } = nameof(FgScanner.Core.Index.FieldScope.Row);
+    }
 
     /// <summary>Serializes a profile + its latest schema as schema-versioned JSON (.fgprofile).</summary>
     public async Task<string> ExportProfileJsonAsync(Guid profileId, CancellationToken cancellationToken = default)
@@ -337,10 +344,11 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
         var profile = await db.Profiles.FirstAsync(p => p.Id == profileId, cancellationToken).ConfigureAwait(false);
         var schema = await GetLatestSchemaAsync(profileId, cancellationToken).ConfigureAwait(false);
         var file = new FgProfileFile(
-            1, profile.Name, profile.OcrEnabled,
+            2, profile.Name, profile.OcrEnabled,
             profile.ExportCsv, profile.ExportXlsx, profile.ExportXml, profile.ExportJson, profile.CsvDelimiter,
             [.. schema.Fields.Select(f => new FgProfileField(
-                f.Name, f.Type.ToString(), f.Required, f.Sticky, f.DefaultValue, f.ListChoicesJson))])
+                f.Name, f.Type.ToString(), f.Required, f.Sticky, f.DefaultValue, f.ListChoicesJson)
+                { Scope = f.Scope.ToString() })])
         {
             SeparatorDetectionEnabled = profile.SeparatorDetectionEnabled,
             KeepSeparatorPages = profile.KeepSeparatorPages,
@@ -354,10 +362,10 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
     {
         var file = System.Text.Json.JsonSerializer.Deserialize<FgProfileFile>(json)
             ?? throw new InvalidOperationException("Not a valid .fgprofile file.");
-        if (file.FormatVersion != 1)
+        if (file.FormatVersion is not (1 or 2))
         {
             throw new InvalidOperationException(
-                $"Unsupported .fgprofile format version {file.FormatVersion} (this build reads version 1).");
+                $"Unsupported .fgprofile format version {file.FormatVersion} (this build reads versions 1 and 2).");
         }
 
         var existing = (await ListAsync(cancellationToken).ConfigureAwait(false)).Select(p => p.Name)
@@ -379,6 +387,11 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
                     Type = Enum.Parse<FieldType>(f.Type),
                     Required = f.Required,
                     Sticky = f.Sticky,
+                    // Unrecognised scope from a newer build degrades to today's behaviour rather than
+                    // refusing the operator's profile — this is a file boundary, so validate here.
+                    Scope = Enum.TryParse<FgScanner.Core.Index.FieldScope>(f.Scope, ignoreCase: true, out var scope)
+                        ? scope
+                        : FgScanner.Core.Index.FieldScope.Row,
                     DefaultValue = f.DefaultValue,
                     ListChoicesJson = f.ListChoicesJson,
                 })],

@@ -61,8 +61,34 @@ public class EvidenceProfileTests
         var sticky = EvidenceProfile.Fields.Where(f => f.Sticky).Select(f => f.Name);
 
         Assert.Equal(
-            ["DocNo", "Operator", "Box", "NoteAuthor", "NoteBasis", "NoteWhen"],
+            ["DocNo", "NoteAuthor", "NoteBasis", "NoteWhen"],
             sticky);
+    }
+
+    /// <summary>
+    /// Box and Operator are constant for a whole box. They were sticky, which still made the
+    /// operator type the first page and retype a correction onto every row it had reached.
+    /// </summary>
+    [Fact]
+    public void Box_and_operator_are_the_batch_fields()
+    {
+        var batch = EvidenceProfile.Fields
+            .Where(f => f.Scope == FieldScope.Batch)
+            .Select(f => f.Name);
+
+        Assert.Equal(["Operator", "Box"], batch);
+    }
+
+    /// <summary>
+    /// Sticky chains a row's value onto the next row; batch means the group owns the one value.
+    /// A field claiming both expresses a contradiction, and the only guard against it today lives
+    /// in the schema editor's view model — a path neither profile seeding nor SaveSchemaAsync
+    /// takes, so this contract is asserted against the specs themselves.
+    /// </summary>
+    [Fact]
+    public void No_field_is_both_sticky_and_batch()
+    {
+        Assert.All(EvidenceProfile.Fields, f => Assert.False(f.Sticky && f.Scope == FieldScope.Batch));
     }
 
     [Fact]

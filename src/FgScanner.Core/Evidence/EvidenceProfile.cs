@@ -9,7 +9,8 @@ public sealed record EvidenceFieldSpec(
     bool Required,
     bool Sticky,
     string? DefaultValue = null,
-    IReadOnlyList<string>? ListChoices = null);
+    IReadOnlyList<string>? ListChoices = null,
+    FieldScope Scope = FieldScope.Row);
 
 /// <summary>
 /// The evidence capture profile, as code rather than as thirteen fields typed by hand.
@@ -37,14 +38,18 @@ public static class EvidenceProfile
         new("DocType", IndexFieldType.List, Required: false, Sticky: false, ListChoices: DocTypes),
         new("Title", IndexFieldType.Text, Required: false, Sticky: false),
         new("Parties", IndexFieldType.Text, Required: false, Sticky: false),
-        new("Operator", IndexFieldType.Text, Required: false, Sticky: true, DefaultValue: "$(user)"),
+        // Batch: one operator runs a box. Sticky only chained the value onto new rows, so the
+        // first page was still typed by hand and a correction had to be repeated down the box.
+        new("Operator", IndexFieldType.Text, Required: false, Sticky: false,
+            DefaultValue: "$(user)", Scope: FieldScope.Batch),
 
         // Portage County Local Rule 57.2(C) personal identifiers and 57.2(D) protected
         // health information. Absence of a value is the unreviewed state, not a finding.
         new("Redact", IndexFieldType.List, Required: false, Sticky: false,
             ListChoices: ["identifier", "phi"]),
 
-        new("Box", IndexFieldType.Text, Required: true, Sticky: true),
+        // Batch: one group is one box, so this is a group-level fact by definition.
+        new("Box", IndexFieldType.Text, Required: true, Sticky: false, Scope: FieldScope.Batch),
         new("Notes", IndexFieldType.Text, Required: false, Sticky: false),
 
         // Never sticky. Pending field values persist across scans until the group changes,

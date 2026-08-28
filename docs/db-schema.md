@@ -33,6 +33,7 @@ is taken automatically before every schema migration).
 | Order | INTEGER | no |  |
 | Required | INTEGER | no |  |
 | SchemaId | TEXT | no | FK → IndexSchemas |
+| Scope | INTEGER | no | enum: 0=Row, 1=Batch |
 | Sticky | INTEGER | no |  |
 | Type | INTEGER | no | enum: 0=Text, 1=Date, 2=Number, 3=List |
 
@@ -43,6 +44,7 @@ is taken automatically before every schema migration).
 | Column | Type | Nullable | Notes |
 |---|---|---|---|
 | Id | TEXT | no | PK |
+| BatchFieldsJson | TEXT | no |  |
 | CreatedUtc | TEXT | no |  |
 | DirectoryPath | TEXT | no |  |
 | Name | TEXT | no |  |
@@ -88,6 +90,7 @@ is taken automatically before every schema migration).
 | Id | TEXT | no | PK |
 | AiDescription | TEXT | yes |  |
 | AiStatus | INTEGER | no | enum: 0=Off, 1=Pending, 2=Done, 3=Failed, 4=Skipped |
+| CapturedBy | TEXT | yes |  |
 | Checksum | TEXT | no |  |
 | CreatedUtc | TEXT | no |  |
 | DocumentId | TEXT | no | FK → Documents |
@@ -186,6 +189,7 @@ SELECT
   (SELECT COUNT(*) FROM Pages p WHERE p.DocumentId = d.Id)
                       AS PageCount,
   d.CustomFieldsJson  AS CustomFields,
+  g.BatchFieldsJson   AS BatchFields,
   d.CreatedUtc        AS CreatedUtc
 FROM Documents d
 JOIN Groups g ON g.Id = d.GroupId;

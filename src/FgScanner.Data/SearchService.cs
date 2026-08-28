@@ -109,6 +109,7 @@ public sealed class SearchService(IDbContextFactory<FgScannerDbContext> dbFactor
         var candidates = await db.Pages
             .Where(p => groupId == null || p.Document!.GroupId == groupId)
             .Where(p => EF.Functions.Like(p.Document!.CustomFieldsJson, pattern, "\\")
+                || EF.Functions.Like(p.Document!.Group!.BatchFieldsJson, pattern, "\\")
                 || (p.AiDescription != null && EF.Functions.Like(p.AiDescription, pattern, "\\")))
             .Select(p => new
             {
@@ -119,6 +120,7 @@ public sealed class SearchService(IDbContextFactory<FgScannerDbContext> dbFactor
                 p.FileName,
                 p.Document!.Sequence,
                 p.Document!.CustomFieldsJson,
+                BatchFieldsJson = p.Document!.Group!.BatchFieldsJson,
                 p.AiDescription,
             })
             .Take(limit)
@@ -133,9 +135,11 @@ public sealed class SearchService(IDbContextFactory<FgScannerDbContext> dbFactor
 
             string? snippet = null;
             var source = "Fields";
-            if (FieldSnippet(page.CustomFieldsJson, query) is { } fieldHit)
+            var fieldHit = FieldSnippet(page.CustomFieldsJson, query)
+                ?? FieldSnippet(page.BatchFieldsJson, query);
+            if (fieldHit is { } hit)
             {
-                (snippet, source) = fieldHit;
+                (snippet, source) = hit;
             }
             else if (page.AiDescription is { } ai && ai.Contains(query, StringComparison.OrdinalIgnoreCase))
             {

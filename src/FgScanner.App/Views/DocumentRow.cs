@@ -104,7 +104,11 @@ public sealed class RowValues(IReadOnlyList<FieldDefinition> fields) : INotifyPr
     private void Revalidate(string fieldName)
     {
         var field = Fields.FirstOrDefault(f => string.Equals(f.Name, fieldName, StringComparison.OrdinalIgnoreCase));
-        if (field is null)
+
+        // A batch field is answered once per group and its cells are read-only here, so a missing
+        // required value is one complaint on the group (IndexingService.ValidateAsync), not the same
+        // complaint on every page in a cell the operator cannot type into.
+        if (field is null || field.Scope == FieldScope.Batch)
         {
             return;
         }

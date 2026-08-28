@@ -129,6 +129,79 @@ public sealed class SchemaUpgradeTests : IDisposable
         Assert.Equal("Jim", (await ValuesOfAsync(documents[0]))["Came From"]);
     }
 
+    /// <summary>
+    /// Upgrading onto a layout that made a field batch-scoped leaves the group's bag empty, so the
+    /// value the operator already typed stops being shown or exported. One group is one box, so the
+    /// per-row values agree: the first non-empty one is the group's answer.
+    /// </summary>
+    [Fact]
+    public async Task Upgrading_carries_a_now_batch_field_up_onto_the_group()
+    {
+        var profile = await _profiles.CreateAsync("Flipping", Ct);
+        var first = await _profiles.SaveSchemaAsync(
+            profile.Id, [new() { Name = "Box", Type = FieldType.Text }], Ct);
+        var group = await _groups.CreateGroupAsync(_root, "Flipping", (profile.Id, first.Version), Ct);
+        var documents = await AddDocumentsAsync(group, 2);
+        await _indexing.SetFieldValuesAsync(documents[0], new Dictionary<string, string?> { ["Box"] = "12" }, Ct);
+
+        await _profiles.SaveSchemaAsync(
+            profile.Id, [new() { Name = "Box", Type = FieldType.Text, Scope = FieldScope.Batch }], Ct);
+        var latest = await _profiles.GetLatestSchemaAsync(profile.Id, Ct);
+        await _groups.UpgradeSchemaVersionAsync(group.Id, latest.Version, Ct);
+
+        Assert.Equal("12", (await BatchValuesAsync(group.Id))["Box"]);
+    }
+
+    /// <summary>
+    /// With nothing typed under the old layout there is nothing to carry, so the batch default
+    /// applies exactly as it would have at creation — this is how Operator's $(user) lands.
+    /// </summary>
+    [Fact]
+    public async Task Upgrading_falls_back_to_the_batch_default_when_no_row_answered()
+    {
+        var profile = await _profiles.CreateAsync("Defaulting", Ct);
+        var first = await _profiles.SaveSchemaAsync(
+            profile.Id, [new() { Name = "Operator", Type = FieldType.Text, DefaultValue = "$(user)" }], Ct);
+        var group = await _groups.CreateGroupAsync(_root, "Defaulting", (profile.Id, first.Version), Ct);
+        await AddDocumentsAsync(group, 1);
+
+        await _profiles.SaveSchemaAsync(
+            profile.Id,
+            [new() { Name = "Operator", Type = FieldType.Text, DefaultValue = "$(user)", Scope = FieldScope.Batch }],
+            Ct);
+        var latest = await _profiles.GetLatestSchemaAsync(profile.Id, Ct);
+        await _groups.UpgradeSchemaVersionAsync(group.Id, latest.Version, Ct);
+
+        Assert.Equal(Environment.UserName, (await BatchValuesAsync(group.Id))["Operator"]);
+    }
+
+    /// <summary>A value the operator already entered in the batch panel outranks anything carried up.</summary>
+    [Fact]
+    public async Task Upgrading_does_not_overwrite_a_batch_value_the_group_already_holds()
+    {
+        var profile = await _profiles.CreateAsync("Holding", Ct);
+        var first = await _profiles.SaveSchemaAsync(
+            profile.Id, [new() { Name = "Box", Type = FieldType.Text }], Ct);
+        var group = await _groups.CreateGroupAsync(_root, "Holding", (profile.Id, first.Version), Ct);
+        var documents = await AddDocumentsAsync(group, 1);
+        await _indexing.SetFieldValuesAsync(documents[0], new Dictionary<string, string?> { ["Box"] = "12" }, Ct);
+        await _indexing.SetBatchFieldValuesAsync(group.Id, new Dictionary<string, string?> { ["Box"] = "13" }, Ct);
+
+        await _profiles.SaveSchemaAsync(
+            profile.Id, [new() { Name = "Box", Type = FieldType.Text, Scope = FieldScope.Batch }], Ct);
+        var latest = await _profiles.GetLatestSchemaAsync(profile.Id, Ct);
+        await _groups.UpgradeSchemaVersionAsync(group.Id, latest.Version, Ct);
+
+        Assert.Equal("13", (await BatchValuesAsync(group.Id))["Box"]);
+    }
+
+    private async Task<Dictionary<string, string?>> BatchValuesAsync(Guid groupId)
+    {
+        var group = await _groups.FindAsync(groupId, Ct);
+        return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string?>>(
+            group!.BatchFieldsJson) ?? [];
+    }
+
     [Fact]
     public async Task A_version_from_another_profile_is_refused()
     {
