@@ -6,11 +6,13 @@ namespace FgScanner.Data;
 
 public sealed record DocumentValidation(Guid DocumentId, string ImageName, IReadOnlyList<string> Errors);
 
-public sealed record GroupValidation(IReadOnlyList<DocumentValidation> Documents)
+public sealed record GroupValidation(
+    IReadOnlyList<DocumentValidation> Documents,
+    IReadOnlyList<string> GroupErrors)
 {
-    public bool HasErrors => Documents.Any(d => d.Errors.Count > 0);
+    public bool HasErrors => GroupErrors.Count > 0 || Documents.Any(d => d.Errors.Count > 0);
 
-    public int ErrorCount => Documents.Sum(d => d.Errors.Count);
+    public int ErrorCount => GroupErrors.Count + Documents.Sum(d => d.Errors.Count);
 }
 
 /// <summary>
@@ -230,16 +232,33 @@ public sealed class IndexingService(
         if (group.ProfileId is null)
         {
             return new GroupValidation([.. documents.Select(d =>
-                new DocumentValidation(d.Doc.Id, d.ImageName, []))]);
+                new DocumentValidation(d.Doc.Id, d.ImageName, []))], []);
         }
 
         var schema = await profileService.GetSchemaAsync(group.ProfileId.Value, group.SchemaVersion, cancellationToken).ConfigureAwait(false);
+
+        // A batch field is answered once per group, so it is checked once against the group's
+        // bag rather than once per row — a missing Box must not produce one identical error per page.
+        var batchValues = JsonSerializer.Deserialize<Dictionary<string, string?>>(group.BatchFieldsJson) ?? [];
+        var groupErrors = new List<string>();
+        foreach (var field in schema.Fields.Where(f => f.Scope == FgScanner.Core.Index.FieldScope.Batch))
+        {
+            var error = FieldValidator.Validate(
+                new IndexFieldDef(field.Name, (IndexFieldType)field.Type, field.Required, field.Scope),
+                batchValues.GetValueOrDefault(field.Name),
+                ParseChoices(field.ListChoicesJson));
+            if (error is not null)
+            {
+                groupErrors.Add(error);
+            }
+        }
+
         var results = new List<DocumentValidation>();
         foreach (var (doc, imageName) in documents)
         {
             var values = JsonSerializer.Deserialize<Dictionary<string, string?>>(doc.CustomFieldsJson) ?? [];
             var errors = new List<string>();
-            foreach (var field in schema.Fields)
+            foreach (var field in schema.Fields.Where(f => f.Scope == FgScanner.Core.Index.FieldScope.Row))
             {
                 var choices = ParseChoices(field.ListChoicesJson);
                 var error = FieldValidator.Validate(
@@ -255,7 +274,7 @@ public sealed class IndexingService(
             results.Add(new DocumentValidation(doc.Id, imageName, errors));
         }
 
-        return new GroupValidation(results);
+        return new GroupValidation(results, groupErrors);
     }
 
     // ---- export & commit ----

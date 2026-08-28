@@ -595,9 +595,13 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         var validation = await _indexingService.ValidateAsync(Group.Id);
         if (validation.HasErrors)
         {
+            // Group-level (batch-field) problems have no image to name, so they lead the list
+            // unprefixed; a group that refuses to commit with no stated reason is worse than the
+            // per-row duplicates this split replaced.
             ValidationSummary = $"{validation.ErrorCount} problem(s) block the commit:\n" + string.Join("\n",
-                validation.Documents.Where(d => d.Errors.Count > 0)
-                    .SelectMany(d => d.Errors.Select(e => $"  {d.ImageName}: {e}"))
+                validation.GroupErrors.Select(e => $"  {e}")
+                    .Concat(validation.Documents.Where(d => d.Errors.Count > 0)
+                        .SelectMany(d => d.Errors.Select(e => $"  {d.ImageName}: {e}")))
                     .Take(12));
             StatusText = "Fix the highlighted fields, then commit again.";
             return;
