@@ -73,14 +73,21 @@ public class BatchFieldMergeTests
         Assert.Empty(merged);
     }
 
+    /// <summary>
+    /// Built with the ordinal comparer a deserialized JSON bag carries, so the guarantee is the
+    /// helper's own and not the caller's. Both production bags come straight out of
+    /// JsonSerializer; handing back a value only when the caller happened to choose a
+    /// case-insensitive dictionary would make the merge's behaviour depend on its call site.
+    /// </summary>
     [Fact]
     public void Field_names_match_case_insensitively()
     {
         var merged = BatchFieldMerge.Effective(
             Schema,
-            batchValues: new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { ["box"] = "12" },
-            documentValues: new Dictionary<string, string?>());
+            batchValues: new Dictionary<string, string?> { ["box"] = "12" },
+            documentValues: new Dictionary<string, string?> { ["title"] = "Deed" });
 
         Assert.Equal("12", merged["Box"]);
+        Assert.Equal("Deed", merged["Title"]);
     }
 }

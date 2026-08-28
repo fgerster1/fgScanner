@@ -79,6 +79,18 @@ public class EvidenceProfileTests
         Assert.Equal(["Operator", "Box"], batch);
     }
 
+    /// <summary>
+    /// Sticky chains a row's value onto the next row; batch means the group owns the one value.
+    /// A field claiming both expresses a contradiction, and the only guard against it today lives
+    /// in the schema editor's view model — a path neither profile seeding nor SaveSchemaAsync
+    /// takes, so this contract is asserted against the specs themselves.
+    /// </summary>
+    [Fact]
+    public void No_field_is_both_sticky_and_batch()
+    {
+        Assert.All(EvidenceProfile.Fields, f => Assert.False(f.Sticky && f.Scope == FieldScope.Batch));
+    }
+
     [Fact]
     public void NoteBasis_records_how_authorship_is_known()
     {

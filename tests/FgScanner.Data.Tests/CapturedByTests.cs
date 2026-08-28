@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FgScanner.Core;
 using FgScanner.Core.Index;
 using FgScanner.Data;
@@ -83,8 +84,12 @@ public sealed class CapturedByTests : IDisposable
 
         var json = IndexPayload.ToJson(await _indexing.BuildExportDataAsync(group.Id, Ct));
 
-        Assert.Contains("\"capturedBy\"", json, StringComparison.Ordinal);
-        Assert.Contains(Environment.UserName, json, StringComparison.Ordinal);
+        // Asserted on the parsed row, not on the whole document: the manifest's Directory is a
+        // temp path under C:\Users\<username>, so a substring search for the user name passes even
+        // when the row's capturedBy is null.
+        var row = JsonDocument.Parse(json).RootElement.GetProperty("rows")[0];
+
+        Assert.Equal(Environment.UserName, row.GetProperty("capturedBy").GetString());
     }
 
     /// <summary>Renders one "page" per 100 bytes of PDF size — deterministic, no Pdfium needed.</summary>
