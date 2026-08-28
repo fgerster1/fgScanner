@@ -86,6 +86,7 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
                 Type = (FieldType)spec.Type,
                 Required = spec.Required,
                 Sticky = spec.Sticky,
+                Scope = spec.Scope,
                 DefaultValue = spec.DefaultValue,
                 ListChoicesJson = spec.ListChoices is { Count: > 0 } choices
                     ? JsonSerializer.Serialize(choices)

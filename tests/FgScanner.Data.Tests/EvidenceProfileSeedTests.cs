@@ -79,6 +79,7 @@ public sealed class EvidenceProfileSeedTests : IDisposable
         {
             Assert.Equal(spec.Required, seeded[spec.Name].Required);
             Assert.Equal(spec.Sticky, seeded[spec.Name].Sticky);
+            Assert.Equal(spec.Scope, seeded[spec.Name].Scope);
         }
     }
 

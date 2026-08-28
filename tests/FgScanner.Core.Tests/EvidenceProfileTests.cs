@@ -61,8 +61,22 @@ public class EvidenceProfileTests
         var sticky = EvidenceProfile.Fields.Where(f => f.Sticky).Select(f => f.Name);
 
         Assert.Equal(
-            ["DocNo", "Operator", "Box", "NoteAuthor", "NoteBasis", "NoteWhen"],
+            ["DocNo", "NoteAuthor", "NoteBasis", "NoteWhen"],
             sticky);
+    }
+
+    /// <summary>
+    /// Box and Operator are constant for a whole box. They were sticky, which still made the
+    /// operator type the first page and retype a correction onto every row it had reached.
+    /// </summary>
+    [Fact]
+    public void Box_and_operator_are_the_batch_fields()
+    {
+        var batch = EvidenceProfile.Fields
+            .Where(f => f.Scope == FieldScope.Batch)
+            .Select(f => f.Name);
+
+        Assert.Equal(["Operator", "Box"], batch);
     }
 
     [Fact]
