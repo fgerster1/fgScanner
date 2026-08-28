@@ -48,7 +48,33 @@
                     <DataGridComboBoxColumn Header="Type" SelectedItemBinding="{Binding Type}" Width="90"
                                             x:Name="TypeColumn" />
                     <DataGridCheckBoxColumn Header="Required" Binding="{Binding Required}" Width="70" />
-                    <DataGridCheckBoxColumn Header="Sticky" Binding="{Binding Sticky}" Width="60" />
+                    <!--
+                      Batch disables Sticky (below) rather than merely rejecting it, so the
+                      exclusivity in FieldRow.OnScopeChanged is visible, not just enforced.
+                    -->
+                    <DataGridCheckBoxColumn Header="Batch"
+                        Binding="{Binding Scope, Converter={x:Static views:FieldScopeToBoolConverter.Instance}}"
+                        Width="55" />
+                    <DataGridCheckBoxColumn Header="Sticky" Binding="{Binding Sticky}" Width="60">
+                        <DataGridCheckBoxColumn.ElementStyle>
+                            <Style TargetType="CheckBox">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Scope}" Value="Batch">
+                                        <Setter Property="IsEnabled" Value="False" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridCheckBoxColumn.ElementStyle>
+                        <DataGridCheckBoxColumn.EditingElementStyle>
+                            <Style TargetType="CheckBox">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Scope}" Value="Batch">
+                                        <Setter Property="IsEnabled" Value="False" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridCheckBoxColumn.EditingElementStyle>
+                    </DataGridCheckBoxColumn>
                     <DataGridTextColumn Header="Default ($(today) $(group) $(counter) $(user))" Binding="{Binding DefaultValue}" Width="220" />
                     <DataGridTextColumn Header="Choices (List; separate with ;)" Binding="{Binding Choices}" Width="*" />
                 </DataGrid.Columns>

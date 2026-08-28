@@ -55,8 +55,16 @@ public sealed partial class GroupDetailViewModel : ObservableObject
 
     public ObservableCollection<DocumentRow> Rows { get; } = [];
 
-    /// <summary>Field editors for "values for the next scan" (pre-scan entry, PLAN §5.4).</summary>
+    /// <summary>Field editors for "values for the next scan" (pre-scan entry, PLAN §5.4). Row-scoped only — a batch field belongs to <see cref="BatchFields"/> instead.</summary>
     public ObservableCollection<PendingFieldEditor> PendingFields { get; } = [];
+
+    /// <summary>
+    /// Editors for this group's batch-scoped fields (Phase 19) — answered once per group, not once
+    /// per page. Reuses PendingFieldEditor: it already does the "one editor per field" job; only
+    /// what happens when a value changes differs (persisted to Group.BatchFieldsJson, not queued
+    /// for the next scan).
+    /// </summary>
+    public ObservableCollection<PendingFieldEditor> BatchFields { get; } = [];
 
     public IReadOnlyList<FieldDefinition> Fields { get; private set; } = [];
 
@@ -108,11 +116,25 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         }
 
         PendingFields.Clear();
-        foreach (var field in Fields)
+        foreach (var field in Fields.Where(f => f.Scope != FieldScope.Batch))
         {
             var editor = new PendingFieldEditor(field);
             editor.PropertyChanged += OnPendingFieldChanged;
             PendingFields.Add(editor);
+        }
+
+        foreach (var stale in BatchFields)
+        {
+            stale.PropertyChanged -= OnBatchFieldChanged;
+        }
+
+        BatchFields.Clear();
+        var batchBag = JsonSerializer.Deserialize<Dictionary<string, string?>>(Group.BatchFieldsJson) ?? [];
+        foreach (var field in Fields.Where(f => f.Scope == FieldScope.Batch))
+        {
+            var editor = new PendingFieldEditor(field) { Value = batchBag.GetValueOrDefault(field.Name) };
+            editor.PropertyChanged += OnBatchFieldChanged;
+            BatchFields.Add(editor);
         }
 
         await ReloadRowsAsync();
@@ -134,15 +156,22 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         // Read stored values straight from the documents, keyed by id. Sourcing them from the
         // export projection skipped blank-flagged rows entirely (BUG-3).
         var storedValues = await _indexingService.GetStoredFieldValuesAsync(Group.Id);
+        // A batch field has no entry in the document's own JSON — it lives only in the group's
+        // bag (Entities.cs). Merging with the same helper the exporter uses means the grid and
+        // the export agree by construction: what an operator sees is what index.csv gets.
+        var batchValues = JsonSerializer.Deserialize<Dictionary<string, string?>>(Group.BatchFieldsJson) ?? [];
+        var indexFields = Fields
+            .Select(f => new IndexFieldDef(f.Name, (IndexFieldType)f.Type, f.Required, f.Scope))
+            .ToList();
         var sequence = 0;
         foreach (var page in pages)
         {
             sequence++;
             var values = new RowValues(Fields);
-            if (storedValues.TryGetValue(page.DocumentId, out var stored))
-            {
-                values.Load(stored);
-            }
+            var documentValues = storedValues.TryGetValue(page.DocumentId, out var stored)
+                ? stored
+                : new Dictionary<string, string?>();
+            values.Load(BatchFieldMerge.Effective(indexFields, batchValues, documentValues));
 
             var documentRow = new DocumentRow
             {
@@ -558,7 +587,14 @@ public sealed partial class GroupDetailViewModel : ObservableObject
     {
         try
         {
-            await _indexingService.SetFieldValuesAsync(row.DocumentId, row.Values.Snapshot());
+            // The grid renders a batch field's merged value (ReloadRowsAsync), but the row does not
+            // own it — writing it into Document.CustomFieldsJson would leave a private copy that
+            // could drift from the group's bag, the one place a batch value is meant to live.
+            var rowOnlyValues = row.Values.Snapshot()
+                .Where(kv => Fields.FirstOrDefault(f =>
+                    string.Equals(f.Name, kv.Key, StringComparison.OrdinalIgnoreCase))?.Scope != FieldScope.Batch)
+                .ToDictionary(kv => kv.Key, kv => kv.Value);
+            await _indexingService.SetFieldValuesAsync(row.DocumentId, rowOnlyValues);
             if (Group.State == GroupState.Committed)
             {
                 await _indexingService.ReexportAsync(Group.Id);
@@ -568,6 +604,40 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         {
             Log.Error(ex, "Persisting row {Doc}", row.DocumentId);
             StatusText = $"Save failed: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Writes this group's batch-scoped values and refreshes the grid so every row reflects the
+    /// new value immediately — the whole point of a batch field is that typing it once is enough.
+    /// </summary>
+    private async Task PersistBatchFieldsAsync()
+    {
+        try
+        {
+            var values = BatchFields
+                .Where(f => !string.IsNullOrEmpty(f.Value))
+                .ToDictionary(f => f.Field.Name, f => (string?)f.Value);
+            await _indexingService.SetBatchFieldValuesAsync(Group.Id, values);
+            Group.BatchFieldsJson = JsonSerializer.Serialize(values);
+            await ReloadRowsAsync();
+            if (Group.State == GroupState.Committed)
+            {
+                await _indexingService.ReexportAsync(Group.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Persisting batch fields for {Group}", Group.Name);
+            StatusText = $"Save failed: {ex.Message}";
+        }
+    }
+
+    private void OnBatchFieldChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PendingFieldEditor.Value))
+        {
+            _ = PersistBatchFieldsAsync();
         }
     }
 

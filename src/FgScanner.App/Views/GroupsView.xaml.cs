@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using FgScanner.Core.Index;
 using FgScanner.Data;
 
 namespace FgScanner.App.Views;
@@ -311,6 +312,7 @@ public partial class GroupsView : UserControl
                 UpdateSourceTrigger = UpdateSourceTrigger.LostFocus,
                 ValidatesOnNotifyDataErrors = true,
             };
+            var isBatch = field.Scope == FieldScope.Batch;
             if (field.Type == FieldType.List)
             {
                 var column = new DataGridComboBoxColumn
@@ -319,6 +321,7 @@ public partial class GroupsView : UserControl
                     SelectedItemBinding = binding,
                     ItemsSource = IndexingService.ParseChoices(field.ListChoicesJson),
                     Width = new DataGridLength(1, DataGridLengthUnitType.Star),
+                    IsReadOnly = isBatch,
                 };
                 EntryGrid.Columns.Add(column);
             }
@@ -329,6 +332,7 @@ public partial class GroupsView : UserControl
                     Header = field.Name + (field.Required ? " *" : ""),
                     Binding = binding,
                     Width = new DataGridLength(1, DataGridLengthUnitType.Star),
+                    IsReadOnly = isBatch,
                 });
             }
         }

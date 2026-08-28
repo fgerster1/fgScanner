@@ -63,6 +63,21 @@ public sealed class IndexingService(
     }
 
     /// <summary>
+    /// Writes a group's batch-scoped values (e.g. Box, Operator) — the one place they live, and
+    /// answered once per group rather than once per row (mirrors SetFieldValuesAsync above, on
+    /// Group.BatchFieldsJson instead of Document.CustomFieldsJson).
+    /// </summary>
+    public async Task SetBatchFieldValuesAsync(
+        Guid groupId, IReadOnlyDictionary<string, string?> values, CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var group = await db.Groups.FirstAsync(g => g.Id == groupId, cancellationToken).ConfigureAwait(false);
+        group.BatchFieldsJson = JsonSerializer.Serialize(
+            values.Where(kv => kv.Value is not null).ToDictionary(kv => kv.Key, kv => kv.Value), JsonOptions);
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Writes the same field values across every document in a group, and returns how many rows
     /// changed.
     ///
