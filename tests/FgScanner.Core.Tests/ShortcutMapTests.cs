@@ -17,6 +17,28 @@ public class ShortcutMapTests
         Assert.Equal("F12", map.GestureFor(ShortcutMap.Actions.Profile(11)));
     }
 
+    /// <summary>
+    /// The annotated sheet needs one key of its own; the ordinary Scan key then takes the
+    /// clean capture, because the sequence — not the operator — owns the NoteState.
+    /// </summary>
+    [Fact]
+    public void The_annotated_sheet_has_its_own_default_gesture()
+    {
+        var map = ShortcutMap.CreateDefault();
+
+        Assert.Equal("Ctrl+Shift+N", map.GestureFor(ShortcutMap.Actions.ScanAnnotated));
+        Assert.Equal("Ctrl+Shift+F", map.GestureFor(ShortcutMap.Actions.ScanNoteFace));
+    }
+
+    [Fact]
+    public void No_two_actions_share_a_default_gesture()
+    {
+        var map = ShortcutMap.CreateDefault();
+
+        var gestures = map.Bindings.Values.Where(g => g.Length > 0).ToList();
+        Assert.Equal(gestures.Count, gestures.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
     [Fact]
     public void Overrides_round_trip_through_json()
     {

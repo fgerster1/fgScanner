@@ -13,6 +13,13 @@ public sealed class ShortcutMap
     public static class Actions
     {
         public const string Scan = "Scan";
+
+        /// <summary>Starts the annotated-sheet sequence and takes its as-found capture.</summary>
+        public const string ScanAnnotated = "ScanAnnotated";
+
+        /// <summary>Diverts the next capture in that sequence to the lifted note itself.</summary>
+        public const string ScanNoteFace = "ScanNoteFace";
+
         public const string SaveToGroup = "SaveToGroup";
         public const string Commit = "Commit";
         public const string Undo = "Undo";
@@ -34,6 +41,8 @@ public sealed class ShortcutMap
         var map = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             [Actions.Scan] = "Ctrl+Enter",
+            [Actions.ScanAnnotated] = "Ctrl+Shift+N",
+            [Actions.ScanNoteFace] = "Ctrl+Shift+F",
             [Actions.SaveToGroup] = "Ctrl+S",
             [Actions.Commit] = "Ctrl+Shift+Enter",
             [Actions.Undo] = "Ctrl+Z",

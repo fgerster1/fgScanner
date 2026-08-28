@@ -50,7 +50,12 @@ public static class EvidenceProfile
         // Never sticky. Pending field values persist across scans until the group changes,
         // so a NoteState left set would stamp `as-found` onto every plain sheet after it.
         new("NoteState", IndexFieldType.List, Required: false, Sticky: false,
-            ListChoices: ["as-found", "note-face", "clean"]),
+            ListChoices:
+            [
+                AnnotatedCaptureSequence.AsFound,
+                AnnotatedCaptureSequence.NoteFace,
+                AnnotatedCaptureSequence.Clean,
+            ]),
 
         // Sticky: a box of Jim's own notes is the same three answers several hundred times.
         // `unknown` stays a legitimate answer and nothing may pressure it toward a guess.
