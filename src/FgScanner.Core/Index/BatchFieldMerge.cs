@@ -32,7 +32,9 @@ public static class BatchFieldMerge
     }
 
     // Copied key by key rather than through the copy constructor, which throws on a bag holding
-    // two keys that differ only in case — an export is the wrong place to discover that.
+    // two keys that differ only in case — an export is the wrong place to discover that. The
+    // last key encountered in the source bag's enumeration order wins (JSON document order for a
+    // deserialized bag): each assignment below overwrites the same case-insensitive slot.
     private static Dictionary<string, string?> CaseInsensitive(IReadOnlyDictionary<string, string?> bag)
     {
         var copy = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);

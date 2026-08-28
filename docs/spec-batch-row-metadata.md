@@ -77,10 +77,19 @@ batch values and one document's values, and returns the effective values for tha
 
 - **Batch-scoped names always resolve from the group.** Pending values and sticky chaining do not
   apply to them — for any given row, a batch field has exactly one source.
-- **A batch field's `DefaultValue` seeds the group value once**, when the group is created, and is
-  token-expanded at that moment. It never re-applies per row. This is what keeps `Operator`'s
-  `$(user)` useful: the operator confirms a pre-filled name once per box instead of typing it.
-  `$(counter)` is meaningless at group scope and expands against the group's first sequence.
+- **A batch field's `DefaultValue` seeds the group value at two moments.** At group creation it
+  seeds directly: the default is token-expanded once and becomes the group value. At a schema
+  upgrade that flips a field from `Row` to `Batch`, `SeedNewlyBatchFieldsAsync` (called from
+  `UpgradeSchemaVersionAsync`, before the version pointer moves) seeds it again, in this order:
+  (1) a non-empty value already in the group's batch bag wins and short-circuits; (2) otherwise
+  the first non-empty value found among the group's documents, ordered by `Sequence`, is carried
+  up — one group is one box, so those per-row values should already agree, and a disagreement is
+  corrected once in the Batch values panel rather than losing every value; (3) otherwise the
+  default is token-expanded exactly as at creation. Neither moment re-applies per row afterward,
+  and the upgrade path reads documents only through a projection and writes none — the seed lands
+  solely in the group's bag. This is what keeps `Operator`'s `$(user)` useful: the operator
+  confirms a pre-filled name once per box instead of typing it. `$(counter)` is meaningless at
+  group scope and expands against the group's first sequence.
 - **Row-scoped names resolve from the document**, exactly as today.
 - **A stale copy of a now-batch field left in a document's JSON is ignored, never read.** This is
   what makes "one source of truth" structural rather than a convention: flipping a field to

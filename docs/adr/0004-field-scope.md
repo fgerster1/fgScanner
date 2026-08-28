@@ -50,11 +50,18 @@ guaranteed to agree with it by construction; the other two reimplement its rule 
 their layer requires it, and keeping those two in agreement with `Effective` is a discipline a
 future change must maintain, not a guarantee the type system enforces.
 
-A batch field's `DefaultValue` seeds the group's value once, at group creation, token-expanded
-at that moment (`GroupService.cs`, around the `TokenExpander.Expand(field.DefaultValue!,
-group.Name, counter: 1)` call). It never re-applies per row. This is what keeps `Operator`'s
-`$(user)` useful under batch scope: the operator confirms a pre-filled name once per box instead
-of typing it once per page.
+A batch field's `DefaultValue` seeds the group's value at two moments. At group creation it seeds
+directly, token-expanded once (`GroupService.cs`, around the `TokenExpander.Expand(field.DefaultValue!,
+group.Name, counter: 1)` call). At a schema upgrade that flips a field from `Row` to `Batch`,
+`SeedNewlyBatchFieldsAsync` (`GroupService.cs`, called from `UpgradeSchemaVersionAsync` before the
+version pointer moves) seeds it again: a non-empty value already in the group's bag wins
+outright; otherwise the first non-empty value among the group's documents, in `Sequence` order,
+is carried up — one group is one box, so those per-row values should already agree, and a
+disagreement is corrected once in the Batch values panel rather than losing every value;
+otherwise the default is token-expanded exactly as at creation. Neither moment re-applies per row
+afterward, and the upgrade path reads documents only through a projection and writes none. This
+is what keeps `Operator`'s `$(user)` useful under batch scope: the operator confirms a pre-filled
+name once per box instead of typing it once per page.
 
 Required batch fields validate **once per group**, not once per row: `GroupValidation` gained a
 `GroupErrors` list alongside the existing per-document errors, so one missing `Box` is one error,
