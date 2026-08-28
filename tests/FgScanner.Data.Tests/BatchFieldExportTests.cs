@@ -131,4 +131,41 @@ public sealed class BatchFieldExportTests : IDisposable
         var values = JsonSerializer.Deserialize<Dictionary<string, string?>>(stored)!;
         Assert.Equal(Environment.UserName, values["Operator"]);
     }
+
+    /// <summary>
+    /// The second of the two write paths a batch value must never reach (the first is
+    /// SetFieldValuesAsync/ApplyValuesToAllAsync, guarded elsewhere): ApplyInitialValuesAsync loops
+    /// every schema field when a document is adopted, and without the Scope filter it would expand
+    /// a batch field's default straight into that document's row — exactly the per-row copy the
+    /// group's bag exists to make impossible. A field with no DefaultValue can never exercise this
+    /// loop's write regardless of scope, so Operator (which has one) is what actually pins it.
+    /// </summary>
+    [Fact]
+    public async Task Initial_values_never_write_a_batch_fields_default_into_the_document()
+    {
+        var profile = await _profiles.CreateAsync("Evidence", Ct);
+        var schema = await _profiles.SaveSchemaAsync(profile.Id,
+        [
+            new FieldDefinition
+            {
+                Name = "Operator", Type = FieldType.Text,
+                Scope = FieldScope.Batch, DefaultValue = "$(user)",
+            },
+        ], Ct);
+
+        var group = await _groups.CreateGroupAsync(_groupsRoot, "DirectWrite", (profile.Id, schema.Version), Ct);
+        var incoming = Path.Combine(_db.Root, "incoming-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(incoming);
+        var f = Path.Combine(incoming, "p1.png");
+        await File.WriteAllBytesAsync(f, [1, 0xFF], Ct);
+
+        var adopted = await _groups.AdoptPagesAsync(group.Id, [f], Ct);
+        await _indexing.ApplyInitialValuesAsync(
+            group.Id, [.. adopted.Adopted.Select(p => p.DocumentId)], null, Ct);
+
+        await using var db = _db.Factory.CreateDbContext();
+        var stored = await db.Documents.Where(d => d.GroupId == group.Id)
+            .Select(d => d.CustomFieldsJson).ToListAsync(Ct);
+        Assert.All(stored, json => Assert.DoesNotContain("Operator", json, StringComparison.Ordinal));
+    }
 }
