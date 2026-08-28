@@ -1,3 +1,4 @@
+using FgScanner.Core.Index;
 using FgScanner.Data;
 using Xunit;
 
@@ -40,7 +41,7 @@ public sealed class ProfileImportExportTests : IDisposable
         var original = await CreateRichProfileAsync();
 
         var json = await _profiles.ExportProfileJsonAsync(original.Id, Ct);
-        Assert.Contains("\"FormatVersion\": 1", json);
+        Assert.Contains("\"FormatVersion\": 2", json);
         var imported = await _profiles.ImportProfileJsonAsync(json, Ct);
 
         Assert.Equal("Accounting (2)", imported.Name); // name collision → suffix
@@ -75,4 +76,52 @@ public sealed class ProfileImportExportTests : IDisposable
     [Fact]
     public async Task Garbage_json_is_refused() =>
         await Assert.ThrowsAnyAsync<Exception>(() => _profiles.ImportProfileJsonAsync("not json", Ct));
+
+    [Fact]
+    public async Task A_batch_field_round_trips()
+    {
+        var profile = await _profiles.CreateAsync("Evidence", Ct);
+        await _profiles.SaveSchemaAsync(profile.Id,
+        [
+            new FieldDefinition { Name = "Box", Type = FieldType.Text, Scope = FieldScope.Batch },
+        ], Ct);
+
+        var json = await _profiles.ExportProfileJsonAsync(profile.Id, Ct);
+        Assert.Contains("\"FormatVersion\": 2", json, StringComparison.Ordinal);
+
+        var imported = await _profiles.ImportProfileJsonAsync(json, Ct);
+        var schema = await _profiles.GetLatestSchemaAsync(imported.Id, Ct);
+
+        Assert.Equal(FieldScope.Batch, schema.Fields.Single(f => f.Name == "Box").Scope);
+    }
+
+    /// <summary>
+    /// Profiles already exported onto the hand-off USB stick are version 1. Refusing them would
+    /// strand the operator mid-box with a file that worked yesterday.
+    /// </summary>
+    [Fact]
+    public async Task A_version_1_file_still_imports_with_row_scope()
+    {
+        const string v1 = """
+            {
+              "FormatVersion": 1,
+              "Name": "Legacy",
+              "OcrEnabled": false,
+              "ExportCsv": true,
+              "ExportXlsx": false,
+              "ExportXml": false,
+              "ExportJson": false,
+              "CsvDelimiter": ",",
+              "Fields": [
+                { "Name": "Box", "Type": "Text", "Required": true, "Sticky": true,
+                  "DefaultValue": null, "ListChoicesJson": null }
+              ]
+            }
+            """;
+
+        var imported = await _profiles.ImportProfileJsonAsync(v1, Ct);
+        var schema = await _profiles.GetLatestSchemaAsync(imported.Id, Ct);
+
+        Assert.Equal(FieldScope.Row, schema.Fields.Single().Scope);
+    }
 }
