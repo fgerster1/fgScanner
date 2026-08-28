@@ -55,8 +55,16 @@ One migration, `AddFieldScopeAndGroupBatchFields`. Two additive columns, no back
 `Document.CustomFieldsJson`, so one merge helper reads both.
 
 Every existing field migrates as `Row`, so behaviour is unchanged until a field is deliberately
-marked `Batch`. `RawSchemaSql.cs` and `SchemaDocGenerator.cs` mirror the schema and regenerate
-`docs/db-schema.md`; both need the new columns.
+marked `Batch`.
+
+`SchemaDocGenerator` renders `docs/db-schema.md` from the **live EF model**, so it needs no code
+change — only a regenerate (`FGSCANNER_UPDATE_SCHEMA_DOC=1`).
+
+`RawSchemaSql` needs one change: `v_index` exposes `d.CustomFieldsJson AS CustomFields`, and
+`docs/db-schema.md` tells external tools to query the `v_*` views. After this phase that column
+alone no longer holds `Box` or `Operator`, so the view must also expose the group's batch values
+or it silently misleads. `v_pages` is left alone for `CapturedBy`, following the precedent set
+when phase 17 added `OriginalChecksum` without extending the view.
 
 There are two field shapes in this codebase and both need `Scope`: `FieldDefinition` is the
 stored row, `EvidenceFieldSpec` is the contract as code. `ProfileService.EnsureEvidenceProfileAsync`
@@ -85,10 +93,18 @@ the App's row grid, and `SearchService`.
 `row.CustomValues` (lines 33, 41, 204-209). Merging once inside `BuildExportDataAsync` puts batch
 values on every row in all four formats without touching a single writer.
 
-**Search.** Batch values no longer live in `CustomFieldsJson`, so without the merge, searching
-`Box 12` silently returns nothing. `SearchService` merges at index time. Editing a group's batch
-value therefore re-indexes that group's FTS rows — by `UPDATE`, never delete-then-insert, per the
-constraint in `docs/roadmap-v0.2.md` §9.
+**Search.** Batch values no longer live in `CustomFieldsJson`, so without a change, searching
+`Box 12` silently returns nothing.
+
+Field search is **not** FTS. `PagesFts` indexes OCR text only (`SearchService.FtsSearchAsync`);
+field values are found by `FieldAndAiSearchAsync`, a `LIKE` over `Document.CustomFieldsJson`
+(`SearchService.cs:111`). So the fix is to widen that query with an `OR` against the group's
+`BatchFieldsJson`, and to build the snippet from the merged values.
+
+This is simpler than a re-index and worth stating: **nothing is re-indexed.** The query reads the
+group row live, so correcting a batch value is searchable immediately, and the
+"FTS rows must be UPDATEd, not delete+inserted" constraint in `docs/roadmap-v0.2.md` §9 does not
+apply to this phase.
 
 ## 3. Group-level validation
 
@@ -182,7 +198,8 @@ are batch-constant for the whole folder rather than inferring it from repeated v
 - **Schema:** a `Scope` flip mints a new version; groups pinned to the old version keep the old
   behaviour.
 - **Profile:** `.fgprofile` round-trips at v1 (scope defaults to `Row`) and v2.
-- **Search:** a batch value is findable; editing it re-indexes the group.
+- **Search:** a batch value is findable by `LIKE`; correcting it is findable immediately, with no
+  re-index step.
 
 Two existing tests this phase must update, both owned by the evidence work:
 
