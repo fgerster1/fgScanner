@@ -86,12 +86,31 @@ batch values and one document's values, and returns the effective values for tha
   what makes "one source of truth" structural rather than a convention: flipping a field to
   `Batch` cannot leave a row quietly displaying its old private value.
 
-Four readers call it: `IndexingService.BuildExportDataAsync`, `IndexingService.ValidateAsync`,
-the App's row grid, and `SearchService`.
+Two readers share it: `IndexingService.BuildExportDataAsync` and the App's row grid
+(`GroupDetailViewModel`). Both need the same thing — one dictionary of effective values for a
+row — so both call `Effective` and get it.
+
+`IndexingService.ValidateAsync` and `SearchService` implement the batch/row split themselves,
+independently, at their own layer, rather than calling `Effective`:
+
+- **Validation** needs to know *which* fields are batch-scoped in order to route each one to a
+  group-level error instead of a per-row one — `Effective`'s merged dictionary throws that
+  distinction away, which is exactly what validation needs to keep. It filters the schema by
+  `Scope == Batch` for the once-per-group pass and by `Scope == Row` for the per-document pass.
+- **Search** runs at the SQL layer, not in memory: it `LIKE`-matches `CustomFieldsJson` and
+  `BatchFieldsJson` directly in the query (`EF.Functions.Like`) and, for a hit, reads whichever
+  JSON blob matched to build the snippet, falling back from the document's JSON to the group's.
+  An in-memory merge helper has no seam to attach to at that layer.
+
+Both are the same rule as `Effective` — batch-scoped names come from the group, row-scoped names
+come from the document — reimplemented on purpose because their layer cannot use the shared
+helper. This is a known cost of the design, not a defect: keeping the two independent
+implementations in agreement with `Effective`'s rule is a manual discipline, not a structural
+guarantee, for these two call sites.
 
 **No writer changes.** `Writers.cs` builds columns from `data.Fields` and reads
 `row.CustomValues` (lines 33, 41, 204-209). Merging once inside `BuildExportDataAsync` puts batch
-values on every row in all four formats without touching a single writer.
+values on every row in all four export formats without touching a single writer.
 
 **Search.** Batch values no longer live in `CustomFieldsJson`, so without a change, searching
 `Box 12` silently returns nothing.
@@ -99,7 +118,8 @@ values on every row in all four formats without touching a single writer.
 Field search is **not** FTS. `PagesFts` indexes OCR text only (`SearchService.FtsSearchAsync`);
 field values are found by `FieldAndAiSearchAsync`, a `LIKE` over `Document.CustomFieldsJson`
 (`SearchService.cs:111`). So the fix is to widen that query with an `OR` against the group's
-`BatchFieldsJson`, and to build the snippet from the merged values.
+`BatchFieldsJson`, and to build the snippet by checking the document's JSON first and the
+group's second.
 
 This is simpler than a re-index and worth stating: **nothing is re-indexed.** The query reads the
 group row live, so correcting a batch value is searchable immediately, and the

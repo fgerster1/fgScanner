@@ -23,12 +23,32 @@ A batch value lives **only** on `Group.BatchFieldsJson` — the same JSON-object
 `Document.CustomFieldsJson`, keyed by field name. There is no per-row copy to drift: a batch
 field has exactly one source of truth for the whole group.
 
-`FgScanner.Core/Index/BatchFieldMerge.Effective` is the single seam that resolves what a row
-shows: batch-scoped names resolve from the group, row-scoped names resolve from the document,
-and a stale copy of a now-batch field left in a document's own JSON is never read. Four callers
-share it — `IndexingService.BuildExportDataAsync`, `IndexingService.ValidateAsync`, the App's
-entry grid, and `SearchService.FieldAndAiSearchAsync` — so export, validation, the grid and
-search agree by construction instead of by four separate implementations staying in sync.
+`FgScanner.Core/Index/BatchFieldMerge.Effective` resolves what a row shows: batch-scoped names
+resolve from the group, row-scoped names resolve from the document, and a stale copy of a
+now-batch field left in a document's own JSON is never read. Two callers share it —
+`IndexingService.BuildExportDataAsync` (`IndexingService.cs:354`) and the App's entry grid
+(`GroupDetailViewModel.cs:174`) — so export and the grid agree by construction: what the operator
+sees is what `index.csv` gets.
+
+Two more call sites implement the same batch/row rule independently, at their own layer, rather
+than calling `Effective`:
+
+- `IndexingService.ValidateAsync` (`IndexingService.cs:242-293`) needs to know *which* fields are
+  batch-scoped so it can route each to a group-level error or a per-document one — `Effective`'s
+  merged dictionary throws away exactly the distinction validation needs to keep. It filters the
+  schema by `Scope == FieldScope.Batch` for the once-per-group pass (line 259) and by
+  `Scope == FieldScope.Row` for the per-document pass (line 276).
+- `SearchService.FieldAndAiSearchAsync` (`SearchService.cs:104-157`) never calls
+  `BatchFieldMerge` at all. It runs the batch/row check at the SQL layer — an `EF.Functions.Like`
+  `OR` across `Document.CustomFieldsJson` and `Document.Group.BatchFieldsJson` in the query
+  itself — then, for a hit, builds the snippet by parsing the document's JSON first and the
+  group's second (`FieldSnippet`, line 168 on). An in-memory merge helper has no seam to attach
+  to at the SQL layer.
+
+This is a known cost of the design, not a solved problem: two readers share `Effective` and are
+guaranteed to agree with it by construction; the other two reimplement its rule by hand because
+their layer requires it, and keeping those two in agreement with `Effective` is a discipline a
+future change must maintain, not a guarantee the type system enforces.
 
 A batch field's `DefaultValue` seeds the group's value once, at group creation, token-expanded
 at that moment (`GroupService.cs`, around the `TokenExpander.Expand(field.DefaultValue!,
