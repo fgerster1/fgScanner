@@ -538,6 +538,18 @@ In `src/FgScanner.Data/GroupService.cs`, in `AdoptDirectoryAsync`, after the gro
 
 `AdoptDirectoryAsync` does not load the schema today. Load it through the injected `ProfileService` if one is available; if `GroupService` has no `ProfileService` dependency, read the schema's fields directly from the `DbContext` rather than adding a constructor parameter — `GroupService` is constructed in several places and widening it is a larger change than this phase needs.
 
+- [ ] **Step 2c: Stop `ApplyDefaults` writing batch fields into documents**
+
+`ApplyDefaultsAsync` (`IndexingService.cs`, ~line 196) loops **every** schema field and writes the resolved value into each document's `CustomFieldsJson`. A batch field must not travel that path: its value is the group's, seeded once in Step 2b, and a per-document copy is exactly what the spec's "rows store no copy that can drift" forbids.
+
+Skip batch fields in that loop:
+
+```csharp
+            foreach (var field in schema.Fields.Where(f => f.Scope != FgScanner.Core.Index.FieldScope.Batch))
+```
+
+This is the second of two write paths that would otherwise duplicate a batch value into rows; Task 9 Step 5 closes the other (`PersistRowAsync`). The `Correcting_the_group_value_changes_every_row` test above asserts documents never carry a `Box` key, and pins this.
+
 - [ ] **Step 3: Carry scope into `IndexFieldDef`**
 
 In `BuildExportDataAsync`, the fields projection currently drops scope. Change it:
