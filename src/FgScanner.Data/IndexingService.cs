@@ -63,6 +63,38 @@ public sealed class IndexingService(
     }
 
     /// <summary>
+    /// Overlays <paramref name="values"/> onto what the document already stores instead of
+    /// replacing the blob, and is what a caller holding only part of a document's keys must use.
+    ///
+    /// The entry grid holds exactly the pinned layout's fields, so writing its snapshot wholesale
+    /// erases every other key the document carries. That is reachable: once a field flips to batch
+    /// scope its per-row values fall outside the layout, and on a committed group the next cell
+    /// edit re-exports index.json with them gone. A null value still clears its key, so emptying a
+    /// cell works exactly as it does through <see cref="SetFieldValuesAsync"/>.
+    /// </summary>
+    public async Task MergeFieldValuesAsync(
+        Guid documentId, IReadOnlyDictionary<string, string?> values, CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var document = await db.Documents.FirstAsync(d => d.Id == documentId, cancellationToken).ConfigureAwait(false);
+        var merged = JsonSerializer.Deserialize<Dictionary<string, string?>>(document.CustomFieldsJson) ?? [];
+        foreach (var (name, value) in values)
+        {
+            if (value is null)
+            {
+                merged.Remove(name);
+            }
+            else
+            {
+                merged[name] = value;
+            }
+        }
+
+        document.CustomFieldsJson = JsonSerializer.Serialize(merged, JsonOptions);
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Writes a group's batch-scoped values (e.g. Box, Operator) — the one place they live, and
     /// answered once per group rather than once per row (mirrors SetFieldValuesAsync above, on
     /// Group.BatchFieldsJson instead of Document.CustomFieldsJson).
@@ -107,9 +139,11 @@ public sealed class IndexingService(
             .GetSchemaAsync(group.ProfileId.Value, group.SchemaVersion, cancellationToken).ConfigureAwait(false);
 
         // A value for a field this group's layout does not have would never be shown or exported,
-        // so it is dropped rather than written into a row where nothing could reach it again.
+        // so it is dropped rather than written into a row where nothing could reach it again. A
+        // batch field is dropped too: the group's bag owns it, and a per-row copy is exactly the
+        // drift that ownership exists to prevent (mirrors ApplyInitialValuesAsync below).
         var applicable = new Dictionary<string, string?>();
-        foreach (var field in schema.Fields)
+        foreach (var field in schema.Fields.Where(f => f.Scope != FgScanner.Core.Index.FieldScope.Batch))
         {
             if (!values.TryGetValue(field.Name, out var value) || string.IsNullOrEmpty(value))
             {

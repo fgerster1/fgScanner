@@ -216,9 +216,24 @@ public sealed partial class GroupDetailViewModel : ObservableObject
                     + "need values before this group can be committed. Fill them in one step with "
                     + "\"Apply to all rows\"."
                 : "";
+
+            // A field the new layout made batch-scoped stops being read from the rows, so saying
+            // only "values are kept" would be a half-truth about where they went.
+            var becomingBatch = latest.Fields
+                .Where(f => f.Scope == FieldScope.Batch)
+                .Where(f => Fields.FirstOrDefault(c =>
+                    string.Equals(c.Name, f.Name, StringComparison.OrdinalIgnoreCase))?.Scope != FieldScope.Batch)
+                .Select(f => f.Name)
+                .ToList();
+            var scopeNote = becomingBatch.Count == 0
+                ? "\n\nValues already entered are kept."
+                : $"\n\nValues already entered are kept, except that {string.Join(", ", becomingBatch)} "
+                    + $"become box-level value{(becomingBatch.Count == 1 ? "" : "s")} for the whole group, "
+                    + "entered once in the Batch values panel. The first value already on a row is "
+                    + "carried up there — check it before committing.";
             var answer = System.Windows.MessageBox.Show(
                 $"Move this group from field layout v{Group.SchemaVersion} to v{latest.Version} "
-                    + $"({latest.Fields.Count} field(s))?{warning}\n\nValues already entered are kept.",
+                    + $"({latest.Fields.Count} field(s))?{warning}{scopeNote}",
                 "Use latest field layout",
                 System.Windows.MessageBoxButton.OKCancel,
                 System.Windows.MessageBoxImage.Question);
@@ -229,6 +244,13 @@ public sealed partial class GroupDetailViewModel : ObservableObject
 
             await _groupService.UpgradeSchemaVersionAsync(Group.Id, latest.Version);
             Group.SchemaVersion = latest.Version;
+            // The upgrade may have seeded the group's bag, and this view model holds its own Group
+            // instance — reloading without re-reading it would show an empty Batch values panel.
+            if (await _groupService.FindAsync(Group.Id) is { } refreshed)
+            {
+                Group.BatchFieldsJson = refreshed.BatchFieldsJson;
+            }
+
             await LoadAsync();
             StatusText = $"Now using field layout v{latest.Version}.";
         }
@@ -594,7 +616,10 @@ public sealed partial class GroupDetailViewModel : ObservableObject
                 .Where(kv => Fields.FirstOrDefault(f =>
                     string.Equals(f.Name, kv.Key, StringComparison.OrdinalIgnoreCase))?.Scope != FieldScope.Batch)
                 .ToDictionary(kv => kv.Key, kv => kv.Value);
-            await _indexingService.SetFieldValuesAsync(row.DocumentId, rowOnlyValues);
+            // Merged, not replaced: the grid only ever holds this layout's fields, and anything
+            // else the document stores — including per-row values stranded by a field that became
+            // batch-scoped — must survive an edit to a neighbouring cell.
+            await _indexingService.MergeFieldValuesAsync(row.DocumentId, rowOnlyValues);
             if (Group.State == GroupState.Committed)
             {
                 await _indexingService.ReexportAsync(Group.Id);

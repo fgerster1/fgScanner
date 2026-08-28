@@ -216,10 +216,83 @@ public sealed class GroupService(IDbContextFactory<FgScannerDbContext> dbFactory
             return;
         }
 
+        await SeedNewlyBatchFieldsAsync(db, group, group.SchemaVersion, schemaVersion, cancellationToken)
+            .ConfigureAwait(false);
         group.SchemaVersion = schemaVersion;
         group.UpdatedUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Fills the group's bag for fields the new layout made batch-scoped. Without this the flip
+    /// silently blanks them: the rows' copies stop being read (BatchFieldMerge) and the bag holding
+    /// the only value that is read was never written.
+    ///
+    /// One group is one box, so the rows' values for such a field should already agree — the first
+    /// non-empty one is carried up, and a disagreement is corrected once in the batch panel rather
+    /// than costing every value. With nothing typed at all the batch default applies, expanded here
+    /// exactly as it would have been at creation, which is how Operator's $(user) still lands.
+    /// </summary>
+    private static async Task SeedNewlyBatchFieldsAsync(
+        FgScannerDbContext db, Group group, int fromVersion, int toVersion, CancellationToken cancellationToken)
+    {
+        var before = await SchemaFieldsAsync(db, group.ProfileId!.Value, fromVersion, cancellationToken)
+            .ConfigureAwait(false);
+        var after = await SchemaFieldsAsync(db, group.ProfileId!.Value, toVersion, cancellationToken)
+            .ConfigureAwait(false);
+        var newlyBatch = after
+            .Where(f => f.Scope == FieldScope.Batch)
+            .Where(f => before.FirstOrDefault(b =>
+                string.Equals(b.Name, f.Name, StringComparison.OrdinalIgnoreCase))?.Scope != FieldScope.Batch)
+            .ToList();
+        if (newlyBatch.Count == 0)
+        {
+            return;
+        }
+
+        var bag = JsonSerializer.Deserialize<Dictionary<string, string?>>(group.BatchFieldsJson) ?? [];
+        var rowValues = await db.Documents
+            .Where(d => d.GroupId == group.Id)
+            .OrderBy(d => d.Sequence)
+            .Select(d => d.CustomFieldsJson)
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        var rows = rowValues
+            .Select(json => JsonSerializer.Deserialize<Dictionary<string, string?>>(json) ?? [])
+            .ToList();
+
+        var seeded = false;
+        foreach (var field in newlyBatch)
+        {
+            if (bag.TryGetValue(field.Name, out var already) && !string.IsNullOrEmpty(already))
+            {
+                continue;
+            }
+
+            var carried = rows
+                .Select(r => r.GetValueOrDefault(field.Name))
+                .FirstOrDefault(v => !string.IsNullOrEmpty(v));
+            var value = carried ?? (string.IsNullOrEmpty(field.DefaultValue)
+                ? null
+                : TokenExpander.Expand(field.DefaultValue, group.Name, counter: 1));
+            if (!string.IsNullOrEmpty(value))
+            {
+                bag[field.Name] = value;
+                seeded = true;
+            }
+        }
+
+        if (seeded)
+        {
+            group.BatchFieldsJson = JsonSerializer.Serialize(bag);
+        }
+    }
+
+    private static Task<List<FieldDefinition>> SchemaFieldsAsync(
+        FgScannerDbContext db, Guid profileId, int version, CancellationToken cancellationToken) =>
+        db.IndexSchemas
+            .Where(s => s.ProfileId == profileId && s.Version == version)
+            .SelectMany(s => s.Fields)
+            .ToListAsync(cancellationToken);
 
     /// <summary>
     /// Groups still pointing at an older layout than their profile's newest, so the user can be

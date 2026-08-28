@@ -34,6 +34,36 @@ public class BatchFieldUiTests
 
         Assert.Equal(FieldScope.Batch, restored.Scope);
     }
+
+    /// <summary>
+    /// A required batch field with no group value is one missing answer, not two hundred. Flagging
+    /// it on every row puts the error in a column the grid renders read-only, so the operator is
+    /// shown a complaint they cannot act on; the group-level validation summary is where it belongs.
+    /// </summary>
+    [Fact]
+    public void A_missing_batch_value_does_not_flag_every_row()
+    {
+        var values = new RowValues(
+        [
+            new FieldDefinition { Name = "Box", Type = FieldType.Text, Required = true, Scope = FieldScope.Batch },
+            new FieldDefinition { Name = "Vendor", Type = FieldType.Text, Required = true },
+        ]);
+
+        values.Load(new Dictionary<string, string?> { ["Vendor"] = "Acme" });
+
+        Assert.False(values.HasErrors);
+    }
+
+    [Fact]
+    public void A_missing_row_value_still_flags_the_row()
+    {
+        var values = new RowValues(
+            [new FieldDefinition { Name = "Vendor", Type = FieldType.Text, Required = true }]);
+
+        values.Load(new Dictionary<string, string?>());
+
+        Assert.True(values.HasErrors);
+    }
 }
 
 /// <summary>
@@ -228,5 +258,73 @@ public sealed class BatchFieldGroupDetailTests : IDisposable
 
         Assert.Equal("Acme", stored["Vendor"]);
         Assert.False(stored.ContainsKey("Box"), "Box is batch-scoped; the row must not persist a private copy.");
+    }
+
+    /// <summary>
+    /// The grid only ever holds the pinned layout's fields, so writing its snapshot over
+    /// CustomFieldsJson erases everything else the document stores. That is reachable now: after a
+    /// field flips to batch scope its per-row values fall outside the layout, and on a committed
+    /// evidence group the next cell edit would re-export index.json with them gone.
+    /// </summary>
+    [Fact]
+    public async Task Editing_a_row_keeps_values_the_current_layout_does_not_show()
+    {
+        var profile = await _profileService.CreateAsync("Boxes5", TestContext.Current.CancellationToken);
+        await _profileService.SaveSchemaAsync(
+            profile.Id,
+            [new FieldDefinition { Name = "Vendor", Type = FieldType.Text, Order = 0 }],
+            TestContext.Current.CancellationToken);
+        var schema = await _profileService.GetLatestSchemaAsync(profile.Id, TestContext.Current.CancellationToken);
+        var group = await _groupService.CreateGroupAsync(
+            _root, "Batch5", (profile.Id, schema.Version), TestContext.Current.CancellationToken);
+        var documentId = await AdoptOnePageAsync(group);
+        await _indexingService.SetFieldValuesAsync(
+            documentId,
+            new Dictionary<string, string?> { ["Vendor"] = "old", ["Operator"] = "jdoe" },
+            TestContext.Current.CancellationToken);
+
+        var vm = new GroupDetailViewModel(
+            group, _groupService, _profileService, _indexingService, _trashService, _activeGroup, CreateToolset());
+        await vm.LoadAsync();
+        Assert.Single(vm.Rows).Values["Vendor"] = "Acme";
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+
+        await using var db = new FgScannerDbContext(DbBootstrapper.BuildOptions(_dbPath));
+        var document = await db.Documents.SingleAsync(d => d.Id == documentId, TestContext.Current.CancellationToken);
+        var stored = JsonSerializer.Deserialize<Dictionary<string, string?>>(document.CustomFieldsJson) ?? [];
+
+        Assert.Equal("Acme", stored["Vendor"]);
+        Assert.Equal("jdoe", stored["Operator"]);
+    }
+
+    /// <summary>Merging must not cost the operator the ability to empty a cell.</summary>
+    [Fact]
+    public async Task Clearing_a_cell_removes_the_stored_value()
+    {
+        var profile = await _profileService.CreateAsync("Boxes6", TestContext.Current.CancellationToken);
+        await _profileService.SaveSchemaAsync(
+            profile.Id,
+            [new FieldDefinition { Name = "Vendor", Type = FieldType.Text, Order = 0 }],
+            TestContext.Current.CancellationToken);
+        var schema = await _profileService.GetLatestSchemaAsync(profile.Id, TestContext.Current.CancellationToken);
+        var group = await _groupService.CreateGroupAsync(
+            _root, "Batch6", (profile.Id, schema.Version), TestContext.Current.CancellationToken);
+        var documentId = await AdoptOnePageAsync(group);
+        await _indexingService.SetFieldValuesAsync(
+            documentId,
+            new Dictionary<string, string?> { ["Vendor"] = "old" },
+            TestContext.Current.CancellationToken);
+
+        var vm = new GroupDetailViewModel(
+            group, _groupService, _profileService, _indexingService, _trashService, _activeGroup, CreateToolset());
+        await vm.LoadAsync();
+        Assert.Single(vm.Rows).Values["Vendor"] = null;
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+
+        await using var db = new FgScannerDbContext(DbBootstrapper.BuildOptions(_dbPath));
+        var document = await db.Documents.SingleAsync(d => d.Id == documentId, TestContext.Current.CancellationToken);
+        var stored = JsonSerializer.Deserialize<Dictionary<string, string?>>(document.CustomFieldsJson) ?? [];
+
+        Assert.False(stored.ContainsKey("Vendor"));
     }
 }

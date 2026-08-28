@@ -168,4 +168,29 @@ public sealed class BatchFieldExportTests : IDisposable
             .Select(d => d.CustomFieldsJson).ToListAsync(Ct);
         Assert.All(stored, json => Assert.DoesNotContain("Operator", json, StringComparison.Ordinal));
     }
+
+    /// <summary>
+    /// The third write path into CustomFieldsJson. Its only caller filters batch fields out one
+    /// layer up, in the view model — so the guard the group's bag depends on lives outside the
+    /// service that does the writing. Called directly, as here, nothing stops it.
+    /// </summary>
+    [Fact]
+    public async Task Filling_every_row_never_writes_a_batch_field_into_the_document()
+    {
+        var group = await ArrangeAsync(pages: 2);
+
+        var changed = await _indexing.ApplyValuesToAllAsync(
+            group.Id,
+            new Dictionary<string, string?> { ["Box"] = "12", ["Title"] = "Deed" },
+            overwrite: false,
+            Ct);
+
+        Assert.Equal(2, changed);
+
+        await using var db = _db.Factory.CreateDbContext();
+        var stored = await db.Documents.Where(d => d.GroupId == group.Id)
+            .Select(d => d.CustomFieldsJson).ToListAsync(Ct);
+        Assert.All(stored, json => Assert.Contains("Deed", json, StringComparison.Ordinal));
+        Assert.All(stored, json => Assert.DoesNotContain("Box", json, StringComparison.Ordinal));
+    }
 }
