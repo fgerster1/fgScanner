@@ -77,7 +77,7 @@ public sealed class ShellTests : IDisposable
     private ScanViewModel CreateScanViewModel(FakeScanService? service = null) =>
         new(service ?? new FakeScanService(), _sessionService, _groupService, _indexingService, _activeGroup,
             new ProfileOcrTrigger(_profileService, new OcrQueueService(new TestFactory(_dbPath))),
-            CreateToolset());
+            CreateToolset(), _trashService);
 
     [Fact]
     public async Task Search_section_disappears_when_the_feature_flag_is_off()

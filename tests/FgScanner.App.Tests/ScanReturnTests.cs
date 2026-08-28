@@ -91,7 +91,7 @@ public sealed class ScanReturnTests : IDisposable
                 scanService ?? new FakeScanService(), _sessionService, _groupService, _indexingService,
                 _activeGroup,
                 new ProfileOcrTrigger(_profileService, new OcrQueueService(new TestFactory(_dbPath))),
-                CreateToolset()),
+                CreateToolset(), _trashService),
             new GroupsViewModel(
                 _groupService, _profileService, _indexingService, _trashService, _activeGroup,
                 CreateToolset(), CreateRetroService()),

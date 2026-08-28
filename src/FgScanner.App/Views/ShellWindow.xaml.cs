@@ -93,6 +93,8 @@ public partial class ShellWindow : Window
     private ICommand? CommandFor(string action) => action switch
     {
         ShortcutMap.Actions.Scan => _viewModel.ScanViewModel.ScanCommand,
+        ShortcutMap.Actions.ScanAnnotated => _viewModel.ScanViewModel.ScanAnnotatedCommand,
+        ShortcutMap.Actions.ScanNoteFace => _viewModel.ScanViewModel.ScanNoteFaceCommand,
         ShortcutMap.Actions.SaveToGroup => _viewModel.ScanViewModel.SaveToGroupCommand,
         ShortcutMap.Actions.Commit => DetailCommand(d => d.CommitCommand),
         ShortcutMap.Actions.Undo => DetailCommand(d => d.UndoCommand),

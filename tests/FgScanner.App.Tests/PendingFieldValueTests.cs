@@ -145,7 +145,7 @@ public sealed class PendingFieldValueTests : IDisposable
             new FgScanner.Scanning.FakeScanService { PageCount = 1 }, sessionService, _groupService,
             _indexingService, _activeGroup,
             new ProfileOcrTrigger(_profileService, new OcrQueueService(new TestFactory(_dbPath))),
-            CreateToolset());
+            CreateToolset(), _trashService);
         await scan.RefreshDevicesCommand.ExecuteAsync(null);
         await scan.ScanCommand.ExecuteAsync(null);
         await scan.SaveToGroupCommand.ExecuteAsync(null);

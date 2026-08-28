@@ -31,6 +31,8 @@ public sealed class FakeScanService : IScanService
 
     public int ErrorAfterPages { get; init; }
 
+    private int _run;
+
     public Task<IReadOnlyList<ScanDeviceInfo>> ListDevicesAsync(
         ScanDriver driver, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<ScanDeviceInfo>>([.. Devices.Where(d => d.Driver == driver)]);
@@ -40,6 +42,11 @@ public sealed class FakeScanService : IScanService
         IPageStorage storage,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        // Each run's pages must differ from every earlier run's. A session that saves to a group
+        // resets its page numbering, so drawing only the per-run index made consecutive scans
+        // byte-identical — and adoption silently skips a page whose checksum is already in the
+        // group. No real scanner hands back a second sheet identical to the first.
+        var run = Interlocked.Increment(ref _run);
         var pagesThisRun = options.Source == ScanSource.Flatbed ? 1 : PageCount;
         for (var i = 1; i <= pagesThisRun; i++)
         {
@@ -55,7 +62,7 @@ public sealed class FakeScanService : IScanService
             }
 
             var path = storage.ReserveNextPagePath("png");
-            WritePageImage(path, i, options);
+            WritePageImage(path, run, i, options);
             var page = new ScannedPage(path, ExtractSequence(path));
             storage.CommitPage(page);
             yield return page;
@@ -69,7 +76,7 @@ public sealed class FakeScanService : IScanService
         return dash >= 0 && int.TryParse(name[(dash + 1)..], out var n) ? n : 0;
     }
 
-    private static void WritePageImage(string path, int pageNumber, ScanProfileOptions options)
+    private static void WritePageImage(string path, int run, int pageNumber, ScanProfileOptions options)
     {
         // Letter aspect at 1/4 scale keeps fixtures small but visually page-like.
         using var bitmap = new Bitmap(212, 275);
@@ -77,6 +84,7 @@ public sealed class FakeScanService : IScanService
         graphics.Clear(options.BitDepth == ScanBitDepth.Color ? Color.Ivory : Color.White);
         using var font = new Font(FontFamily.GenericSansSerif, 24);
         graphics.DrawString($"Page {pageNumber}", font, Brushes.Black, 40, 110);
+        graphics.DrawString($"Sheet {run}", font, Brushes.DimGray, 40, 160);
         graphics.DrawRectangle(Pens.Gray, 5, 5, 201, 264);
         bitmap.Save(path, ImageFormat.Png);
     }

@@ -3,6 +3,7 @@ using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FgScanner.App.Services;
+using FgScanner.Core.Evidence;
 using FgScanner.Data;
 using FgScanner.Scanning;
 using Serilog;
@@ -18,6 +19,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     private readonly ActiveGroupStore _activeGroup;
     private readonly ProfileOcrTrigger _ocrTrigger;
     private readonly PageEditingToolset _toolset;
+    private readonly TrashService _trashService;
     private CancellationTokenSource? _scanCts;
 
     public ScanViewModel(
@@ -27,7 +29,8 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         IndexingService indexingService,
         ActiveGroupStore activeGroup,
         ProfileOcrTrigger ocrTrigger,
-        PageEditingToolset toolset)
+        PageEditingToolset toolset,
+        TrashService trashService)
     {
         _scanService = scanService;
         _sessionService = sessionService;
@@ -36,6 +39,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         _activeGroup = activeGroup;
         _ocrTrigger = ocrTrigger;
         _toolset = toolset;
+        _trashService = trashService;
         _ = LoadFeatureFlagsAsync();
         Drivers = [.. scanService.AvailableDrivers];
         _selectedDriver = Drivers[0];
@@ -274,6 +278,100 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// The sheet in hand, if it carries notes. It owns the NoteState so the operator never
+    /// types one — at roughly one sheet in four, a value typed that often is a value mistyped.
+    /// </summary>
+    public AnnotatedCaptureSequence Annotated { get; } = new();
+
+    /// <summary>
+    /// Captures a sheet with its notes in place. The capture is saved on its own, because
+    /// ApplyInitialValuesAsync stamps one dictionary onto every document adopted in a save
+    /// and the clean capture must not inherit this one's NoteState.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanScan))]
+    private async Task ScanAnnotatedAsync()
+    {
+        if (!Annotated.IsActive)
+        {
+            Annotated.Start();
+        }
+
+        await ScanOneCaptureAsync();
+    }
+
+    /// <summary>Photographs the lifted note itself, for a note that cannot be read where it sits.</summary>
+    [RelayCommand(CanExecute = nameof(CanScanNoteFace))]
+    private async Task ScanNoteFaceAsync()
+    {
+        Annotated.TakeNoteFace();
+        await ScanOneCaptureAsync();
+    }
+
+    private bool CanScanNoteFace() =>
+        CanScan() && Annotated.NoteStateForNextCapture == AnnotatedCaptureSequence.Clean;
+
+    private async Task ScanOneCaptureAsync()
+    {
+        var wasAutoSave = AutoSaveAfterScan;
+        AutoSaveAfterScan = true;
+        try
+        {
+            await ScanAsync();
+        }
+        finally
+        {
+            AutoSaveAfterScan = wasAutoSave;
+            ScanNoteFaceCommand.NotifyCanExecuteChanged();
+            CancelAnnotatedCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    private bool CanCancelAnnotated() => Annotated.IsActive && !IsScanning;
+
+    /// <summary>
+    /// Abandons the sheet and takes its captures with it. An as-found with no clean partner is
+    /// a whole-group refusal at import, by which time the box has been re-shelved. The pages go
+    /// to the trash rather than to /dev/null, so a mis-click is recoverable.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanCancelAnnotated))]
+    private async Task CancelAnnotatedAsync()
+    {
+        var discarded = Annotated.Cancel();
+        foreach (var documentId in discarded)
+        {
+            await _trashService.DeleteDocumentAsync(documentId);
+        }
+
+        StatusText = discarded.Count == 1
+            ? "Annotated sheet abandoned — 1 capture moved to the trash."
+            : $"Annotated sheet abandoned — {discarded.Count} captures moved to the trash.";
+        _activeGroup.NotifyGroupContentChanged();
+        ScanNoteFaceCommand.NotifyCanExecuteChanged();
+        CancelAnnotatedCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// Adds the sheet-in-hand's NoteState to the operator's pending values without disturbing
+    /// them, so the value lives for exactly one capture. Pending values persist across scans
+    /// until the group changes, and a NoteState that outlived its sheet would stamp `as-found`
+    /// onto every plain sheet after it.
+    /// </summary>
+    private IReadOnlyDictionary<string, string?>? StampNoteState(
+        IReadOnlyDictionary<string, string?>? pending)
+    {
+        if (Annotated.NoteStateForNextCapture is not { } noteState)
+        {
+            return pending;
+        }
+
+        var stamped = pending is null
+            ? []
+            : new Dictionary<string, string?>(pending, StringComparer.Ordinal);
+        stamped["NoteState"] = noteState;
+        return stamped;
+    }
+
     private bool CanCancelScan() => IsScanning;
 
     [RelayCommand(CanExecute = nameof(CanCancelScan))]
@@ -292,8 +390,16 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
                 group, [.. Pages.OrderBy(p => p.SequenceNumber).Select(p => p.FilePath)]);
             var result = await _groupService.AdoptPagesAsync(
                 group.Id, triage.FilesToAdopt, triage.IsBlankFlagged);
+            var adopted = result.Adopted.Select(p => p.DocumentId).ToList();
             await _indexingService.ApplyInitialValuesAsync(
-                group.Id, [.. result.Adopted.Select(p => p.DocumentId)], _activeGroup.PendingValues);
+                group.Id, adopted, StampNoteState(_activeGroup.PendingValues));
+            foreach (var documentId in adopted)
+            {
+                if (Annotated.IsActive)
+                {
+                    Annotated.RecordCapture(documentId);
+                }
+            }
             if (group.State == GroupState.Committed)
             {
                 await _indexingService.ReexportAsync(group.Id);
