@@ -42,6 +42,9 @@ public class FgScannerDbContext(DbContextOptions<FgScannerDbContext> options) : 
             e.HasIndex(g => g.DirectoryPath).IsUnique();
             e.HasMany(g => g.Documents).WithOne(d => d.Group).HasForeignKey(d => d.GroupId)
                 .OnDelete(DeleteBehavior.Cascade);
+            // Explicit SQL default so groups that existed before this phase get valid JSON in the
+            // new column, not the CLR default of "" that would fail to parse.
+            e.Property(g => g.BatchFieldsJson).HasDefaultValue("{}");
         });
 
         modelBuilder.Entity<Document>(e =>

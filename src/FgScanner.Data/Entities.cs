@@ -129,6 +129,12 @@ public class FieldDefinition
 
     public bool Sticky { get; set; }
 
+    /// <summary>
+    /// Row (the value is this document's) or Batch (the value is the group's, stamped onto every
+    /// row). Entities already reach into Core for BlankPagePolicy, so the enum is not duplicated.
+    /// </summary>
+    public FgScanner.Core.Index.FieldScope Scope { get; set; }
+
     /// <summary>Default value; supports tokens like $(today), $(group), $(counter), $(user).</summary>
     public string? DefaultValue { get; set; }
 
@@ -152,6 +158,13 @@ public class Group
     public Profile? Profile { get; set; }
 
     public int SchemaVersion { get; set; }
+
+    /// <summary>
+    /// Values for this group's batch-scoped fields, keyed by field name — deliberately the same
+    /// shape as Document.CustomFieldsJson so one helper reads both. This is the only place a
+    /// batch value lives; rows hold no copy that could drift from it.
+    /// </summary>
+    public string BatchFieldsJson { get; set; } = "{}";
 
     public DateTime CreatedUtc { get; set; }
 
@@ -199,6 +212,13 @@ public class Page
     /// while the flag was on, so the live file IS the original.
     /// </summary>
     public string? OriginalChecksum { get; set; }
+
+    /// <summary>
+    /// The Windows account whose session captured this page, recorded at capture and never
+    /// editable. Null means unknown provenance — retro-processed files were scanned elsewhere,
+    /// and naming the current user as their captor would be a fabrication.
+    /// </summary>
+    public string? CapturedBy { get; set; }
 
     public int Sequence { get; set; }
 

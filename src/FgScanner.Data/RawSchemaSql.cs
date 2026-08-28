@@ -39,6 +39,7 @@ public static class RawSchemaSql
           (SELECT COUNT(*) FROM Pages p WHERE p.DocumentId = d.Id)
                               AS PageCount,
           d.CustomFieldsJson  AS CustomFields,
+          g.BatchFieldsJson   AS BatchFields,
           d.CreatedUtc        AS CreatedUtc
         FROM Documents d
         JOIN Groups g ON g.Id = d.GroupId;
