@@ -191,7 +191,7 @@ public sealed class IndexingService(
         foreach (var document in newDocs)
         {
             var values = new Dictionary<string, string?>();
-            foreach (var field in schema.Fields)
+            foreach (var field in schema.Fields.Where(f => f.Scope != FgScanner.Core.Index.FieldScope.Batch))
             {
                 string? value = null;
                 if (pendingValues is not null && pendingValues.TryGetValue(field.Name, out var pending) && !string.IsNullOrEmpty(pending))
@@ -274,7 +274,7 @@ public sealed class IndexingService(
         {
             profileName = profile.Name;
             var schema = await profileService.GetSchemaAsync(profile.Id, group.SchemaVersion, cancellationToken).ConfigureAwait(false);
-            fields = [.. schema.Fields.Select(f => new IndexFieldDef(f.Name, (IndexFieldType)f.Type, f.Required))];
+            fields = [.. schema.Fields.Select(f => new IndexFieldDef(f.Name, (IndexFieldType)f.Type, f.Required, f.Scope))];
             formats.Clear();
             if (profile.ExportCsv)
             {
@@ -299,6 +299,8 @@ public sealed class IndexingService(
             delimiter = profile.CsvDelimiter.Length > 0 ? profile.CsvDelimiter[0] : ',';
         }
 
+        var batchValues = JsonSerializer.Deserialize<Dictionary<string, string?>>(group.BatchFieldsJson) ?? [];
+
         var rows = new List<IndexRow>();
         foreach (var (doc, imageName) in documents)
         {
@@ -315,7 +317,10 @@ public sealed class IndexingService(
                 page.OcrMeanConfidence,
                 page.AiDescription,
                 page.AiStatus.ToString(),
-                JsonSerializer.Deserialize<Dictionary<string, string?>>(doc.CustomFieldsJson) ?? [],
+                BatchFieldMerge.Effective(
+                    fields,
+                    batchValues,
+                    JsonSerializer.Deserialize<Dictionary<string, string?>>(doc.CustomFieldsJson) ?? []),
                 doc.Sequence,
                 page.Id,
                 page.Checksum,

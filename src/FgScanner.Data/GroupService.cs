@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Text.Json;
 using FgScanner.Core;
+using FgScanner.Core.Index;
 using Microsoft.EntityFrameworkCore;
 
 namespace FgScanner.Data;
@@ -87,6 +89,28 @@ public sealed class GroupService(IDbContextFactory<FgScannerDbContext> dbFactory
             CreatedUtc = DateTime.UtcNow,
             UpdatedUtc = DateTime.UtcNow,
         };
+        if (profile is { } p)
+        {
+            var schemaFields = await db.IndexSchemas
+                .Where(s => s.ProfileId == p.ProfileId && s.Version == p.SchemaVersion)
+                .SelectMany(s => s.Fields)
+                .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+            // A batch field is answered once per group, so its default belongs to the group and is
+            // expanded here — not per row, where $(user) would be re-evaluated on every page.
+            var batchDefaults = new Dictionary<string, string?>();
+            foreach (var field in schemaFields.Where(f =>
+                f.Scope == FieldScope.Batch && !string.IsNullOrEmpty(f.DefaultValue)))
+            {
+                batchDefaults[field.Name] = TokenExpander.Expand(field.DefaultValue!, group.Name, counter: 1);
+            }
+
+            if (batchDefaults.Count > 0)
+            {
+                group.BatchFieldsJson = JsonSerializer.Serialize(batchDefaults);
+            }
+        }
+
         db.Groups.Add(group);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return group;

@@ -13,22 +13,26 @@
       {
         "name": "Vendor",
         "type": "text",
-        "required": true
+        "required": true,
+        "scope": "row"
       },
       {
         "name": "InvoiceDate",
         "type": "date",
-        "required": false
+        "required": false,
+        "scope": "row"
       },
       {
         "name": "Amount",
         "type": "number",
-        "required": false
+        "required": false,
+        "scope": "row"
       },
       {
         "name": "Category",
         "type": "list",
-        "required": false
+        "required": false,
+        "scope": "row"
       }
     ]
   },

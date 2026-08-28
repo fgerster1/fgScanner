@@ -243,6 +243,7 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
                 Type = field.Type,
                 Required = field.Required,
                 Sticky = field.Sticky,
+                Scope = field.Scope,
                 DefaultValue = field.DefaultValue,
                 ListChoicesJson = field.ListChoicesJson,
             });
@@ -270,6 +271,7 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
             || field.Type != submitted[i].Type
             || field.Required != submitted[i].Required
             || field.Sticky != submitted[i].Sticky
+            || field.Scope != submitted[i].Scope
             || field.DefaultValue != submitted[i].DefaultValue
             || field.ListChoicesJson != submitted[i].ListChoicesJson).Any();
     }
