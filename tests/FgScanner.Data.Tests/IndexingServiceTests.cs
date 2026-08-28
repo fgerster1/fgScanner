@@ -95,6 +95,40 @@ public sealed class IndexingServiceTests : IDisposable
         Assert.False(data.Rows[1].CustomValues.ContainsKey("Vendor")); // non-sticky did not
     }
 
+    /// <summary>
+    /// Every reader of CustomFieldsJson (RowValues, BatchFieldMerge) treats its keys
+    /// case-insensitively, so the merge must too — otherwise a stored "Operator" and an incoming
+    /// "operator" become two keys in the blob instead of one being overwritten.
+    /// </summary>
+    [Fact]
+    public async Task Merge_overwrites_a_stored_key_that_differs_only_in_case()
+    {
+        var (profile, schema) = await CreateProfileWithFieldsAsync();
+        var group = await CreateGroupWithPagesAsync(schema, profile.Id, pages: 1);
+        Guid documentId;
+        await using (var db = _db.Factory.CreateDbContext())
+        {
+            documentId = (await db.Documents.SingleAsync(d => d.GroupId == group.Id, Ct)).Id;
+        }
+
+        await _indexing.SetFieldValuesAsync(
+            documentId, new Dictionary<string, string?> { ["Vendor"] = "old" }, Ct);
+        await _indexing.MergeFieldValuesAsync(
+            documentId, new Dictionary<string, string?> { ["vendor"] = "new" }, Ct);
+
+        await using var verify = _db.Factory.CreateDbContext();
+        var document = await verify.Documents.SingleAsync(d => d.Id == documentId, Ct);
+
+        // Deserialized with the default (ordinal) comparer deliberately, so "Vendor" and "vendor"
+        // would land as two distinct entries if the merge failed to fold them — collapsing them
+        // through a case-insensitive read here would hide exactly the bug this test exists to
+        // catch.
+        var stored = JsonSerializer.Deserialize<Dictionary<string, string?>>(document.CustomFieldsJson)!;
+
+        Assert.Single(stored);
+        Assert.Equal("new", stored.Values.Single());
+    }
+
     [Fact]
     public async Task Commit_blocks_on_missing_required_field()
     {

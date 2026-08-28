@@ -327,4 +327,44 @@ public sealed class BatchFieldGroupDetailTests : IDisposable
 
         Assert.False(stored.ContainsKey("Vendor"));
     }
+
+    /// <summary>
+    /// A WPF DataGridTextColumn clears an edited cell to "", not null — there is no
+    /// TargetNullValue on the grid's columns — so that is the path a real operator exercises when
+    /// they delete a cell's text. A null clear only happens from code (e.g. a future "clear field"
+    /// command), which is what the sibling test above covers. The two are not the same: this
+    /// asserts what MergeFieldValuesAsync actually does with "", it does not assume it matches null.
+    /// </summary>
+    [Fact]
+    public async Task Clearing_a_cell_to_empty_string_keeps_the_key_with_an_empty_value()
+    {
+        var profile = await _profileService.CreateAsync("Boxes7", TestContext.Current.CancellationToken);
+        await _profileService.SaveSchemaAsync(
+            profile.Id,
+            [new FieldDefinition { Name = "Vendor", Type = FieldType.Text, Order = 0 }],
+            TestContext.Current.CancellationToken);
+        var schema = await _profileService.GetLatestSchemaAsync(profile.Id, TestContext.Current.CancellationToken);
+        var group = await _groupService.CreateGroupAsync(
+            _root, "Batch7", (profile.Id, schema.Version), TestContext.Current.CancellationToken);
+        var documentId = await AdoptOnePageAsync(group);
+        await _indexingService.SetFieldValuesAsync(
+            documentId,
+            new Dictionary<string, string?> { ["Vendor"] = "old" },
+            TestContext.Current.CancellationToken);
+
+        var vm = new GroupDetailViewModel(
+            group, _groupService, _profileService, _indexingService, _trashService, _activeGroup, CreateToolset());
+        await vm.LoadAsync();
+        Assert.Single(vm.Rows).Values["Vendor"] = string.Empty;
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+
+        await using var db = new FgScannerDbContext(DbBootstrapper.BuildOptions(_dbPath));
+        var document = await db.Documents.SingleAsync(d => d.Id == documentId, TestContext.Current.CancellationToken);
+        var stored = JsonSerializer.Deserialize<Dictionary<string, string?>>(document.CustomFieldsJson) ?? [];
+
+        // Not a removal: an empty string is a value, not the sentinel MergeFieldValuesAsync treats
+        // as "delete this key" (that sentinel is null, exactly as in SetFieldValuesAsync).
+        Assert.True(stored.ContainsKey("Vendor"));
+        Assert.Equal(string.Empty, stored["Vendor"]);
+    }
 }

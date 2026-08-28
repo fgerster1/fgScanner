@@ -77,7 +77,21 @@ public sealed class IndexingService(
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         var document = await db.Documents.FirstAsync(d => d.Id == documentId, cancellationToken).ConfigureAwait(false);
-        var merged = JsonSerializer.Deserialize<Dictionary<string, string?>>(document.CustomFieldsJson) ?? [];
+        var stored = JsonSerializer.Deserialize<Dictionary<string, string?>>(document.CustomFieldsJson) ?? [];
+
+        // Case-insensitive to match every reader of this blob (RowValues, BatchFieldMerge.Effective)
+        // — this is the first place that combines a stored bag with new keys rather than merely
+        // passing one through, so it is the first place an ordinal dictionary could let "operator"
+        // sit alongside a stored "Operator" as two keys instead of overwriting it. Copied key by
+        // key rather than through the copy constructor, which throws on a stored blob already
+        // holding two keys that differ only in case — a merge is the wrong place to surface that.
+        // The last key encountered in the stored bag's enumeration order (JSON document order) wins.
+        var merged = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in stored)
+        {
+            merged[key] = value;
+        }
+
         foreach (var (name, value) in values)
         {
             if (value is null)
