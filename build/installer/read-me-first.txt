@@ -46,8 +46,10 @@ IF THIS MACHINE IS FOR EVIDENCE CAPTURE — do this first
 -------------------------------------------------------
 
 Setting up the dedicated evidence scanning station is a separate, longer job:
-creating the Evidence profile, its nine index fields, and the export settings
-the case pipeline depends on. That is its own document on this stick:
+creating the Evidence profile, its thirteen index fields, and the export
+settings the case pipeline depends on. The field names are no longer typed by
+hand — one button in Settings builds them, and typing them by hand is now the
+wrong way. That is its own document on this stick:
 
     EVIDENCE-SETUP.txt
 
