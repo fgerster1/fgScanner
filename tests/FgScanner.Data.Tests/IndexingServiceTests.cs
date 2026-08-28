@@ -256,13 +256,16 @@ public sealed class IndexingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Schema_rejects_more_than_twelve_fields_and_duplicate_names()
+    public async Task Schema_rejects_more_fields_than_the_cap_and_duplicate_names()
     {
         var profile = await _profiles.CreateAsync("Limits", Ct);
-        var thirteen = Enumerable.Range(1, 13)
+
+        // Relative to the cap, not a literal: this test pinned 12 in place, so raising the
+        // cap for the 13-field evidence profile failed here rather than where it mattered.
+        var overCap = Enumerable.Range(1, ProfileService.MaxFields + 1)
             .Select(i => new FieldDefinition { Name = $"F{i}", Type = FieldType.Text })
             .ToList();
-        await Assert.ThrowsAsync<InvalidOperationException>(() => _profiles.SaveSchemaAsync(profile.Id, thirteen, Ct));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _profiles.SaveSchemaAsync(profile.Id, overCap, Ct));
 
         List<FieldDefinition> duplicates =
             [new() { Name = "Same", Type = FieldType.Text }, new() { Name = "same", Type = FieldType.Date }];

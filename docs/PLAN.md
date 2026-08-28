@@ -115,7 +115,7 @@ Key packages (all verified current, Aug 2026):
 Adopt the three-level hierarchy every professional capture product uses (Kofax, PaperStream, Epson Document Capture Pro):
 
 ```
-Profile ──has one── IndexSchema (4 required + ≤12 custom typed fields, versioned)
+Profile ──has one── IndexSchema (4 required + ≤16 custom typed fields, versioned)
 Group  (= batch = directory)  ── lifecycle: Scanning → Indexing → Committed
  └─ Document  (= one CSV row; immutable GUID; ordered pages)
      └─ Page  (= one image file; checksum; sequence; OCR/AI status)

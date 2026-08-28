@@ -1,10 +1,20 @@
+using System.Text.Json;
+using FgScanner.Core.Evidence;
 using Microsoft.EntityFrameworkCore;
 
 namespace FgScanner.Data;
 
 public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFactory)
 {
-    public const int MaxFields = 12;
+    /// <summary>
+    /// PLAN §8 set this at 12 to keep the pre-scan field editor usable; nothing downstream
+    /// is bounded by it (the XSD and the JSON/CSV writers are unbounded). The evidence
+    /// capture profile is 13 fields, so the editor's comfort was costing a legal contract.
+    /// </summary>
+    public const int MaxFields = 16;
+
+    /// <summary>The profile <see cref="EnsureEvidenceProfileAsync"/> creates and repairs.</summary>
+    public const string EvidenceProfileName = "Evidence";
 
     public async Task<IReadOnlyList<Profile>> ListAsync(CancellationToken cancellationToken = default)
     {
@@ -48,6 +58,42 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
             CreatedUtc = DateTime.UtcNow,
         });
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return profile;
+    }
+
+    /// <summary>
+    /// Creates the evidence capture profile, or repairs an existing one back to the contract.
+    /// The field names are parsed by the JimsStuff importer, and hand-entering thirteen of
+    /// them made one typo a silent break in a legal pipeline. Idempotent: re-seeding an
+    /// intact profile mints no schema version, so the button is safe to press twice.
+    /// </summary>
+    public async Task<Profile> EnsureEvidenceProfileAsync(CancellationToken cancellationToken = default)
+    {
+        Profile? profile;
+        await using (var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false))
+        {
+            profile = await db.Profiles
+                .FirstOrDefaultAsync(p => p.Name == EvidenceProfileName, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        profile ??= await CreateAsync(EvidenceProfileName, cancellationToken).ConfigureAwait(false);
+
+        var fields = EvidenceProfile.Fields
+            .Select(spec => new FieldDefinition
+            {
+                Name = spec.Name,
+                Type = (FieldType)spec.Type,
+                Required = spec.Required,
+                Sticky = spec.Sticky,
+                DefaultValue = spec.DefaultValue,
+                ListChoicesJson = spec.ListChoices is { Count: > 0 } choices
+                    ? JsonSerializer.Serialize(choices)
+                    : null,
+            })
+            .ToList();
+
+        await SaveSchemaAsync(profile.Id, fields, cancellationToken).ConfigureAwait(false);
         return profile;
     }
 
