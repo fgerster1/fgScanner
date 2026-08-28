@@ -185,4 +185,77 @@ public sealed class AnnotatedScanTests : IDisposable
         Assert.Empty(await NoteStatesAsync(group.Id));
         Assert.False(scan.Annotated.IsActive);
     }
+
+    [Fact]
+    public void A_scanner_with_no_sheet_in_hand_offers_no_prompt()
+    {
+        var scan = CreateScanViewModel();
+
+        Assert.False(scan.AnnotatedActive);
+        Assert.Equal("", scan.AnnotatedPrompt);
+    }
+
+    /// <summary>
+    /// Requirement 2 of the plan's Phase A: the operator is PROMPTED to lift the
+    /// notes. Without it the sequence is invisible -- a sheet stays in hand with
+    /// nothing on screen saying so, and the next ordinary scan silently becomes
+    /// its clean capture.
+    /// </summary>
+    [Fact]
+    public async Task A_sheet_in_hand_says_what_to_do_next()
+    {
+        var scan = CreateScanViewModel();
+        await AnEvidenceGroupAsync();
+
+        await scan.ScanAnnotatedCommand.ExecuteAsync(null);
+
+        Assert.True(scan.AnnotatedActive);
+        Assert.Contains("lift", scan.AnnotatedPrompt, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task The_prompt_clears_when_the_clean_capture_lands()
+    {
+        var scan = CreateScanViewModel();
+        await AnEvidenceGroupAsync();
+        await scan.ScanAnnotatedCommand.ExecuteAsync(null);
+
+        await scan.ScanCommand.ExecuteAsync(null);
+        await scan.SaveToGroupCommand.ExecuteAsync(null);
+
+        Assert.False(scan.AnnotatedActive);
+        Assert.Equal("", scan.AnnotatedPrompt);
+    }
+
+    [Fact]
+    public async Task Abandoning_the_sheet_clears_the_prompt()
+    {
+        var scan = CreateScanViewModel();
+        await AnEvidenceGroupAsync();
+        await scan.ScanAnnotatedCommand.ExecuteAsync(null);
+
+        await scan.CancelAnnotatedCommand.ExecuteAsync(null);
+
+        Assert.False(scan.AnnotatedActive);
+        Assert.Equal("", scan.AnnotatedPrompt);
+    }
+
+    /// <summary>
+    /// The panel binds to these, so a change nobody announces leaves the Cancel
+    /// control hidden while a sheet is genuinely in hand -- which is the one
+    /// control this whole design says must be reachable.
+    /// </summary>
+    [Fact]
+    public async Task The_view_is_told_when_a_sheet_comes_into_hand()
+    {
+        var scan = CreateScanViewModel();
+        await AnEvidenceGroupAsync();
+        var announced = new List<string>();
+        scan.PropertyChanged += (_, e) => announced.Add(e.PropertyName ?? "");
+
+        await scan.ScanAnnotatedCommand.ExecuteAsync(null);
+
+        Assert.Contains(nameof(scan.AnnotatedActive), announced);
+        Assert.Contains(nameof(scan.AnnotatedPrompt), announced);
+    }
 }

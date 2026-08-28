@@ -19,6 +19,16 @@
                 <ComboBox ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}" DisplayMemberPath="Name" />
             </DockPanel>
 
+            <!-- The Evidence profile's field NAMES are parsed by the JimsStuff
+                 importer, which cannot tell a misspelled field from an absent
+                 one. Entering thirteen of them by hand made a single typo a
+                 silent break in a legal pipeline. Pressing this again repairs a
+                 profile somebody has edited, and costs nothing if it is intact. -->
+            <Button Content="Build the Evidence profile"
+                    Command="{Binding CreateEvidenceProfileCommand}"
+                    HorizontalAlignment="Left" Margin="0,0,0,8"
+                    ToolTip="Create the 13-field Evidence capture profile, or repair an existing one. Safe to press twice." />
+
             <!-- With a base directory set, creating a group stops asking where to put it. -->
             <DockPanel Margin="0,0,0,8">
                 <TextBlock DockPanel.Dock="Left" Text="Base folder for new groups" VerticalAlignment="Center"

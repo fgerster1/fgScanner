@@ -73,7 +73,9 @@ the JimsStuff portal (`JimsStuff/pipeline/import_fgscanner.py`) parses committed
   the importer parses these names and cannot tell a misspelled field from an absent one.
   Re-seeding an intact profile mints no schema version, so the action is safe to repeat.
   This is what took `MaxFields` from 12 to 16 — the cap was PLAN §8 keeping the pre-scan
-  editor usable, and nothing downstream is bounded by it.
+  editor usable, and nothing downstream is bounded by it. The operator reaches it through
+  **Settings → "Build the Evidence profile"**; pressing it again is how a hand-edited
+  profile is repaired.
 - **Annotated sheets (sticky notes) are captured twice: as-found, then clean**, per
   `JimsStuff/docs/superpowers/plans/2026-08-27-annotated-pages-sticky-notes.md`. Neither
   image alone is a duplicate of the whole thing under Ohio Evid.R. 1001/1003, and lifting a
@@ -83,6 +85,13 @@ the JimsStuff portal (`JimsStuff/pipeline/import_fgscanner.py`) parses committed
   sheet after it. Ctrl+Shift+N starts the sheet; the ordinary Scan key takes the clean
   capture. Abandoning a sheet trashes its captures: an as-found with no clean partner is a
   whole-group refusal at import, by which time the box has been re-shelved.
+
+  **The Scan panel must keep showing `AnnotatedPrompt` and the Cancel control while
+  `AnnotatedActive`.** The sequence is otherwise invisible — a sheet stays part-scanned with
+  nothing on screen saying so, the next ordinary scan silently becomes its clean capture, and
+  Cancel, the one control that keeps a half-pair off the disk, is unreachable. Every path that
+  moves the sequence calls `AnnouncedAnnotatedState()`; a state change nobody announces hides
+  that control while a sheet is genuinely in hand, which a test pins directly.
 - `Feature.PreserveOriginals` stays ON for evidence groups (ADR-0003); the `originals\`
   subfolder and its checksums are part of the folder's evidentiary integrity.
 - FG Scanner deliberately has **no Bates support** and none should be added to the capture

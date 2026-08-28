@@ -284,6 +284,42 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     /// </summary>
     public AnnotatedCaptureSequence Annotated { get; } = new();
 
+    /// <summary>Whether a sheet with notes is part-scanned right now.</summary>
+    public bool AnnotatedActive => Annotated.IsActive;
+
+    /// <summary>
+    /// What the operator does next, or empty when no sheet is in hand.
+    ///
+    /// The sequence is otherwise invisible: a sheet stays part-scanned with
+    /// nothing on screen saying so, and the next ordinary scan silently becomes
+    /// its clean capture.
+    /// </summary>
+    public string AnnotatedPrompt => Annotated.NoteStateForNextCapture switch
+    {
+        AnnotatedCaptureSequence.AsFound =>
+            "Notes in place — scan the sheet exactly as you found it.",
+        AnnotatedCaptureSequence.NoteFace =>
+            "Scan the lifted note on its own.",
+        AnnotatedCaptureSequence.Clean =>
+            "Lift every note, then Scan the sheet clean. Put the notes back afterwards.",
+        _ => "",
+    };
+
+    /// <summary>
+    /// Announces the sequence's state to the view. A change nobody announces
+    /// leaves Cancel hidden while a sheet is genuinely in hand -- and that is
+    /// the one control this design says must be reachable, because an as-found
+    /// with no clean partner is a whole-group refusal at import, by which time
+    /// the box has been re-shelved.
+    /// </summary>
+    private void AnnouncedAnnotatedState()
+    {
+        OnPropertyChanged(nameof(AnnotatedActive));
+        OnPropertyChanged(nameof(AnnotatedPrompt));
+        ScanNoteFaceCommand.NotifyCanExecuteChanged();
+        CancelAnnotatedCommand.NotifyCanExecuteChanged();
+    }
+
     /// <summary>
     /// Captures a sheet with its notes in place. The capture is saved on its own, because
     /// ApplyInitialValuesAsync stamps one dictionary onto every document adopted in a save
@@ -297,6 +333,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             Annotated.Start();
         }
 
+        AnnouncedAnnotatedState();
         await ScanOneCaptureAsync();
     }
 
@@ -305,6 +342,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     private async Task ScanNoteFaceAsync()
     {
         Annotated.TakeNoteFace();
+        AnnouncedAnnotatedState();
         await ScanOneCaptureAsync();
     }
 
@@ -322,8 +360,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         finally
         {
             AutoSaveAfterScan = wasAutoSave;
-            ScanNoteFaceCommand.NotifyCanExecuteChanged();
-            CancelAnnotatedCommand.NotifyCanExecuteChanged();
+            AnnouncedAnnotatedState();
         }
     }
 
@@ -347,8 +384,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             ? "Annotated sheet abandoned — 1 capture moved to the trash."
             : $"Annotated sheet abandoned — {discarded.Count} captures moved to the trash.";
         _activeGroup.NotifyGroupContentChanged();
-        ScanNoteFaceCommand.NotifyCanExecuteChanged();
-        CancelAnnotatedCommand.NotifyCanExecuteChanged();
+        AnnouncedAnnotatedState();
     }
 
     /// <summary>

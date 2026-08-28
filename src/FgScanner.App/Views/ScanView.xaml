@@ -55,6 +55,31 @@
                         Padding="0,8" Margin="0,6,0,0"
                         ToolTip="Several scan passes with a prompt or delay between them" />
 
+                <!-- An annotated sheet is captured as found and again clean; neither
+                     image alone reproduces the whole thing. The sequence owns the
+                     NoteState value, so the operator never types one. -->
+                <Button Content="Sheet with notes  (Ctrl+Shift+N)"
+                        Command="{Binding ScanAnnotatedCommand}"
+                        Padding="0,8" Margin="0,6,0,0"
+                        ToolTip="Scan a sheet with sticky notes attached: as found, then clean" />
+
+                <!-- Only while a sheet is part-scanned. Without it the sequence is
+                     invisible: the sheet stays in hand with nothing on screen saying
+                     so, and Cancel — the one control that keeps a half-pair off the
+                     disk — is unreachable. -->
+                <TextBlock Text="{Binding AnnotatedPrompt}" TextWrapping="Wrap"
+                           FontWeight="SemiBold" Margin="0,10,0,0"
+                           Visibility="{Binding AnnotatedActive, Converter={x:Static views:BoolToVisibilityConverter.Instance}}" />
+                <UniformGrid Columns="2" Margin="0,6,0,0"
+                             Visibility="{Binding AnnotatedActive, Converter={x:Static views:BoolToVisibilityConverter.Instance}}">
+                    <Button Content="Note on its own" Command="{Binding ScanNoteFaceCommand}"
+                            Padding="0,6" Margin="0,0,3,0"
+                            ToolTip="Ctrl+Shift+F — for a note that cannot be read where it sat, or has writing on its back" />
+                    <Button Content="Cancel sheet" Command="{Binding CancelAnnotatedCommand}"
+                            Padding="0,6" Margin="3,0,0,0"
+                            ToolTip="Abandon this sheet and move its captures to the Trash" />
+                </UniformGrid>
+
                 <Button Content="{Binding SaveTargetText}" Command="{Binding SaveToGroupCommand}"
                         Padding="0,8" Margin="0,8,0,0" />
 

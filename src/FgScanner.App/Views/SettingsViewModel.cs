@@ -497,6 +497,33 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Builds the Evidence capture profile, or repairs one somebody has edited.
+    ///
+    /// The thirteen field NAMES are parsed by the JimsStuff importer, which
+    /// cannot tell a misspelled field from an absent one -- so hand-entering
+    /// them made a single typo a silent break in a legal pipeline. Pressing
+    /// this twice is how a damaged profile is repaired, and re-seeding an
+    /// intact one mints no schema version, so it costs nothing.
+    /// </summary>
+    [RelayCommand]
+    private async Task CreateEvidenceProfileAsync()
+    {
+        try
+        {
+            var profile = await _profileService.EnsureEvidenceProfileAsync();
+            await ReloadAsync();
+            SelectedProfile = Profiles.First(p => p.Id == profile.Id);
+            ProfilesChanged?.Invoke();
+            StatusText = $"\"{ProfileService.EvidenceProfileName}\" profile is ready — "
+                       + $"{FgScanner.Core.Evidence.EvidenceProfile.Fields.Count} fields.";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Could not build the Evidence profile: {ex.Message}";
+        }
+    }
+
     /// <summary>Base folder of the selected profile; empty means "ask every time".</summary>
     public string BaseDirectory => SelectedProfile?.BaseDirectory ?? "";
 
