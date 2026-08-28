@@ -65,7 +65,24 @@ the JimsStuff portal (`JimsStuff/pipeline/import_fgscanner.py`) parses committed
 - **Stable external contracts — renaming silently breaks a legal pipeline:** the `index.json`
   row keys (`sequence`, `pageId`, `checksum`, `isBlank`, `originalChecksum`, plus the original
   six), `manifest.json`'s `evidenceExport`, and the Evidence profile's field names (`DocNo`,
-  `DocDate`, `DocType`, `Title`, `Parties`, `Operator`, `Redact`, `Box`, `Notes`).
+  `DocDate`, `DocType`, `Title`, `Parties`, `Operator`, `Redact`, `Box`, `Notes`,
+  `NoteState`, `NoteAuthor`, `NoteBasis`, `NoteWhen`).
+- **`FgScanner.Core.Evidence.EvidenceProfile` is that field contract as code, and
+  `ProfileService.EnsureEvidenceProfileAsync` creates or repairs the profile from it.** The
+  operator used to hand-enter all of them, which made one typo (`NoteAuthour`) a silent break:
+  the importer parses these names and cannot tell a misspelled field from an absent one.
+  Re-seeding an intact profile mints no schema version, so the action is safe to repeat.
+  This is what took `MaxFields` from 12 to 16 — the cap was PLAN §8 keeping the pre-scan
+  editor usable, and nothing downstream is bounded by it.
+- **Annotated sheets (sticky notes) are captured twice: as-found, then clean**, per
+  `JimsStuff/docs/superpowers/plans/2026-08-27-annotated-pages-sticky-notes.md`. Neither
+  image alone is a duplicate of the whole thing under Ohio Evid.R. 1001/1003, and lifting a
+  note before capture is alteration. `AnnotatedCaptureSequence` owns the `NoteState` value so
+  the operator never types it — **`NoteState` must never be made sticky**, because pending
+  field values persist across scans and a sticky one would stamp `as-found` onto every plain
+  sheet after it. Ctrl+Shift+N starts the sheet; the ordinary Scan key takes the clean
+  capture. Abandoning a sheet trashes its captures: an as-found with no clean partner is a
+  whole-group refusal at import, by which time the box has been re-shelved.
 - `Feature.PreserveOriginals` stays ON for evidence groups (ADR-0003); the `originals\`
   subfolder and its checksums are part of the folder's evidentiary integrity.
 - FG Scanner deliberately has **no Bates support** and none should be added to the capture

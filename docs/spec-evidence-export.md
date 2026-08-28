@@ -33,7 +33,13 @@ genuine question is raised as to authenticity**. Three rules follow for FG Scann
 
 ## The contract (what the importer will rely on)
 
-- **Evidence profile fields** (created by the operator, documented in the JimsStuff runbook):
+- **Evidence profile fields.** No longer hand-entered: `FgScanner.Core.Evidence.EvidenceProfile`
+  is the definition and `ProfileService.EnsureEvidenceProfileAsync` creates or repairs the
+  profile from it, because a typo in a name the importer parses is indistinguishable
+  downstream from an absent field. Four fields were added for the annotated-sheet protocol —
+  `NoteState` (List: `as-found`/`note-face`/`clean`, **never sticky**), `NoteAuthor` (Text,
+  sticky), `NoteBasis` (List: `stated`/`handwriting`/`signed`/`none`, sticky) and `NoteWhen`
+  (Text, sticky — ISO date, `unknown`, or `case-prep`). The original nine:
   `DocNo` (Number, required, sticky — document boundary), `DocDate` (Text — permits the
   portal's `~` approximate-date notation, which the strict Date type would forbid), `DocType`
   (List — the portal's 13-value vocabulary), `Title`, `Parties` (Text, `;`-separated),
