@@ -258,4 +258,24 @@ public sealed class AnnotatedScanTests : IDisposable
         Assert.Contains(nameof(scan.AnnotatedActive), announced);
         Assert.Contains(nameof(scan.AnnotatedPrompt), announced);
     }
+
+    /// <summary>
+    /// Found by running the app, not by the suite: every other test here calls
+    /// ExecuteAsync directly, which bypasses CanExecute, so the button could be
+    /// dead on screen while all of them passed. Selecting a device is the moment
+    /// scanning becomes possible, and a command that is not told stays disabled
+    /// for the life of the window -- which is what had happened to Batch scan.
+    /// </summary>
+    [Fact]
+    public async Task Choosing_a_device_enables_every_command_that_needs_one()
+    {
+        var scan = CreateScanViewModel();
+        Assert.False(scan.ScanAnnotatedCommand.CanExecute(null));
+
+        await scan.RefreshDevicesCommand.ExecuteAsync(null);
+
+        Assert.True(scan.ScanCommand.CanExecute(null));
+        Assert.True(scan.BatchScanCommand.CanExecute(null));
+        Assert.True(scan.ScanAnnotatedCommand.CanExecute(null));
+    }
 }

@@ -77,8 +77,14 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private ScanDriver _selectedDriver;
 
+    // Every command gated on CanScan, not just ScanCommand: a CanExecute that
+    // is never re-evaluated leaves its button dead for the life of the window.
+    // Selecting a device is the moment they all become possible.
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ScanCommand))]
+    [NotifyCanExecuteChangedFor(nameof(BatchScanCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ScanAnnotatedCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ScanNoteFaceCommand))]
     private ScanDeviceInfo? _selectedDevice;
 
     [ObservableProperty]
@@ -101,7 +107,11 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ScanCommand))]
+    [NotifyCanExecuteChangedFor(nameof(BatchScanCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ScanAnnotatedCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ScanNoteFaceCommand))]
     [NotifyCanExecuteChangedFor(nameof(CancelScanCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CancelAnnotatedCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveToGroupCommand))]
     private bool _isScanning;
 
