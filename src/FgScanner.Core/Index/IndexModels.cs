@@ -16,7 +16,19 @@ public enum IndexFieldType
     List,
 }
 
-public sealed record IndexFieldDef(string Name, IndexFieldType Type, bool Required);
+/// <summary>
+/// Whether a field is answered once per row or once per group. Batch fields exist because the
+/// evidence station retyped Box and Operator on every page of a box; sticky only chained a value
+/// onto new rows, so the first page still had to be typed and a correction had to be repeated.
+/// </summary>
+public enum FieldScope
+{
+    Row,
+    Batch,
+}
+
+public sealed record IndexFieldDef(
+    string Name, IndexFieldType Type, bool Required, FieldScope Scope = FieldScope.Row);
 
 /// <summary>
 /// One export row (= one document). Custom values are canonical strings: ISO dates, invariant numbers.
