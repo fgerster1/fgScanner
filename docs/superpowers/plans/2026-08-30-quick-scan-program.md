@@ -62,6 +62,12 @@ These were settled before planning. They are not open for a phase to relitigate.
 7. **Both Jim and other people use this station.** The same person switches between the
    legal-evidence surface and the casual one, which makes mode confusion a real hazard rather
    than a theoretical one. See §5.4.
+8. **The two surfaces are visually distinct**, not merely differently labelled. A label reads the
+   same to someone moving quickly; this is the mistake that costs a rescan. See §5.4.
+9. **Nothing is hidden behind a station-type flag.** Quick Scan is always visible, on every
+   install. FG Scanner is not a one-case tool — it is expected to serve other projects of the
+   same shape as JimsStuff — so gating features on "this is an evidence machine" would be
+   building for a configuration that does not generalise.
 
 ---
 
@@ -198,10 +204,31 @@ So the mitigations all point one way — make it unmistakable which surface you 
 
 - The Quick Scan header states plainly what it is **not** for: *"For everyday documents. Not for
   case evidence — use Scan for that."*
-- The two sections are visually distinct at a glance, not merely differently labelled.
 - The refusal in §5.3 catches the case where someone points Quick Scan at a case folder.
 - The plain-language guide (§7.5) opens with a "which one do I use?" decision, before anything
   else.
+- **The two surfaces are visually distinct** — the requirement below.
+
+#### The visual distinction
+
+Text labels are not enough. Someone moving quickly reads position and colour, not words, and both
+screens otherwise share the same shell, the same chrome and a scan button in roughly the same
+place. The distinction has to register before anyone reads anything.
+
+Three requirements, and the third is the one usually skipped:
+
+1. **A persistent accent** carried on the section's header band, distinct between the two
+   surfaces, present at all times rather than only on hover or focus.
+2. **Both themes.** The app is Fluent light/dark. The accent must be legible in both and must not
+   be a colour that reads as an error state in either.
+3. **Never colour alone.** Around 8% of men have some colour-vision deficiency, and the whole
+   point of this distinction is that it works for someone who is not looking carefully. Pair the
+   accent with a persistent word and an icon, so the surface is identifiable by three independent
+   channels. A design that would fail a greyscale screenshot has not met this requirement — a
+   greyscale check is the cheapest possible test of it.
+
+Deliberately **not** specified here: the exact colours. That is Phase 3's design work, informed by
+the existing Fluent palette rather than invented against it.
 
 ---
 
@@ -411,6 +438,10 @@ Layout, mirroring the reference screenshot:
 - **Say what this screen is not for.** A header line: *"For everyday documents. Not for case
   evidence — use Scan for that."* The same person uses both surfaces, and a box scanned here is a
   box with no index, no checksums and no preserved originals (§5.4).
+- **Make the two surfaces visually distinct** per §5.4 — a persistent accent on the section header
+  band, working in both Fluent themes, paired with a word and an icon so it never depends on
+  colour alone. Verify with a greyscale screenshot: if the two screens are indistinguishable
+  without colour, the requirement is not met.
 
 **Testing:** view-model level, as the App test project does. Assert the info panel's computed image
 and data sizes against known dpi/area combinations; assert format/extension pairing; assert the
@@ -447,6 +478,14 @@ resolved filename preview updates with the pattern.
 > case evidence — use Scan for that." The same operator uses both surfaces on this machine, and
 > a box scanned here gets no index, no checksums and no preserved originals — with no error to
 > tell them.
+>
+> **Make Scan and Quick Scan visually distinct**, per §5.4 of the plan. A persistent accent on the
+> section header band, different between the two, legible in both Fluent light and dark themes,
+> and **never colour alone** — pair it with a word and an icon so it survives colour-vision
+> deficiency and a hurried glance. Take a greyscale screenshot of both screens: if you cannot tell
+> them apart without colour, the requirement is not met. Choose colours from the existing Fluent
+> palette rather than inventing new ones. Consider loading the `frontend-design` skill for the
+> accent and hierarchy work, but note it is web-oriented — apply the principles, not its CSS.
 >
 > The preview pane, the left tool rail and the Email button belong to later phases. Put them in the
 > layout **disabled, with a tooltip saying which feature they are waiting for** — never an enabled
@@ -884,14 +923,27 @@ value here divided by cost, given what this codebase already has.
    operational section in this plan: the same person moves between a surface with legal weight
    and one without, and only one of the two possible mistakes is self-correcting.
 
-**Still open:**
+4. **The two surfaces are visually distinct**, not just differently labelled — accent, word and
+   icon together, per §5.4. Colour alone would fail exactly the hurried glance it exists to catch.
+5. **Nothing is hidden behind a station-type flag.** Quick Scan ships visible everywhere.
 
-- Should the two sections differ **visually** (accent colour, header treatment) or is the header
-  line enough? My recommendation is visual — a label reads the same on both screens to someone
-  moving quickly, and this is the mistake that costs a rescan.
-- Should Quick Scan be reachable at all on a station configured for evidence work, or hidden
-  behind a setting? Leaving it visible is simpler and matches "Jim uses both"; hiding it trades
-  convenience for one less way to go wrong.
+**Nothing is open. This plan is ready to execute.**
+
+### 9.1 A forward-looking note, outside this plan's scope
+
+Answer 5 came with a reason worth recording: *"this application will be used for things similar to
+what JimsStuff is doing."* FG Scanner is not a one-case tool — it is expected to serve other
+projects of the same shape.
+
+That is why nothing here is gated on "this is the evidence machine", and it flags a tension that
+**this plan does not attempt to solve**: `EvidenceProfile` currently hard-codes JimsStuff's
+thirteen field names as *the* contract, and `ProfileService.EnsureEvidenceProfileAsync` builds
+exactly that one profile. A second project of the same shape would need its own field contract as
+code, its own importer agreement, and a way to choose between them.
+
+Not a problem today, and not Quick Scan's problem. But when a second case appears, the work is
+generalising the profile-as-code mechanism — not copying `EvidenceProfile.cs` and editing the
+strings, which would silently fork the contract that phase 19 worked to make singular.
 
 ---
 
