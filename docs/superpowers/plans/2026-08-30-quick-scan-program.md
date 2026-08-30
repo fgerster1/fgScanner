@@ -54,6 +54,14 @@ These were settled before planning. They are not open for a phase to relitigate.
    Correction are deliberately not built** — they are photo-restoration filters with no
    implementation in this codebase and little value for documents. This is a decision to record
    in an ADR, not an omission to fix later.
+5. **Quick Scan refuses to save into an evidence folder.** Not a warning, not a confirmation —
+   a refusal, with an explanation and a prompt to pick elsewhere. See §5.3.
+6. **The default output folder is `%USERPROFILE%\Pictures\`, and the operator can change it.**
+   The default matches the manufacturer utility the station already has; the setting lives in
+   Quick Scan's own JSON store, never the evidence settings table.
+7. **Both Jim and other people use this station.** The same person switches between the
+   legal-evidence surface and the casual one, which makes mode confusion a real hazard rather
+   than a theoretical one. See §5.4.
 
 ---
 
@@ -129,7 +137,7 @@ and costs nothing, since atomic JSON writing is already solved here.
 A test asserts the boundary directly: `FgScanner.Core` must not reference `FgScanner.Data`, and no
 Quick Scan type may appear in any `DbSet`. A wall nobody tests is a wall that erodes.
 
-### 5.2 Flow
+### 5.2 Flow (continued below in §5.3)
 
 ```
 Basic/Advanced settings ─┐
@@ -143,6 +151,57 @@ Preview (low DPI) ───────┘                                      
 
 The session folder is temp scratch, cleaned on exit and on cancel. Nothing survives except the
 file the operator asked for.
+
+### 5.3 Refusing to save into an evidence folder
+
+Quick Scan **refuses** to write anywhere inside an evidence group folder. Not a warning with an
+override — a refusal that names the folder and asks for a different one.
+
+This looks like it needs the database, since group folders are recorded in `Group.DirectoryPath`.
+It does not, and the reason matters: **a committed evidence folder identifies itself on disk.** It
+contains `manifest.json` carrying `"evidenceExport": 1` — the marker phase 16 added so an external
+importer could refuse a pre-phase-16 folder outright. Quick Scan reads the filesystem, which
+`FgScanner.Core` is perfectly able to do, and the database wall stays intact.
+
+That filesystem check is also strictly better than a database lookup would have been, because it
+catches a case a lookup misses entirely: **a group folder copied to the transfer drive**, which is
+not in this machine's database at all but is still evidence.
+
+Two nets, each covering the other's gap:
+
+| Net | Catches | Misses |
+|---|---|---|
+| `manifest.json` with `evidenceExport` in the target folder **or any ancestor** | Committed groups, including copies on other drives | A group created but not yet committed — no manifest exists yet |
+| Known group directories, passed in from the App layer (which does have database access) | Uncommitted groups on this machine | Folders copied to a machine that never had the group |
+
+The App queries `Group.DirectoryPath` and hands `QuickScanDestination` a list of forbidden roots.
+Core does not fetch it and does not know where it came from.
+
+**Ancestors are checked, not just the folder itself.** Saving into `loepp-box1\originals\` or
+`loepp-box1\anything\` is exactly as wrong as saving into `loepp-box1\`, and the `originals\`
+subfolder in particular is part of a folder's evidentiary integrity (ADR-0003).
+
+### 5.4 Mode confusion is the real operational risk
+
+Jim uses **both** surfaces on the same machine. That makes confusing them an operational hazard,
+not a hypothetical one, and it runs in one direction that matters:
+
+**Scanning evidence in Quick Scan by mistake.** The pages land as ordinary image files. No index
+row, no checksum, no `originals\` copy, no `capturedBy`, no manifest. Nothing is destroyed — but
+nothing is captured to evidentiary standard either, and the box has to be scanned again. The
+operator gets no error, because from Quick Scan's point of view nothing went wrong.
+
+The reverse direction is self-correcting: scanning a warranty card into an evidence group is
+obvious, reversible, and the person notices immediately.
+
+So the mitigations all point one way — make it unmistakable which surface you are on:
+
+- The Quick Scan header states plainly what it is **not** for: *"For everyday documents. Not for
+  case evidence — use Scan for that."*
+- The two sections are visually distinct at a glance, not merely differently labelled.
+- The refusal in §5.3 catches the case where someone points Quick Scan at a case folder.
+- The plain-language guide (§7.5) opens with a "which one do I use?" decision, before anything
+  else.
 
 ---
 
@@ -249,6 +308,12 @@ UI and no possibility of database access.
   - Counter persists across sessions (see presets file in §5.1) and resets per day if the pattern
     contains `$(date)`.
 - Reuse `TokenExpander` where it fits; extend rather than duplicate if it does not.
+- `EvidenceFolderGuard` — refuses a destination inside an evidence folder, per §5.3:
+  - Rejects if the target folder **or any ancestor** contains `manifest.json` with
+    `"evidenceExport"`.
+  - Rejects if the target is at or under any path in a caller-supplied forbidden-roots list.
+  - Returns a refusal carrying the offending folder, so the UI can name it rather than saying
+    "invalid folder".
 
 **The boundary test:** assert `FgScanner.Core` has no reference to `FgScanner.Data`, so Quick Scan
 structurally cannot reach the evidence database.
@@ -266,6 +331,21 @@ structurally cannot reach the evidence database.
 > existing file** — if the name is taken, increment until one is free, and test that. Read
 > `src/FgScanner.Core/Index/FieldValidator.cs:30` (`TokenExpander`) first and reuse it if it fits;
 > extend it rather than writing a second token expander.
+>
+> Also add `EvidenceFolderGuard`. Quick Scan **refuses** — not warns — to save anywhere inside a
+> legal-evidence folder. Two independent checks:
+>
+> 1. Reject if the target folder **or any ancestor** contains a `manifest.json` holding
+>    `"evidenceExport"`. A committed evidence folder identifies itself on disk, so this needs no
+>    database, and it catches group folders copied to a transfer drive that this machine has never
+>    heard of.
+> 2. Reject if the target is at or under any path in a forbidden-roots list supplied by the caller.
+>    The App passes known group directories in; Core does not fetch them and must not try.
+>
+> Check ancestors, not just the folder itself — saving into `loepp-box1\originals\` is exactly as
+> wrong as saving into `loepp-box1\`, and `originals\` is part of a folder's evidentiary integrity
+> (ADR-0003). The refusal must carry the offending folder path so the UI can name it, rather than
+> reporting a generic "invalid folder".
 >
 > This code must be unable to touch the database. It goes in `FgScanner.Core`, which does not
 > reference `FgScanner.Data` — keep it that way, and add a test asserting `FgScanner.Core` has no
@@ -322,6 +402,15 @@ Layout, mirroring the reference screenshot:
 - Preview and the left tool rail are present but disabled in this phase, with tooltips.
 - Toolbar/button-bar buttons that do nothing yet must be **disabled with a reason**, never enabled
   and silently inert.
+- **Default output folder is `%USERPROFILE%\Pictures\`**, and the operator can change it. The
+  chosen folder is remembered between sessions in Quick Scan's own store, not the settings table.
+- **Wire the evidence-folder refusal.** The App queries `Group.DirectoryPath` and passes the list
+  to `EvidenceFolderGuard` (Phase 2). When the operator picks a forbidden folder, refuse at the
+  point of choosing — not after a scan has already run — and name the folder: *"That folder holds
+  case evidence. Pick somewhere else."*
+- **Say what this screen is not for.** A header line: *"For everyday documents. Not for case
+  evidence — use Scan for that."* The same person uses both surfaces, and a box scanned here is a
+  box with no index, no checksums and no preserved originals (§5.4).
 
 **Testing:** view-model level, as the App test project does. Assert the info panel's computed image
 and data sizes against known dpi/area combinations; assert format/extension pairing; assert the
@@ -344,6 +433,20 @@ resolved filename preview updates with the pattern.
 >
 > **Hard boundary: Quick Scan must never touch the database.** No groups, no documents, no pages.
 > Use `FgScanner.Core/QuickScan/` from Phase 2 for the session and naming.
+>
+> Default the output folder to `%USERPROFILE%\Pictures\`, let the operator change it, and remember
+> their choice between sessions in Quick Scan's own store — not the settings table.
+>
+> **Wire the evidence-folder refusal from Phase 2.** Query `Group.DirectoryPath` in the App layer
+> and pass those paths to `EvidenceFolderGuard` as forbidden roots. Refuse at the moment the
+> operator picks the folder, not after a scan has run, and name the folder in the message —
+> "That folder holds case evidence. Pick somewhere else." A refusal the operator only discovers
+> after waiting for a 200-page stack is a bug.
+>
+> Put a line in the header saying what this screen is not for: "For everyday documents. Not for
+> case evidence — use Scan for that." The same operator uses both surfaces on this machine, and
+> a box scanned here gets no index, no checksums and no preserved originals — with no error to
+> tell them.
 >
 > The preview pane, the left tool rail and the Email button belong to later phases. Put them in the
 > layout **disabled, with a tooltip saying which feature they are waiting for** — never an enabled
@@ -675,8 +778,22 @@ Keep it to a few lines. CLAUDE.md is read at the start of every session and pays
 - **`docs/FEATURE-PARITY.md`** — rows per phase as they land.
 - **`docs/manual-tests.md`** — a Quick Scan block. The WPF GUI cannot be verified by an agent, as
   phase 19 established; the checklist is the only coverage of what a human must confirm.
-- **`docs/user-guide.md`** — a Quick Scan section, aimed at whoever uses the machine for ordinary
-  documents.
+- **`docs/user-guide.md`** — a Quick Scan section for the general reference.
+- **`build/installer/QUICK-SCAN-HOWTO.txt`** — a plain-language guide staged on the machine
+  alongside `EVIDENCE-SETUP.txt`. **Jim uses this surface too, not only other people**, so it gets
+  the same treatment that guide got: short steps, one action each, a "what you should see" after
+  the ones that can go wrong.
+
+  It must **open with the choice, before anything else**:
+
+  > **Which one do I use?**
+  > Scanning papers for the court case? Use **Scan**. Everything else — a receipt, a letter, a
+  > photo, a warranty card? Use **Quick Scan**.
+  > If you are not sure, use **Scan**. It is easy to move a page out later. It is not easy to go
+  > back and re-scan a box properly.
+
+  That last line is the whole point. The two mistakes are not symmetrical (§5.4), so the guidance
+  should not be either. First draft lands with Phase 3, updated as each later phase ships.
 
 ### 7.6 Model selection per phase
 
@@ -751,19 +868,30 @@ value here divided by cost, given what this codebase already has.
 | Phase 1 changes evidence scanning behaviour | Legal capture path regresses | Every new option defaults to current behaviour; a test pins the existing mapping |
 | Marquee coordinate conversion is wrong | Silently mis-cropped scans | Direct unit tests on preview-px → physical → output-px, not just UI tests |
 | MAPI unavailable on Windows 11 | Email dead-ends | Phase 0 spike; fallback is the specified behaviour, not an afterthought |
-| Quick Scan output lands in an evidence folder | Casual scan pollutes a legal group | Structural wall (§5.1) plus a test; consider warning if the chosen folder is inside a group directory |
+| Quick Scan output lands in an evidence folder | Casual scan mistaken for evidence | Structural wall (§5.1) plus the two-net refusal (§5.3), tested both ways |
+| **Evidence scanned in Quick Scan by mistake** | **Box captured with no index, checksums or originals — and no error. Must be rescanned** | Header states what the screen is not for; visually distinct sections; the guide opens with the choice (§5.4) |
 | GUI cannot be verified by an agent | Ships unverified | `docs/manual-tests.md` checklist per phase, as phase 19 established |
 | Scope creep into a photo editor | Never ships | ADR-0008 records what is deliberately excluded |
 
-**Open questions for you:**
+**Answered 2026-08-30:**
 
-1. **Should Quick Scan refuse to save into an evidence group folder?** I would say yes — warn and
-   require confirmation. A casual scan landing inside `loepp-box1` would be invisible to the
-   importer but confusing to a human, and worse, could be mistaken for evidence.
-2. **Default output folder.** The reference uses `C:\Users\<user>\Pictures\`. Reasonable default,
-   or somewhere else on this machine?
-3. **Does Jim use this at all**, or is it purely for the other people using that station? It
-   changes how much hand-holding the user-guide section needs.
+1. **Refuse, not warn.** Quick Scan will not save into an evidence folder at all — no override.
+   Implemented as two independent nets in §5.3, one of which also catches group folders copied to
+   a transfer drive that this machine has no database record of.
+2. **Default `%USERPROFILE%\Pictures\`, operator-changeable**, remembered in Quick Scan's own
+   store rather than the evidence settings table.
+3. **Jim uses it too**, alongside other people. That is what makes §5.4 the most important
+   operational section in this plan: the same person moves between a surface with legal weight
+   and one without, and only one of the two possible mistakes is self-correcting.
+
+**Still open:**
+
+- Should the two sections differ **visually** (accent colour, header treatment) or is the header
+  line enough? My recommendation is visual — a label reads the same on both screens to someone
+  moving quickly, and this is the mistake that costs a rescan.
+- Should Quick Scan be reachable at all on a station configured for evidence work, or hidden
+  behind a setting? Leaving it visible is simpler and matches "Jim uses both"; hiding it trades
+  convenience for one less way to go wrong.
 
 ---
 
