@@ -15,9 +15,16 @@ public partial class GroupsView : UserControl
     private const string PreviewWidthKey = "Session.PreviewPanelWidth";
     private const string PreviewHeightKey = "Session.PreviewPanelHeight";
 
+    // Mirror the grid minimums and splitter thickness in GroupsView.xaml.
+    private const double EntryGridMinWidth = 240;
+    private const double SplitterThickness = 6;
+    private const double PreviewMinWidth = 200;
+    private const double PreviewMinHeight = 90;
+
     public GroupsView()
     {
         InitializeComponent();
+        _previewFit = new FitPolicy(_previewZoom);
         DataContextChanged += (_, _) =>
         {
             if (DataContext is GroupsViewModel vm)
@@ -33,14 +40,16 @@ public partial class GroupsView : UserControl
     /// <summary>
     /// A panel the user dragged wider that snaps back on the next launch has not really been made
     /// resizable. Stored as plain numbers rather than window state so a bad value cannot wedge the
-    /// layout — anything unparseable or out of range falls back to the design size.
+    /// layout — anything unparseable or below the minimum falls back to the design size. There is no
+    /// upper bound: <see cref="OnPreviewRoomChanged"/> limits what is shown to the room available, so
+    /// a size saved on a large monitor survives a session on a small one.
     /// </summary>
     private async Task RestorePanelSizesAsync(GroupsViewModel vm)
     {
         try
         {
-            PreviewColumn.Width = await ReadLengthAsync(vm, PreviewWidthKey, 300, 200, 1600);
-            PreviewRow.Height = await ReadLengthAsync(vm, PreviewHeightKey, 190, 90, 2000);
+            PreviewColumn.Width = await ReadLengthAsync(vm, PreviewWidthKey, 300, PreviewMinWidth);
+            PreviewRow.Height = await ReadLengthAsync(vm, PreviewHeightKey, 190, PreviewMinHeight);
         }
         catch (Exception ex)
         {
@@ -49,12 +58,12 @@ public partial class GroupsView : UserControl
     }
 
     private static async Task<GridLength> ReadLengthAsync(
-        GroupsViewModel vm, string key, double fallback, double minimum, double maximum)
+        GroupsViewModel vm, string key, double fallback, double minimum)
     {
         var stored = await vm.Settings.GetAsync(key, "");
         return double.TryParse(stored, System.Globalization.NumberStyles.Float,
                 System.Globalization.CultureInfo.InvariantCulture, out var value)
-            && value >= minimum && value <= maximum
+            && double.IsFinite(value) && value >= minimum
             ? new GridLength(value)
             : new GridLength(fallback);
     }
@@ -67,6 +76,42 @@ public partial class GroupsView : UserControl
     private void OnSplitterDragCompleted(
         object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e) => SavePanelSizes();
 
+    /// <summary>
+    /// The value panels and toolbars above the grid take at most this share of the height. On a
+    /// short window they would otherwise wrap into enough rows to leave the grid and preview no room.
+    /// </summary>
+    private const double TopAreaShare = 0.45;
+
+    private void OnDetailPanelSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (e.HeightChanged)
+        {
+            DetailTopScroller.MaxHeight = e.NewSize.Height * TopAreaShare;
+        }
+    }
+
+    /// <summary>
+    /// Limits the preview to the room it has: the entry grid keeps its minimum width, and the zoom
+    /// buttons and folder panel under the preview stay in view — the section host sizes this page to
+    /// the window, so anything pushed below the bottom would be clipped, not scrolled. Runs again when
+    /// those panels wrap to a new height.
+    ///
+    /// The limits go on MaxWidth/MaxHeight, never on Width/Height, which keep the size the user chose:
+    /// splitter drags respect the limits, Esc restores Width/Height, and a small window never
+    /// overwrites a size saved on a large one.
+    /// </summary>
+    private void OnPreviewRoomChanged(object sender, SizeChangedEventArgs e)
+    {
+        // Asked for an unlimited size, ClampPanel returns the most the room allows.
+        PreviewColumn.MaxWidth = WindowSizing.ClampPanel(
+            double.PositiveInfinity, DetailSplitGrid.ActualWidth, EntryGridMinWidth, SplitterThickness, PreviewMinWidth);
+
+        var below = PreviewTools.ActualHeight + PreviewTools.Margin.Top
+            + FolderPanel.ActualHeight + FolderPanel.Margin.Top;
+        PreviewRow.MaxHeight = WindowSizing.ClampPanel(
+            double.PositiveInfinity, DetailSplitGrid.ActualHeight, below, SplitterThickness, PreviewMinHeight);
+    }
+
     private void SavePanelSizes()
     {
         if (DataContext is not GroupsViewModel vm)
@@ -76,8 +121,8 @@ public partial class GroupsView : UserControl
 
         try
         {
-            var width = PreviewColumn.ActualWidth;
-            var height = PreviewRow.ActualHeight;
+            var width = PreviewColumn.Width.Value;
+            var height = PreviewRow.Height.Value;
             if (width > 0 && height > 0)
             {
                 _ = vm.Settings.SetAsync(
@@ -157,6 +202,7 @@ public partial class GroupsView : UserControl
 
     /// <summary>Drag-out: dragging the preview hands the page file to Explorer or another app.</summary>
     private readonly ZoomController _previewZoom = new();
+    private readonly FitPolicy _previewFit;
     private Point? _dragOrigin;
 
     private void OnThumbnailMouseMove(object sender, MouseEventArgs e)
@@ -207,11 +253,11 @@ public partial class GroupsView : UserControl
 
         if (e.Delta > 0)
         {
-            _previewZoom.In();
+            _previewFit.In();
         }
         else
         {
-            _previewZoom.Out();
+            _previewFit.Out();
         }
 
         ApplyPreviewZoom();
@@ -220,13 +266,13 @@ public partial class GroupsView : UserControl
 
     private void OnPreviewZoomIn(object sender, RoutedEventArgs e)
     {
-        _previewZoom.In();
+        _previewFit.In();
         ApplyPreviewZoom();
     }
 
     private void OnPreviewZoomOut(object sender, RoutedEventArgs e)
     {
-        _previewZoom.Out();
+        _previewFit.Out();
         ApplyPreviewZoom();
     }
 
@@ -242,18 +288,40 @@ public partial class GroupsView : UserControl
     {
         if (PreviewImage.Source is System.Windows.Media.Imaging.BitmapSource image)
         {
-            _previewZoom.Fit(
-                image.PixelWidth, image.PixelHeight,
-                PreviewScroller.ViewportWidth, PreviewScroller.ViewportHeight);
+            var layout = ImageLayout.Of(image);
+            _previewFit.Fit(
+                layout.Width, layout.Height,
+                PreviewScroller.ViewportWidth, PreviewScroller.ViewportHeight, layout.MaxScale);
         }
 
         ApplyPreviewZoom();
+    }
+
+    /// <summary>
+    /// Dragging a splitter resizes the preview; the page keeps fitting until the user zooms. This is
+    /// also where a fit asked for before the panel had a size finally happens. ScrollChanged, not
+    /// SizeChanged: the ScrollViewer publishes its new viewport only after SizeChanged has been raised,
+    /// so a re-fit there used the previous size, and a fit waiting for a first size never ran.
+    /// </summary>
+    private void OnPreviewScrollerScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if ((e.ViewportWidthChange != 0 || e.ViewportHeightChange != 0)
+            && PreviewImage.Source is System.Windows.Media.Imaging.BitmapSource image)
+        {
+            var layout = ImageLayout.Of(image);
+            _previewFit.ViewportResized(
+                layout.Width, layout.Height, e.ViewportWidth, e.ViewportHeight, layout.MaxScale);
+            ApplyPreviewZoom();
+        }
     }
 
     private void ApplyPreviewZoom()
     {
         PreviewScale.ScaleX = _previewZoom.Scale;
         PreviewScale.ScaleY = _previewZoom.Scale;
+        PreviewZoomText.Text = PreviewImage.Source is null
+            ? ""
+            : (_previewZoom.Scale * 100).ToString("0", System.Globalization.CultureInfo.InvariantCulture) + "%";
     }
 
     private void HookDetail(GroupDetailViewModel? detail)
@@ -261,6 +329,13 @@ public partial class GroupsView : UserControl
         if (_detail is not null)
         {
             _detail.SchemaLoaded -= RebuildColumns;
+        }
+
+        if (!ReferenceEquals(detail, _detail))
+        {
+            // A newly opened group starts at the top: its schema notice and Batch values (Box,
+            // Operator) sit there, and the last group's scroll position would hide them.
+            DetailTopScroller.ScrollToTop();
         }
 
         _detail = detail;

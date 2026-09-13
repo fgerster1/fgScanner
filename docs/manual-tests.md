@@ -286,3 +286,31 @@ BlackWhite 150 DPI over real text (still the `[~]` row) · all four crash-recove
 profile from scratch, and confirm its own closing test-group check passes. That validates the
 document Jim will actually follow — the contract itself is now proven, but the path a human takes
 to produce it is not.
+
+## Fit and small screens (SPEC-2026-001)
+
+The smallest supported screen is **1280 × 1024**. To check it on a bigger monitor: Windows Settings →
+System → Display → set **Display resolution** to 1280 × 1024 and **Scale** to 100%, reopen FG Scanner,
+and walk the list; then repeat at **125%**. Put your own resolution and scale back afterwards.
+
+**Fit and zoom**
+- [ ] Groups: select a page scanned at 300 DPI — the preview shows the whole page and the zoom label reads well above 21% (AC-8)
+- [ ] Drag the preview's dividers — the page keeps fitting; press + and drag again — your zoom stays; press Fit — it fits again
+- [ ] Double-click the preview — the viewer shows the whole page and Close is visible; press 100% — the page is actual paper size (hold a sheet up to the screen)
+- [ ] A narrow scan (a receipt) after Fit looks sharp, not blown up
+- [ ] Ctrl+wheel zooms the preview; the plain wheel scrolls it (AC-12)
+- [ ] With focus in the Groups grid, Ctrl+Shift+Left/Right still rotates the page
+
+**Sections** — make the window about 800 × 600, then maximize it
+- [ ] Scan, Groups, Search, Trash, Settings: every button reachable by scrolling when small (AC-9); no section scroll bars when maximized
+- [ ] A group of 1,000+ pages scrolls smoothly; a Scan session with many pages stays responsive (AC-11)
+- [ ] Groups: the value panels and toolbars stop at under half the height and scroll on their own; commit errors and the status line stay visible below them
+- [ ] Drag the window edge slowly across its minimum size — the scroll bars do not flicker
+- [ ] Switching groups opens the new one scrolled to the top; switching sections back keeps each section's own scroll position
+- [ ] The app opens fully on the monitor under the mouse and cannot be dragged smaller than about 800 × 560
+- [ ] Widen the preview, narrow the window (the grid keeps its room), widen the window (the preview returns to your width); restart — the width is remembered
+
+**Dialogs** — drag the main window near the bottom of the screen first (AC-10)
+- [ ] Batch scan…, Adjust…, Export images…, Export PDF…, Re-process…, Delete group…, Move all scans…, a name prompt (Create…), Duplicates…, and the page viewer each open fully on screen with their buttons visible
+- [ ] In each, Tab reaches the fields before the buttons, and clicking a caption does not take focus out of the field being typed in
+- [ ] First run (a fresh profile folder): the Welcome dialog fits the screen with "Start scanning" visible

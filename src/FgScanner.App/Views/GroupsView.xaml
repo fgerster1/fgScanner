@@ -4,6 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:views="clr-namespace:FgScanner.App.Views"
+             xmlns:controls="clr-namespace:FgScanner.App.Views.Controls"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=views:GroupsViewModel}">
     <Grid>
@@ -80,8 +81,14 @@
         </DockPanel>
 
         <!-- Detail: pending values, entry grid, commit -->
-        <DockPanel Grid.Column="1" DataContext="{Binding Detail}">
-            <StackPanel DockPanel.Dock="Top">
+        <DockPanel Grid.Column="1" DataContext="{Binding Detail}" SizeChanged="OnDetailPanelSizeChanged">
+            <!-- Capped (OnDetailPanelSizeChanged) and scrolled on its own: on a short window the
+                 value panels and two wrapping toolbars otherwise push the grid and preview away.
+                 Not focusable, so clicking a caption leaves keyboard focus in the grid or field.
+                 A ShortcutScrollViewer, so Ctrl+Shift+Left/Right still rotate with a toolbar button focused. -->
+            <controls:ShortcutScrollViewer x:Name="DetailTopScroller" DockPanel.Dock="Top" Focusable="False"
+                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
                 <!--
                   A group keeps the field layout it was created with, so one created before its
                   fields were defined renders an empty pane. Saying so, with the way out attached,
@@ -254,13 +261,17 @@
                     <Button Content="Duplicates…" Command="{Binding CheckDuplicatesCommand}" Padding="8,4" Margin="4,0,0,0"
                             ToolTip="Find pages in this group that look like the same document" />
                 </WrapPanel>
-                <TextBlock Text="{Binding ValidationSummary}" Foreground="IndianRed"
-                           TextWrapping="Wrap" Margin="0,0,0,4"
-                           Visibility="{Binding ValidationSummary.Length, Converter={x:Static views:CountToVisibilityConverter.Instance}}" />
-                <TextBlock Text="{Binding StatusText}" Opacity="0.8" Margin="0,0,0,6" />
             </StackPanel>
+            </controls:ShortcutScrollViewer>
 
-            <Grid>
+            <!-- Outside the capped area: why a commit was refused, and every status message, must show
+                 without scrolling, or a refused commit looks like it did nothing. -->
+            <TextBlock DockPanel.Dock="Top" Text="{Binding ValidationSummary}" Foreground="IndianRed"
+                       TextWrapping="Wrap" Margin="0,0,0,4"
+                       Visibility="{Binding ValidationSummary.Length, Converter={x:Static views:CountToVisibilityConverter.Instance}}" />
+            <TextBlock DockPanel.Dock="Top" Text="{Binding StatusText}" Opacity="0.8" Margin="0,0,0,6" />
+
+            <Grid x:Name="DetailSplitGrid" SizeChanged="OnPreviewRoomChanged">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" MinWidth="240" />
                     <ColumnDefinition Width="6" />
@@ -318,7 +329,8 @@
                             <ScrollViewer x:Name="PreviewScroller"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
-                                          PreviewMouseWheel="OnPreviewMouseWheel">
+                                          PreviewMouseWheel="OnPreviewMouseWheel"
+                                          ScrollChanged="OnPreviewScrollerScrollChanged">
                                 <Image x:Name="PreviewImage"
                                        Source="{Binding SelectedRow.ImagePath, Converter={x:Static views:PreviewImageConverter.Instance}, NotifyOnTargetUpdated=True}"
                                        TargetUpdated="OnPreviewImageChanged"
@@ -340,16 +352,19 @@
                                       DragCompleted="OnSplitterDragCompleted"
                                       ToolTip="Drag to make the preview taller" />
 
-                        <WrapPanel Grid.Row="2" Margin="0,4,0,0">
+                        <WrapPanel x:Name="PreviewTools" Grid.Row="2" Margin="0,4,0,0" SizeChanged="OnPreviewRoomChanged">
                             <Button Content="−" Click="OnPreviewZoomOut" Padding="10,2" Margin="0,0,4,0" ToolTip="Zoom out" />
                             <Button Content="+" Click="OnPreviewZoomIn" Padding="10,2" Margin="0,0,4,0" ToolTip="Zoom in" />
-                            <Button Content="Fit" Click="OnPreviewFit" Padding="8,2" Margin="0,0,4,0" />
+                            <Button Content="Fit" Click="OnPreviewFit" Padding="8,2" Margin="0,0,4,0"
+                                    ToolTip="Show the whole page" />
+                            <TextBlock x:Name="PreviewZoomText" VerticalAlignment="Center" Opacity="0.7"
+                                       MinWidth="40" Margin="0,0,8,0" />
                             <Button Content="Open full size" Command="{Binding OpenPageViewerCommand}"
                                     Padding="8,2" ToolTip="Or double-click the preview" />
                         </WrapPanel>
                     </Grid>
 
-                    <StackPanel DockPanel.Dock="Top" Margin="0,8,0,0">
+                    <StackPanel x:Name="FolderPanel" DockPanel.Dock="Top" Margin="0,8,0,0" SizeChanged="OnPreviewRoomChanged">
                         <TextBlock Text="Folder" FontWeight="SemiBold" />
                         <TextBox Text="{Binding SelectedRow.Folder, Mode=OneWay}" IsReadOnly="True"
                                  TextWrapping="Wrap" BorderThickness="0" Background="Transparent"

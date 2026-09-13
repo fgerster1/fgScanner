@@ -6,7 +6,7 @@
              xmlns:views="clr-namespace:FgScanner.App.Views"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=views:SettingsViewModel}">
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <!-- No ScrollViewer here: the shell's SectionScrollHost scrolls this page (height unbounded). -->
         <StackPanel MaxWidth="900" HorizontalAlignment="Left">
             <TextBlock Text="Profiles &amp; index fields" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,8" />
             <DockPanel Margin="0,0,0,8">
@@ -236,5 +236,4 @@
                     FontWeight="SemiBold" Padding="12,8" HorizontalAlignment="Left" />
             <TextBlock Text="{Binding StatusText}" Opacity="0.8" Margin="0,8,0,0" TextWrapping="Wrap" />
         </StackPanel>
-    </ScrollViewer>
 </UserControl>

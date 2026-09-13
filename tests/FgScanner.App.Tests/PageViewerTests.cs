@@ -1,3 +1,5 @@
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using FgScanner.App.Views;
 using Xunit;
 
@@ -60,7 +62,7 @@ public sealed class ZoomControllerTests
 
         // A 300-DPI portrait page in the short preview panel: height is the binding constraint,
         // and the scale it needs there is well below any comfortable-looking floor.
-        zoom.Fit(contentWidth: 2550, contentHeight: 3300, viewportWidth: 1000, viewportHeight: 660);
+        zoom.Fit(contentWidth: 2550, contentHeight: 3300, viewportWidth: 1000, viewportHeight: 660, maxScale: 1);
 
         Assert.Equal(0.2, zoom.Scale, 6);
         Assert.True(zoom.Scale >= ZoomController.Minimum, "Fit must stay inside the zoom limits");
@@ -71,20 +73,37 @@ public sealed class ZoomControllerTests
     {
         var zoom = new ZoomController();
 
-        zoom.Fit(contentWidth: 2000, contentHeight: 500, viewportWidth: 500, viewportHeight: 1000);
+        zoom.Fit(contentWidth: 2000, contentHeight: 500, viewportWidth: 500, viewportHeight: 1000, maxScale: 1);
 
         Assert.Equal(0.25, zoom.Scale, 6);
     }
 
     [Fact]
-    public void Fitting_never_enlarges_a_page_that_already_fits()
+    public void Fit_uses_the_layout_size_so_a_tall_page_fills_the_height()
     {
-        // Blowing a small image up to fill the window makes it blurry and tells the user nothing.
+        // A 300-DPI letter page lays out at 816x1056 units. Fed its 2550x3300 pixel count instead,
+        // the same viewer showed it 224 units tall of 700.
         var zoom = new ZoomController();
 
-        zoom.Fit(contentWidth: 100, contentHeight: 100, viewportWidth: 1000, viewportHeight: 1000);
+        zoom.Fit(contentWidth: 816, contentHeight: 1056, viewportWidth: 950, viewportHeight: 700, maxScale: 3.125);
 
-        Assert.Equal(1.0, zoom.Scale);
+        Assert.Equal(700.0 / 1056.0, zoom.Scale, 6);
+    }
+
+    /// <summary>
+    /// Replaces "never enlarges": that cap was 1.0 in layout units, which is a third of paper size for
+    /// a 300-DPI page. The real limit is where one image pixel would cover more than one screen pixel.
+    /// </summary>
+    [Theory]
+    [InlineData(3.125, 3.125)]
+    [InlineData(1.0, 1.0)]
+    public void Fit_stops_where_image_pixels_would_be_magnified(double maxScale, double expected)
+    {
+        var zoom = new ZoomController();
+
+        zoom.Fit(contentWidth: 200, contentHeight: 200, viewportWidth: 1000, viewportHeight: 1000, maxScale);
+
+        Assert.Equal(expected, zoom.Scale, 6);
     }
 
     [Theory]
@@ -100,7 +119,7 @@ public sealed class ZoomControllerTests
         zoom.In();
         var before = zoom.Scale;
 
-        zoom.Fit(2550, 3300, width, height);
+        zoom.Fit(2550, 3300, width, height, maxScale: 1);
 
         Assert.Equal(before, zoom.Scale);
     }
@@ -115,6 +134,116 @@ public sealed class ZoomControllerTests
         zoom.Reset();
 
         Assert.Equal(1.0, zoom.Scale);
+    }
+}
+
+/// <summary>
+/// How big a page image lays out. Stretch="None" draws an image at its DPI-scaled size, so Fit fed
+/// the pixel count instead rendered a 300-DPI scan 224 units tall in a 700-unit viewer.
+/// </summary>
+public sealed class ImageLayoutTests
+{
+    [Fact]
+    public void A_300_dpi_scan_lays_out_at_paper_size_not_pixel_count()
+    {
+        var layout = ImageLayout.Of(Blank(pixelWidth: 2550, pixelHeight: 3300, dpi: 300));
+
+        Assert.Equal(816, layout.Width, 6);
+        Assert.Equal(1056, layout.Height, 6);
+        Assert.Equal(3.125, layout.MaxScale, 6);
+    }
+
+    [Fact]
+    public void An_image_at_96_dpi_lays_out_at_its_pixel_size()
+    {
+        // Screenshots and files without DPI metadata: one pixel per unit, so Fit never enlarges them.
+        var layout = ImageLayout.Of(Blank(pixelWidth: 1200, pixelHeight: 800, dpi: 96));
+
+        Assert.Equal(1200, layout.Width, 6);
+        Assert.Equal(800, layout.Height, 6);
+        Assert.Equal(1.0, layout.MaxScale, 6);
+    }
+
+    private static BitmapSource Blank(int pixelWidth, int pixelHeight, double dpi) =>
+        BitmapSource.Create(
+            pixelWidth, pixelHeight, dpi, dpi, PixelFormats.Gray8, null,
+            new byte[pixelWidth * pixelHeight], pixelWidth);
+}
+
+/// <summary>
+/// When a page re-fits by itself. A fit that ignores resizing looks broken the moment a divider is
+/// dragged; one that re-fits after the user zoomed throws their zoom away.
+/// </summary>
+public sealed class FitPolicyTests
+{
+    // A 300-DPI portrait page: 816x1056 layout units, 3.125 image pixels per unit.
+    private const double PageWidth = 816;
+    private const double PageHeight = 1056;
+    private const double PixelsPerUnit = 3.125;
+
+    [Fact]
+    public void Resizing_refits_while_the_user_has_not_zoomed()
+    {
+        var zoom = new ZoomController();
+        var policy = new FitPolicy(zoom);
+        policy.Fit(PageWidth, PageHeight, 950, 700, PixelsPerUnit);
+
+        policy.ViewportResized(PageWidth, PageHeight, 950, 350, PixelsPerUnit);
+
+        Assert.Equal(350.0 / 1056.0, zoom.Scale, 6);
+    }
+
+    [Fact]
+    public void Resizing_keeps_a_zoom_the_user_chose()
+    {
+        var zoom = new ZoomController();
+        var policy = new FitPolicy(zoom);
+        policy.Fit(PageWidth, PageHeight, 950, 700, PixelsPerUnit);
+        policy.In();
+        var chosen = zoom.Scale;
+
+        policy.ViewportResized(PageWidth, PageHeight, 950, 350, PixelsPerUnit);
+
+        Assert.Equal(chosen, zoom.Scale, 6);
+    }
+
+    [Fact]
+    public void Pressing_fit_after_a_manual_zoom_resumes_refitting()
+    {
+        var zoom = new ZoomController();
+        var policy = new FitPolicy(zoom);
+        policy.Out();
+        policy.Fit(PageWidth, PageHeight, 950, 700, PixelsPerUnit);
+
+        policy.ViewportResized(PageWidth, PageHeight, 950, 350, PixelsPerUnit);
+
+        Assert.Equal(350.0 / 1056.0, zoom.Scale, 6);
+    }
+
+    [Fact]
+    public void Actual_size_counts_as_a_zoom_the_user_chose()
+    {
+        var zoom = new ZoomController();
+        var policy = new FitPolicy(zoom);
+        policy.Fit(PageWidth, PageHeight, 950, 700, PixelsPerUnit);
+        policy.Reset();
+
+        policy.ViewportResized(PageWidth, PageHeight, 950, 350, PixelsPerUnit);
+
+        Assert.Equal(1.0, zoom.Scale);
+    }
+
+    [Fact]
+    public void A_fit_asked_for_before_layout_happens_on_the_first_usable_size()
+    {
+        // A window still being laid out reports a zero viewport; the page must not open at 1:1.
+        var zoom = new ZoomController();
+        var policy = new FitPolicy(zoom);
+        policy.Fit(PageWidth, PageHeight, 0, 0, PixelsPerUnit);
+
+        policy.ViewportResized(PageWidth, PageHeight, 950, 700, PixelsPerUnit);
+
+        Assert.Equal(700.0 / 1056.0, zoom.Scale, 6);
     }
 }
 

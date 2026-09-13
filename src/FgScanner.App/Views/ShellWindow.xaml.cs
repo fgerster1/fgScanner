@@ -42,6 +42,21 @@ public partial class ShellWindow : Window
         Closing += (_, _) => SaveSession();
     }
 
+    /// <summary>
+    /// Fits the design size to the screen the window actually opened on, and centres it there.
+    /// A fixed 1200x760 is taller than a 1366x768 laptop can show above its taskbar. Done here
+    /// because by now WPF has placed the window — CenterScreen puts it on the monitor under the
+    /// mouse — but has not shown it yet.
+    /// </summary>
+    private void OnSourceInitialized(object? sender, EventArgs e)
+    {
+        var bounds = WindowSizing.FitToWorkArea(Width, Height, MonitorWorkArea.For(this));
+        Left = bounds.Left;
+        Top = bounds.Top;
+        Width = bounds.Width;
+        Height = bounds.Height;
+    }
+
     /// <summary>Search-result navigation: jump to the Groups section and select the hit's page.</summary>
     private void OpenSearchHit(FgScanner.Data.SearchHit hit)
     {
@@ -182,11 +197,47 @@ public partial class ShellWindow : Window
         }
     }
 
+    /// <summary>
+    /// The size below which each section scrolls instead of squeezing. Chosen to fit the smallest
+    /// supported screen (1280x1024) at 100% and 125% scaling, so a full-size window never scrolls
+    /// there (SPEC-2026-001 §08). Groups is the widest: groups list 270 + gap 12 + grid 240 +
+    /// splitter 6 + preview 200. Settings is a long page, so its height is left to its content (NaN).
+    /// </summary>
+    private static readonly Dictionary<string, (double Width, double Height)> SectionMinimums = new()
+    {
+        ["Scan"] = (600, 480),
+        ["Groups"] = (760, 520),
+        ["Search"] = (600, 400),
+        ["Trash"] = (600, 400),
+        ["Settings"] = (700, double.NaN),
+    };
+
+    /// <summary>
+    /// Where each section was scrolled to when the user left it. The sections share one host, so
+    /// without this a section opened at the previous section's offset: Groups scrolled right and down
+    /// because Settings had been.
+    /// </summary>
+    private readonly Dictionary<string, Point> _sectionOffsets = new(StringComparer.Ordinal);
+
+    private string? _shownSection;
+
     private void ShowSection(string section)
     {
         if (_sections.TryGetValue(section, out var view))
         {
+            if (_shownSection is not null)
+            {
+                _sectionOffsets[_shownSection] = new Point(SectionHost.HorizontalOffset, SectionHost.VerticalOffset);
+            }
+
+            var minimum = SectionMinimums.GetValueOrDefault(section, (0, 0));
+            SectionHost.MinContentWidth = minimum.Width;
+            SectionHost.MinContentHeight = minimum.Height;
             SectionHost.Content = view;
+            var offset = _sectionOffsets.GetValueOrDefault(section);
+            SectionHost.ScrollToHorizontalOffset(offset.X);
+            SectionHost.ScrollToVerticalOffset(offset.Y);
+            _shownSection = section;
             if (section == "Trash" && view is TrashView { DataContext: TrashViewModel trash })
             {
                 _ = trash.RefreshAsync();
