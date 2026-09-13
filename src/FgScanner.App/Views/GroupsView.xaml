@@ -318,7 +318,8 @@
                             <ScrollViewer x:Name="PreviewScroller"
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
-                                          PreviewMouseWheel="OnPreviewMouseWheel">
+                                          PreviewMouseWheel="OnPreviewMouseWheel"
+                                          SizeChanged="OnPreviewScrollerSizeChanged">
                                 <Image x:Name="PreviewImage"
                                        Source="{Binding SelectedRow.ImagePath, Converter={x:Static views:PreviewImageConverter.Instance}, NotifyOnTargetUpdated=True}"
                                        TargetUpdated="OnPreviewImageChanged"
@@ -343,7 +344,10 @@
                         <WrapPanel Grid.Row="2" Margin="0,4,0,0">
                             <Button Content="−" Click="OnPreviewZoomOut" Padding="10,2" Margin="0,0,4,0" ToolTip="Zoom out" />
                             <Button Content="+" Click="OnPreviewZoomIn" Padding="10,2" Margin="0,0,4,0" ToolTip="Zoom in" />
-                            <Button Content="Fit" Click="OnPreviewFit" Padding="8,2" Margin="0,0,4,0" />
+                            <Button Content="Fit" Click="OnPreviewFit" Padding="8,2" Margin="0,0,4,0"
+                                    ToolTip="Show the whole page" />
+                            <TextBlock x:Name="PreviewZoomText" VerticalAlignment="Center" Opacity="0.7"
+                                       MinWidth="40" Margin="0,0,8,0" />
                             <Button Content="Open full size" Command="{Binding OpenPageViewerCommand}"
                                     Padding="8,2" ToolTip="Or double-click the preview" />
                         </WrapPanel>

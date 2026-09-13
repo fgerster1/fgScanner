@@ -18,6 +18,7 @@ public partial class GroupsView : UserControl
     public GroupsView()
     {
         InitializeComponent();
+        _previewFit = new FitPolicy(_previewZoom);
         DataContextChanged += (_, _) =>
         {
             if (DataContext is GroupsViewModel vm)
@@ -157,6 +158,7 @@ public partial class GroupsView : UserControl
 
     /// <summary>Drag-out: dragging the preview hands the page file to Explorer or another app.</summary>
     private readonly ZoomController _previewZoom = new();
+    private readonly FitPolicy _previewFit;
     private Point? _dragOrigin;
 
     private void OnThumbnailMouseMove(object sender, MouseEventArgs e)
@@ -207,11 +209,11 @@ public partial class GroupsView : UserControl
 
         if (e.Delta > 0)
         {
-            _previewZoom.In();
+            _previewFit.In();
         }
         else
         {
-            _previewZoom.Out();
+            _previewFit.Out();
         }
 
         ApplyPreviewZoom();
@@ -220,13 +222,13 @@ public partial class GroupsView : UserControl
 
     private void OnPreviewZoomIn(object sender, RoutedEventArgs e)
     {
-        _previewZoom.In();
+        _previewFit.In();
         ApplyPreviewZoom();
     }
 
     private void OnPreviewZoomOut(object sender, RoutedEventArgs e)
     {
-        _previewZoom.Out();
+        _previewFit.Out();
         ApplyPreviewZoom();
     }
 
@@ -242,18 +244,38 @@ public partial class GroupsView : UserControl
     {
         if (PreviewImage.Source is System.Windows.Media.Imaging.BitmapSource image)
         {
-            _previewZoom.Fit(
-                image.PixelWidth, image.PixelHeight,
-                PreviewScroller.ViewportWidth, PreviewScroller.ViewportHeight);
+            var layout = ImageLayout.Of(image);
+            _previewFit.Fit(
+                layout.Width, layout.Height,
+                PreviewScroller.ViewportWidth, PreviewScroller.ViewportHeight, layout.MaxScale);
         }
 
         ApplyPreviewZoom();
+    }
+
+    /// <summary>
+    /// Dragging a splitter resizes the preview; the page keeps fitting until the user zooms. This is
+    /// also where a fit asked for before the panel had a size finally happens.
+    /// </summary>
+    private void OnPreviewScrollerSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (PreviewImage.Source is System.Windows.Media.Imaging.BitmapSource image)
+        {
+            var layout = ImageLayout.Of(image);
+            _previewFit.ViewportResized(
+                layout.Width, layout.Height,
+                PreviewScroller.ViewportWidth, PreviewScroller.ViewportHeight, layout.MaxScale);
+            ApplyPreviewZoom();
+        }
     }
 
     private void ApplyPreviewZoom()
     {
         PreviewScale.ScaleX = _previewZoom.Scale;
         PreviewScale.ScaleY = _previewZoom.Scale;
+        PreviewZoomText.Text = PreviewImage.Source is null
+            ? ""
+            : (_previewZoom.Scale * 100).ToString("0", System.Globalization.CultureInfo.InvariantCulture) + "%";
     }
 
     private void HookDetail(GroupDetailViewModel? detail)

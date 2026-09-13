@@ -18,11 +18,12 @@ public partial class PageViewerWindow : Window
     private readonly IReadOnlyList<DocumentRow> _pages;
     private readonly PageNavigator _navigator;
     private readonly ZoomController _zoom = new();
-    private bool _fitOnNextLayout = true;
+    private readonly FitPolicy _fit;
 
     public PageViewerWindow(IReadOnlyList<DocumentRow> pages, int startIndex)
     {
         InitializeComponent();
+        _fit = new FitPolicy(_zoom);
         _pages = pages;
         _navigator = new PageNavigator(pages.Count, startIndex);
         Loaded += (_, _) => Show(_navigator.Index);
@@ -74,22 +75,19 @@ public partial class PageViewerWindow : Window
         }
     }
 
+    /// <summary>
+    /// A fit asked for while the window is still laying out stays pending in the policy, and the
+    /// first real size — <see cref="OnScrollerSizeChanged"/> — carries it out.
+    /// </summary>
     private void FitToViewport()
     {
-        if (PageImage.Source is not BitmapImage image)
+        if (PageImage.Source is not BitmapSource image)
         {
             return;
         }
 
-        if (Scroller.ViewportWidth <= 0 || Scroller.ViewportHeight <= 0)
-        {
-            // Still laying out — fit once the ScrollViewer knows its own size.
-            _fitOnNextLayout = true;
-            return;
-        }
-
-        _fitOnNextLayout = false;
-        _zoom.Fit(image.PixelWidth, image.PixelHeight, Scroller.ViewportWidth, Scroller.ViewportHeight);
+        var layout = ImageLayout.Of(image);
+        _fit.Fit(layout.Width, layout.Height, Scroller.ViewportWidth, Scroller.ViewportHeight, layout.MaxScale);
         ApplyZoom();
     }
 
@@ -102,10 +100,14 @@ public partial class PageViewerWindow : Window
 
     private void OnScrollerSizeChanged(object sender, SizeChangedEventArgs e)
     {
-        if (_fitOnNextLayout)
+        if (PageImage.Source is not BitmapSource image)
         {
-            FitToViewport();
+            return;
         }
+
+        var layout = ImageLayout.Of(image);
+        _fit.ViewportResized(layout.Width, layout.Height, Scroller.ViewportWidth, Scroller.ViewportHeight, layout.MaxScale);
+        ApplyZoom();
     }
 
     private void OnScrollerMouseWheel(object sender, MouseWheelEventArgs e)
@@ -117,11 +119,11 @@ public partial class PageViewerWindow : Window
 
         if (e.Delta > 0)
         {
-            _zoom.In();
+            _fit.In();
         }
         else
         {
-            _zoom.Out();
+            _fit.Out();
         }
 
         ApplyZoom();
@@ -164,13 +166,13 @@ public partial class PageViewerWindow : Window
         switch (e.Key)
         {
             case Key.OemPlus or Key.Add:
-                _zoom.In();
+                _fit.In();
                 break;
             case Key.OemMinus or Key.Subtract:
-                _zoom.Out();
+                _fit.Out();
                 break;
             case Key.D0 or Key.NumPad0:
-                _zoom.Reset();
+                _fit.Reset();
                 break;
             default:
                 return;
@@ -196,13 +198,13 @@ public partial class PageViewerWindow : Window
 
     private void OnZoomIn(object sender, RoutedEventArgs e)
     {
-        _zoom.In();
+        _fit.In();
         ApplyZoom();
     }
 
     private void OnZoomOut(object sender, RoutedEventArgs e)
     {
-        _zoom.Out();
+        _fit.Out();
         ApplyZoom();
     }
 
@@ -210,7 +212,7 @@ public partial class PageViewerWindow : Window
 
     private void OnActualSize(object sender, RoutedEventArgs e)
     {
-        _zoom.Reset();
+        _fit.Reset();
         ApplyZoom();
     }
 }
