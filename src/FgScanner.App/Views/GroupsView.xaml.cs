@@ -85,6 +85,20 @@ public partial class GroupsView : UserControl
         SavePanelSizes();
     }
 
+    /// <summary>
+    /// The value panels and toolbars above the grid take at most this share of the height. On a
+    /// short window they would otherwise wrap into enough rows to leave the grid and preview no room.
+    /// </summary>
+    private const double TopAreaShare = 0.45;
+
+    private void OnDetailPanelSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (e.HeightChanged)
+        {
+            DetailTopScroller.MaxHeight = e.NewSize.Height * TopAreaShare;
+        }
+    }
+
     private void OnDetailSplitGridSizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (e.WidthChanged)

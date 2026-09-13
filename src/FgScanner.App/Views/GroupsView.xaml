@@ -80,8 +80,12 @@
         </DockPanel>
 
         <!-- Detail: pending values, entry grid, commit -->
-        <DockPanel Grid.Column="1" DataContext="{Binding Detail}">
-            <StackPanel DockPanel.Dock="Top">
+        <DockPanel Grid.Column="1" DataContext="{Binding Detail}" SizeChanged="OnDetailPanelSizeChanged">
+            <!-- Capped (OnDetailPanelSizeChanged) and scrolled on its own: on a short window the
+                 value panels and two wrapping toolbars otherwise push the grid and preview away. -->
+            <ScrollViewer x:Name="DetailTopScroller" DockPanel.Dock="Top"
+                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
                 <!--
                   A group keeps the field layout it was created with, so one created before its
                   fields were defined renders an empty pane. Saying so, with the way out attached,
@@ -259,6 +263,7 @@
                            Visibility="{Binding ValidationSummary.Length, Converter={x:Static views:CountToVisibilityConverter.Instance}}" />
                 <TextBlock Text="{Binding StatusText}" Opacity="0.8" Margin="0,0,0,6" />
             </StackPanel>
+            </ScrollViewer>
 
             <Grid x:Name="DetailSplitGrid" SizeChanged="OnDetailSplitGridSizeChanged">
                 <Grid.ColumnDefinitions>
