@@ -356,6 +356,13 @@ public partial class GroupsView : UserControl
             _detail.SchemaLoaded -= RebuildColumns;
         }
 
+        if (!ReferenceEquals(detail, _detail))
+        {
+            // A newly opened group starts at the top: its schema notice and Batch values (Box,
+            // Operator) sit there, and the last group's scroll position would hide them.
+            DetailTopScroller.ScrollToTop();
+        }
+
         _detail = detail;
         if (_detail is not null)
         {

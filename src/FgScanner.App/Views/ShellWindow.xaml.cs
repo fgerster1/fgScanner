@@ -212,14 +212,32 @@ public partial class ShellWindow : Window
         ["Settings"] = (700, double.NaN),
     };
 
+    /// <summary>
+    /// Where each section was scrolled to when the user left it. The sections share one host, so
+    /// without this a section opened at the previous section's offset: Groups scrolled right and down
+    /// because Settings had been.
+    /// </summary>
+    private readonly Dictionary<string, Point> _sectionOffsets = new(StringComparer.Ordinal);
+
+    private string? _shownSection;
+
     private void ShowSection(string section)
     {
         if (_sections.TryGetValue(section, out var view))
         {
+            if (_shownSection is not null)
+            {
+                _sectionOffsets[_shownSection] = new Point(SectionHost.HorizontalOffset, SectionHost.VerticalOffset);
+            }
+
             var minimum = SectionMinimums.GetValueOrDefault(section, (0, 0));
             SectionHost.MinContentWidth = minimum.Width;
             SectionHost.MinContentHeight = minimum.Height;
             SectionHost.Content = view;
+            var offset = _sectionOffsets.GetValueOrDefault(section);
+            SectionHost.ScrollToHorizontalOffset(offset.X);
+            SectionHost.ScrollToVerticalOffset(offset.Y);
+            _shownSection = section;
             if (section == "Trash" && view is TrashView { DataContext: TrashViewModel trash })
             {
                 _ = trash.RefreshAsync();
