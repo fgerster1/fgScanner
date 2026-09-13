@@ -31,9 +31,12 @@ public static class WindowSizing
     {
         var width = Math.Min(window.Width, workArea.Width);
         var height = Math.Min(window.Height, workArea.Height);
+
+        // Not Math.Clamp: for a window exactly as big as the area, edge + size − size can come out one
+        // floating-point step short of the edge, and Math.Clamp throws when its bounds cross.
         return new WindowBounds(
-            Math.Clamp(window.Left, workArea.Left, workArea.Left + workArea.Width - width),
-            Math.Clamp(window.Top, workArea.Top, workArea.Top + workArea.Height - height),
+            Math.Max(workArea.Left, Math.Min(window.Left, workArea.Left + workArea.Width - width)),
+            Math.Max(workArea.Top, Math.Min(window.Top, workArea.Top + workArea.Height - height)),
             width,
             height);
     }

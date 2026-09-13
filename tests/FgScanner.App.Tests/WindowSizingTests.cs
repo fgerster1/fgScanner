@@ -69,6 +69,19 @@ public sealed class WindowSizingTests
     }
 
     [Fact]
+    public void A_dialog_as_big_as_a_work_area_with_fractional_edges_is_placed_without_throwing()
+    {
+        // A 40-pixel taskbar docked on top at 150% scaling puts the work area's edge at 26.67 units.
+        // With the dialog capped to that area, edge + size − size lands one floating-point step short of
+        // the edge, and a clamp whose bounds cross throws out of ContentRendered and ends the app.
+        var area = new WindowBounds(26.666666666666664, 26.666666666666664, 666.6666666666666, 666.6666666666666);
+
+        var placed = WindowSizing.KeepInside(new WindowBounds(100, 50, 666.6666666666666, 666.6666666666666), area);
+
+        Assert.Equal(area, placed);
+    }
+
+    [Fact]
     public void A_saved_preview_width_leaves_the_grid_its_minimum()
     {
         // Saved on a big monitor, restored where only 1000 units are available: the grid keeps 240
