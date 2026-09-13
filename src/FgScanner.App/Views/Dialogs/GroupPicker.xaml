@@ -5,11 +5,11 @@
         Title="Move scans" SizeToContent="Height" Width="420"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
         views:DialogFit.KeepOnScreen="True">
-    <DockPanel Margin="14">
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="Move" IsDefault="True" MinWidth="80" Margin="0,0,6,0" Click="OnOk" />
-            <Button Content="Cancel" IsCancel="True" MinWidth="80" />
-        </StackPanel>
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
         <!-- Not focusable: clicking a label would otherwise take keyboard focus from the field in use. -->
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
             <StackPanel>
@@ -17,5 +17,10 @@
                 <ComboBox x:Name="GroupBox" DisplayMemberPath="Name" Margin="0,0,0,12" />
             </StackPanel>
         </ScrollViewer>
-    </DockPanel>
+        <!-- After the body, so Tab reaches the fields before the buttons. -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Move" IsDefault="True" MinWidth="80" Margin="0,0,6,0" Click="OnOk" />
+            <Button Content="Cancel" IsCancel="True" MinWidth="80" />
+        </StackPanel>
+    </Grid>
 </Window>

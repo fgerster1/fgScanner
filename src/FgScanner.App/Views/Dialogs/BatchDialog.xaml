@@ -5,11 +5,11 @@
         Title="Batch scan" SizeToContent="Height" Width="380"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
         views:DialogFit.KeepOnScreen="True">
-    <DockPanel Margin="14">
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="Start batch" IsDefault="True" MinWidth="90" Margin="0,0,6,0" Click="OnStart" />
-            <Button Content="Cancel" IsCancel="True" MinWidth="90" />
-        </StackPanel>
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
         <!-- Not focusable: clicking a label would otherwise take keyboard focus from the field in use. -->
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
             <StackPanel>
@@ -29,5 +29,10 @@
                            Text="Pages land in the scan session; when a group is active they save to it automatically at the end." />
             </StackPanel>
         </ScrollViewer>
-    </DockPanel>
+        <!-- After the body, so Tab reaches the fields before the buttons. -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Start batch" IsDefault="True" MinWidth="90" Margin="0,0,6,0" Click="OnStart" />
+            <Button Content="Cancel" IsCancel="True" MinWidth="90" />
+        </StackPanel>
+    </Grid>
 </Window>

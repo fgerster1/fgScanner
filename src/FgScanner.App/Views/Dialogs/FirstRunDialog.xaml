@@ -5,8 +5,11 @@
         Title="Welcome to FG Scanner" SizeToContent="Height" Width="440"
         WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
         views:DialogFit.KeepOnScreen="True">
-    <DockPanel Margin="16">
-        <Button DockPanel.Dock="Bottom" Content="Start scanning" IsDefault="True" Padding="14,8" HorizontalAlignment="Right" Click="OnStart" />
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
         <!-- Not focusable: clicking a label would otherwise take keyboard focus from the field in use. -->
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
             <StackPanel>
@@ -35,5 +38,7 @@
                           Content="Open the AI description setup afterwards (optional, uses your own Google key)" />
             </StackPanel>
         </ScrollViewer>
-    </DockPanel>
+        <!-- After the body, so Tab reaches the fields before the button. -->
+        <Button Grid.Row="1" Content="Start scanning" IsDefault="True" Padding="14,8" HorizontalAlignment="Right" Click="OnStart" />
+    </Grid>
 </Window>
