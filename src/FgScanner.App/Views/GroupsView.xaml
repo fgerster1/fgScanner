@@ -261,12 +261,15 @@
                     <Button Content="Duplicates…" Command="{Binding CheckDuplicatesCommand}" Padding="8,4" Margin="4,0,0,0"
                             ToolTip="Find pages in this group that look like the same document" />
                 </WrapPanel>
-                <TextBlock Text="{Binding ValidationSummary}" Foreground="IndianRed"
-                           TextWrapping="Wrap" Margin="0,0,0,4"
-                           Visibility="{Binding ValidationSummary.Length, Converter={x:Static views:CountToVisibilityConverter.Instance}}" />
-                <TextBlock Text="{Binding StatusText}" Opacity="0.8" Margin="0,0,0,6" />
             </StackPanel>
             </controls:ShortcutScrollViewer>
+
+            <!-- Outside the capped area: why a commit was refused, and every status message, must show
+                 without scrolling, or a refused commit looks like it did nothing. -->
+            <TextBlock DockPanel.Dock="Top" Text="{Binding ValidationSummary}" Foreground="IndianRed"
+                       TextWrapping="Wrap" Margin="0,0,0,4"
+                       Visibility="{Binding ValidationSummary.Length, Converter={x:Static views:CountToVisibilityConverter.Instance}}" />
+            <TextBlock DockPanel.Dock="Top" Text="{Binding StatusText}" Opacity="0.8" Margin="0,0,0,6" />
 
             <Grid x:Name="DetailSplitGrid" SizeChanged="OnDetailSplitGridSizeChanged">
                 <Grid.ColumnDefinitions>
