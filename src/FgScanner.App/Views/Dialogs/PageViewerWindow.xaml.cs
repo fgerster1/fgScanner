@@ -84,8 +84,7 @@ public partial class PageViewerWindow : Window
     {
         if (PageImage.Source is not BitmapSource image)
         {
-            // A page that failed to load has no scale; the previous page's figure would mislead.
-            ZoomText.Text = "";
+            ApplyZoom();
             return;
         }
 
@@ -98,7 +97,11 @@ public partial class PageViewerWindow : Window
     {
         PageScale.ScaleX = _zoom.Scale;
         PageScale.ScaleY = _zoom.Scale;
-        ZoomText.Text = (_zoom.Scale * 100).ToString("0", CultureInfo.InvariantCulture) + "%";
+
+        // A page that failed to load has no scale to report, whatever zoom key was pressed since.
+        ZoomText.Text = PageImage.Source is null
+            ? ""
+            : (_zoom.Scale * 100).ToString("0", CultureInfo.InvariantCulture) + "%";
     }
 
     /// <summary>
