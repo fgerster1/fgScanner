@@ -78,6 +78,18 @@ public sealed class ZoomControllerTests
         Assert.Equal(0.25, zoom.Scale, 6);
     }
 
+    [Fact]
+    public void Fit_uses_the_layout_size_so_a_tall_page_fills_the_height()
+    {
+        // A 300-DPI letter page lays out at 816x1056 units. Fed its 2550x3300 pixel count instead,
+        // the same viewer showed it 224 units tall of 700.
+        var zoom = new ZoomController();
+
+        zoom.Fit(contentWidth: 816, contentHeight: 1056, viewportWidth: 950, viewportHeight: 700, maxScale: 3.125);
+
+        Assert.Equal(700.0 / 1056.0, zoom.Scale, 6);
+    }
+
     /// <summary>
     /// Replaces "never enlarges": that cap was 1.0 in layout units, which is a third of paper size for
     /// a 300-DPI page. The real limit is where one image pixel would cover more than one screen pixel.
