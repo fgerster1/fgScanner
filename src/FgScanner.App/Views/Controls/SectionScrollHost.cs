@@ -13,7 +13,7 @@ namespace FgScanner.App.Views.Controls;
 /// minimum lets the content grow past the edge, where the scroll bars take over. See
 /// <see cref="ScrollFill"/> for why the size comes from the host rather than the viewport.
 /// </summary>
-public sealed class SectionScrollHost : ScrollViewer
+public sealed class SectionScrollHost : ShortcutScrollViewer
 {
     public static readonly DependencyProperty MinContentWidthProperty = DependencyProperty.Register(
         nameof(MinContentWidth), typeof(double), typeof(SectionScrollHost),
@@ -26,10 +26,6 @@ public sealed class SectionScrollHost : ScrollViewer
 
     public SectionScrollHost()
     {
-        // Fluent's ScrollViewer style is implicit, and implicit styles match the exact type only. Without
-        // this the host renders the classic template: bars that take layout space, and a corner square
-        // that stays light grey in the dark theme.
-        SetResourceReference(StyleProperty, typeof(ScrollViewer));
         HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
         Focusable = false;

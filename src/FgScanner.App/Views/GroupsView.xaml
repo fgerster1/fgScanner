@@ -4,6 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:views="clr-namespace:FgScanner.App.Views"
+             xmlns:controls="clr-namespace:FgScanner.App.Views.Controls"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=views:GroupsViewModel}">
     <Grid>
@@ -83,8 +84,9 @@
         <DockPanel Grid.Column="1" DataContext="{Binding Detail}" SizeChanged="OnDetailPanelSizeChanged">
             <!-- Capped (OnDetailPanelSizeChanged) and scrolled on its own: on a short window the
                  value panels and two wrapping toolbars otherwise push the grid and preview away.
-                 Not focusable, so clicking a caption leaves keyboard focus in the grid or field. -->
-            <ScrollViewer x:Name="DetailTopScroller" DockPanel.Dock="Top" Focusable="False"
+                 Not focusable, so clicking a caption leaves keyboard focus in the grid or field.
+                 A ShortcutScrollViewer, so Ctrl+Shift+Left/Right still rotate with a toolbar button focused. -->
+            <controls:ShortcutScrollViewer x:Name="DetailTopScroller" DockPanel.Dock="Top" Focusable="False"
                           VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel>
                 <!--
@@ -264,7 +266,7 @@
                            Visibility="{Binding ValidationSummary.Length, Converter={x:Static views:CountToVisibilityConverter.Instance}}" />
                 <TextBlock Text="{Binding StatusText}" Opacity="0.8" Margin="0,0,0,6" />
             </StackPanel>
-            </ScrollViewer>
+            </controls:ShortcutScrollViewer>
 
             <Grid x:Name="DetailSplitGrid" SizeChanged="OnDetailSplitGridSizeChanged">
                 <Grid.ColumnDefinitions>
