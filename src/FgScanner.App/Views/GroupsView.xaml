@@ -271,7 +271,7 @@
                        Visibility="{Binding ValidationSummary.Length, Converter={x:Static views:CountToVisibilityConverter.Instance}}" />
             <TextBlock DockPanel.Dock="Top" Text="{Binding StatusText}" Opacity="0.8" Margin="0,0,0,6" />
 
-            <Grid x:Name="DetailSplitGrid" SizeChanged="OnDetailSplitGridSizeChanged">
+            <Grid x:Name="DetailSplitGrid" SizeChanged="OnPreviewRoomChanged">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" MinWidth="240" />
                     <ColumnDefinition Width="6" />
@@ -312,7 +312,7 @@
                 <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
                               VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext"
                               ShowsPreview="False" Cursor="SizeWE"
-                              DragCompleted="OnPreviewWidthDragCompleted"
+                              DragCompleted="OnSplitterDragCompleted"
                               ToolTip="Drag to make the preview wider" />
 
                 <DockPanel Grid.Column="2">
@@ -349,10 +349,10 @@
                         <GridSplitter Grid.Row="1" Height="6" HorizontalAlignment="Stretch"
                                       VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext"
                                       ShowsPreview="False" Cursor="SizeNS"
-                                      DragCompleted="OnPreviewHeightDragCompleted"
+                                      DragCompleted="OnSplitterDragCompleted"
                                       ToolTip="Drag to make the preview taller" />
 
-                        <WrapPanel x:Name="PreviewTools" Grid.Row="2" Margin="0,4,0,0">
+                        <WrapPanel x:Name="PreviewTools" Grid.Row="2" Margin="0,4,0,0" SizeChanged="OnPreviewRoomChanged">
                             <Button Content="−" Click="OnPreviewZoomOut" Padding="10,2" Margin="0,0,4,0" ToolTip="Zoom out" />
                             <Button Content="+" Click="OnPreviewZoomIn" Padding="10,2" Margin="0,0,4,0" ToolTip="Zoom in" />
                             <Button Content="Fit" Click="OnPreviewFit" Padding="8,2" Margin="0,0,4,0"
@@ -364,7 +364,7 @@
                         </WrapPanel>
                     </Grid>
 
-                    <StackPanel x:Name="FolderPanel" DockPanel.Dock="Top" Margin="0,8,0,0">
+                    <StackPanel x:Name="FolderPanel" DockPanel.Dock="Top" Margin="0,8,0,0" SizeChanged="OnPreviewRoomChanged">
                         <TextBlock Text="Folder" FontWeight="SemiBold" />
                         <TextBox Text="{Binding SelectedRow.Folder, Mode=OneWay}" IsReadOnly="True"
                                  TextWrapping="Wrap" BorderThickness="0" Background="Transparent"
