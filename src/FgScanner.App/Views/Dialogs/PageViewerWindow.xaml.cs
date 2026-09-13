@@ -83,6 +83,8 @@ public partial class PageViewerWindow : Window
     {
         if (PageImage.Source is not BitmapSource image)
         {
+            // A page that failed to load has no scale; the previous page's figure would mislead.
+            ZoomText.Text = "";
             return;
         }
 
