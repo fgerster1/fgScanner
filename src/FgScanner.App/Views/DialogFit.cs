@@ -31,6 +31,17 @@ public static class DialogFit
         window.SourceInitialized += (_, _) =>
         {
             var area = MonitorWorkArea.For(window);
+            if (window.SizeToContent == SizeToContent.Manual
+                && window.ResizeMode is ResizeMode.CanResize or ResizeMode.CanResizeWithGrip)
+            {
+                // A resizable window (the page viewer) only opens small enough to fit. A MaxWidth or
+                // MaxHeight cap would outlive the opening: it could no longer be enlarged or maximized
+                // after being dragged to a bigger monitor.
+                window.Width = Math.Min(window.Width, area.Width);
+                window.Height = Math.Min(window.Height, area.Height);
+                return;
+            }
+
             window.MaxWidth = Math.Min(window.MaxWidth, area.Width);
             window.MaxHeight = Math.Min(window.MaxHeight, area.Height);
         };
