@@ -42,6 +42,20 @@ public partial class ShellWindow : Window
         Closing += (_, _) => SaveSession();
     }
 
+    /// <summary>
+    /// Fits the design size to the screen the window actually opened on, and centres it there.
+    /// A fixed 1200x760 is taller than a 1366x768 laptop can show above its taskbar. Done here
+    /// because the window has a handle — and so a monitor — but has not been shown yet.
+    /// </summary>
+    private void OnSourceInitialized(object? sender, EventArgs e)
+    {
+        var bounds = WindowSizing.FitToWorkArea(Width, Height, MonitorWorkArea.For(this));
+        Left = bounds.Left;
+        Top = bounds.Top;
+        Width = bounds.Width;
+        Height = bounds.Height;
+    }
+
     /// <summary>Search-result navigation: jump to the Groups section and select the hit's page.</summary>
     private void OpenSearchHit(FgScanner.Data.SearchHit hit)
     {

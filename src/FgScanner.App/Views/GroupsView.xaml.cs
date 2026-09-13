@@ -15,6 +15,18 @@ public partial class GroupsView : UserControl
     private const string PreviewWidthKey = "Session.PreviewPanelWidth";
     private const string PreviewHeightKey = "Session.PreviewPanelHeight";
 
+    // Mirror the grid column minimums and splitter width in GroupsView.xaml.
+    private const double EntryGridMinWidth = 240;
+    private const double SplitterWidth = 6;
+    private const double PreviewMinWidth = 200;
+
+    /// <summary>
+    /// The width the user chose (restored or dragged), kept apart from the width actually shown. On a
+    /// narrow window the shown width is clamped; saving that clamped width would quietly overwrite
+    /// the user's choice the first time they used a small screen.
+    /// </summary>
+    private double? _desiredPreviewWidth;
+
     public GroupsView()
     {
         InitializeComponent();
@@ -40,7 +52,8 @@ public partial class GroupsView : UserControl
     {
         try
         {
-            PreviewColumn.Width = await ReadLengthAsync(vm, PreviewWidthKey, 300, 200, 1600);
+            _desiredPreviewWidth = (await ReadLengthAsync(vm, PreviewWidthKey, 300, PreviewMinWidth, 1600)).Value;
+            ApplyPreviewWidth();
             PreviewRow.Height = await ReadLengthAsync(vm, PreviewHeightKey, 190, 90, 2000);
         }
         catch (Exception ex)
@@ -66,7 +79,29 @@ public partial class GroupsView : UserControl
     /// is not remembered in any sense the user would recognise.
     /// </summary>
     private void OnSplitterDragCompleted(
-        object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e) => SavePanelSizes();
+        object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        _desiredPreviewWidth = PreviewColumn.ActualWidth;
+        SavePanelSizes();
+    }
+
+    private void OnDetailSplitGridSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (e.WidthChanged)
+        {
+            ApplyPreviewWidth();
+        }
+    }
+
+    /// <summary>Shows the chosen preview width, limited so the entry grid keeps its minimum.</summary>
+    private void ApplyPreviewWidth()
+    {
+        if (_desiredPreviewWidth is { } desired)
+        {
+            PreviewColumn.Width = new GridLength(WindowSizing.ClampPanel(
+                desired, DetailSplitGrid.ActualWidth, EntryGridMinWidth, SplitterWidth, PreviewMinWidth));
+        }
+    }
 
     private void SavePanelSizes()
     {
@@ -77,7 +112,7 @@ public partial class GroupsView : UserControl
 
         try
         {
-            var width = PreviewColumn.ActualWidth;
+            var width = _desiredPreviewWidth ?? PreviewColumn.ActualWidth;
             var height = PreviewRow.ActualHeight;
             if (width > 0 && height > 0)
             {

@@ -260,7 +260,7 @@
                 <TextBlock Text="{Binding StatusText}" Opacity="0.8" Margin="0,0,0,6" />
             </StackPanel>
 
-            <Grid>
+            <Grid x:Name="DetailSplitGrid" SizeChanged="OnDetailSplitGridSizeChanged">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" MinWidth="240" />
                     <ColumnDefinition Width="6" />
