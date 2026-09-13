@@ -23,6 +23,22 @@ public static class WindowSizing
     }
 
     /// <summary>
+    /// A dialog moved (and if need be shrunk) so all of it is on the screen. Centred over an owner
+    /// dragged near an edge, a dialog's button row can land under the taskbar or off the monitor,
+    /// and a fixed-size dialog cannot be resized to reach it.
+    /// </summary>
+    public static WindowBounds KeepInside(WindowBounds window, WindowBounds workArea)
+    {
+        var width = Math.Min(window.Width, workArea.Width);
+        var height = Math.Min(window.Height, workArea.Height);
+        return new WindowBounds(
+            Math.Clamp(window.Left, workArea.Left, workArea.Left + workArea.Width - width),
+            Math.Clamp(window.Top, workArea.Top, workArea.Top + workArea.Height - height),
+            width,
+            height);
+    }
+
+    /// <summary>
     /// A resizable panel's size, limited so the panel beside it keeps its minimum. A size saved on a
     /// large monitor would otherwise push its neighbour off a small one. A panel not yet laid out
     /// reports zero available, and the saved size is kept rather than thrown away.

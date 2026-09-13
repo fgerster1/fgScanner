@@ -35,6 +35,40 @@ public sealed class WindowSizingTests
     }
 
     [Fact]
+    public void A_dialog_already_on_screen_is_left_where_it_is()
+    {
+        var placed = WindowSizing.KeepInside(new WindowBounds(300, 200, 440, 420), new WindowBounds(0, 0, 1280, 976));
+
+        Assert.Equal(new WindowBounds(300, 200, 440, 420), placed);
+    }
+
+    [Fact]
+    public void A_dialog_centred_over_a_window_near_the_bottom_is_pulled_up_to_show_its_buttons()
+    {
+        // Centred on an owner dragged low, the dialog's button row would sit below the taskbar.
+        var placed = WindowSizing.KeepInside(new WindowBounds(300, 700, 440, 420), new WindowBounds(0, 0, 1280, 976));
+
+        Assert.Equal(new WindowBounds(300, 556, 440, 420), placed);
+    }
+
+    [Fact]
+    public void A_dialog_off_the_left_edge_of_a_second_monitor_is_pulled_back_onto_it()
+    {
+        var placed = WindowSizing.KeepInside(new WindowBounds(1800, 100, 440, 420), new WindowBounds(1920, 0, 1366, 728));
+
+        Assert.Equal(new WindowBounds(1920, 100, 440, 420), placed);
+    }
+
+    [Fact]
+    public void A_dialog_bigger_than_the_screen_is_shrunk_to_it_and_pinned_to_its_corner()
+    {
+        // The 1000x820 page viewer on a screen with 781 units above the taskbar.
+        var placed = WindowSizing.KeepInside(new WindowBounds(100, 50, 1000, 820), new WindowBounds(0, 0, 1024, 781));
+
+        Assert.Equal(new WindowBounds(24, 0, 1000, 781), placed);
+    }
+
+    [Fact]
     public void A_saved_preview_width_leaves_the_grid_its_minimum()
     {
         // Saved on a big monitor, restored where only 1000 units are available: the grid keeps 240

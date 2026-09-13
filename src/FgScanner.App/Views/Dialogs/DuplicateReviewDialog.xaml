@@ -1,8 +1,10 @@
 <Window x:Class="FgScanner.App.Views.Dialogs.DuplicateReviewDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Suspected duplicates" Width="760" Height="460"
-        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+        xmlns:views="clr-namespace:FgScanner.App.Views"
+        Title="Suspected duplicates" Width="760" Height="460" MinWidth="520" MinHeight="300"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        views:DialogFit.KeepOnScreen="True">
     <DockPanel Margin="14">
         <TextBlock x:Name="PromptText" DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,8" />
         <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Opacity="0.7" FontSize="11" Margin="0,0,0,8"
