@@ -26,8 +26,9 @@ public static class DialogFit
             return;
         }
 
-        // SourceInitialized: the window has a handle, so its monitor is known, but has not been sized
-        // to its content yet — the cap is in place before SizeToContent measures.
+        // SourceInitialized: the window has a handle, so its monitor is known. WPF has already sized it
+        // to its content and centred it at that size; a cap set here shrinks it on the next layout, and
+        // Place moves it back inside the screen once it has rendered.
         window.SourceInitialized += (_, _) =>
         {
             var area = MonitorWorkArea.For(window);
@@ -47,13 +48,27 @@ public static class DialogFit
         };
 
         // ContentRendered: size and centring are final, so the real edges can be checked.
-        window.ContentRendered += (_, _) =>
+        window.ContentRendered += (_, _) => Place(window);
+
+        // A dialog that sizes to its content can grow after it opens (Export images reveals its TIFF
+        // options). It grows downwards from its top edge, pushing its buttons under the taskbar. A
+        // window the user resizes is left where they put it.
+        window.SizeChanged += (_, _) =>
         {
-            var placed = WindowSizing.KeepInside(
-                new WindowBounds(window.Left, window.Top, window.ActualWidth, window.ActualHeight),
-                MonitorWorkArea.For(window));
-            window.Left = placed.Left;
-            window.Top = placed.Top;
+            if (window.IsLoaded && window.SizeToContent != SizeToContent.Manual)
+            {
+                Place(window);
+            }
         };
+    }
+
+    /// <summary>Only the position changes: the cap from SourceInitialized already keeps the size inside the area.</summary>
+    private static void Place(Window window)
+    {
+        var placed = WindowSizing.KeepInside(
+            new WindowBounds(window.Left, window.Top, window.ActualWidth, window.ActualHeight),
+            MonitorWorkArea.For(window));
+        window.Left = placed.Left;
+        window.Top = placed.Top;
     }
 }
