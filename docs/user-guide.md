@@ -34,6 +34,11 @@ saturation, sharpen, black & white, crop), Split, Combine, reorder
 (▲ ▼ / Reverse / Interleave for manual duplex), Undo/Redo (Ctrl+Z / Ctrl+Y).
 Deleting a page moves it to **Trash**, restorable for 30 days (configurable).
 
+**Preview and page viewer.** Fit shows the whole page — in the preview beside the grid and in the
+full-size viewer (double-click the preview). 100% is the page at its actual paper size. The page
+keeps fitting as you resize the panel until you zoom with + or −; press Fit to go back. On a small
+screen every section and dialog scrolls, and dialog buttons always stay visible.
+
 ## OCR
 
 "OCR pages" recognizes text (English out of the box; add languages in
