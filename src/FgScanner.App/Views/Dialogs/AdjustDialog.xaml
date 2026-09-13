@@ -10,7 +10,8 @@
             <Button Content="Apply" IsDefault="True" MinWidth="90" Margin="0,0,6,0" Click="OnApply" />
             <Button Content="Cancel" IsCancel="True" MinWidth="90" />
         </StackPanel>
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <!-- Not focusable: clicking a label would otherwise take keyboard focus from the field in use. -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
             <StackPanel>
                 <TextBlock Text="Sliders use the NAPS2 scale: -1000 to 1000, 0 = unchanged."
                            Opacity="0.7" TextWrapping="Wrap" Margin="0,0,0,10" />

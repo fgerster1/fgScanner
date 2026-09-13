@@ -10,7 +10,8 @@
             <Button Content="Export" IsDefault="True" MinWidth="90" Margin="0,0,6,0" Click="OnExport" />
             <Button Content="Cancel" IsCancel="True" MinWidth="90" />
         </StackPanel>
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <!-- Not focusable: clicking a label would otherwise take keyboard focus from the field in use. -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
             <StackPanel>
                 <TextBlock Text="File name pattern" FontWeight="SemiBold" Margin="0,0,0,2" />
                 <TextBox x:Name="PatternBox" Text="$(group)_$(nnn)" Margin="0,0,0,2" />

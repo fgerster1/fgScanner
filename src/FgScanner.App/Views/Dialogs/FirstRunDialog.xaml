@@ -7,7 +7,8 @@
         views:DialogFit.KeepOnScreen="True">
     <DockPanel Margin="16">
         <Button DockPanel.Dock="Bottom" Content="Start scanning" IsDefault="True" Padding="14,8" HorizontalAlignment="Right" Click="OnStart" />
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <!-- Not focusable: clicking a label would otherwise take keyboard focus from the field in use. -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
             <StackPanel>
                 <TextBlock Text="Welcome to FG Scanner" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,4" />
                 <TextBlock Opacity="0.7" TextWrapping="Wrap" Margin="0,0,0,12"

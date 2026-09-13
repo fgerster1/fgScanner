@@ -82,8 +82,9 @@
         <!-- Detail: pending values, entry grid, commit -->
         <DockPanel Grid.Column="1" DataContext="{Binding Detail}" SizeChanged="OnDetailPanelSizeChanged">
             <!-- Capped (OnDetailPanelSizeChanged) and scrolled on its own: on a short window the
-                 value panels and two wrapping toolbars otherwise push the grid and preview away. -->
-            <ScrollViewer x:Name="DetailTopScroller" DockPanel.Dock="Top"
+                 value panels and two wrapping toolbars otherwise push the grid and preview away.
+                 Not focusable, so clicking a caption leaves keyboard focus in the grid or field. -->
+            <ScrollViewer x:Name="DetailTopScroller" DockPanel.Dock="Top" Focusable="False"
                           VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel>
                 <!--

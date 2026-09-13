@@ -10,7 +10,8 @@
             <Button Content="Delete group" IsDefault="True" MinWidth="90" Margin="0,0,6,0" Click="OnOk" />
             <Button Content="Cancel" IsCancel="True" MinWidth="80" />
         </StackPanel>
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <!-- Not focusable: clicking a label would otherwise take keyboard focus from the field in use. -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
             <StackPanel>
                 <TextBlock x:Name="PromptText" TextWrapping="Wrap" Margin="0,0,0,4" FontWeight="SemiBold" />
                 <TextBlock x:Name="CountText" TextWrapping="Wrap" Margin="0,0,0,12" Opacity="0.75" />
