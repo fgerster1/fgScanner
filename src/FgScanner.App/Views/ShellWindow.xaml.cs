@@ -45,7 +45,8 @@ public partial class ShellWindow : Window
     /// <summary>
     /// Fits the design size to the screen the window actually opened on, and centres it there.
     /// A fixed 1200x760 is taller than a 1366x768 laptop can show above its taskbar. Done here
-    /// because the window has a handle — and so a monitor — but has not been shown yet.
+    /// because by now WPF has placed the window — CenterScreen puts it on the monitor under the
+    /// mouse — but has not shown it yet.
     /// </summary>
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
