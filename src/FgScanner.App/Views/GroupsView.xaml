@@ -327,7 +327,7 @@
                                           HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Auto"
                                           PreviewMouseWheel="OnPreviewMouseWheel"
-                                          SizeChanged="OnPreviewScrollerSizeChanged">
+                                          ScrollChanged="OnPreviewScrollerScrollChanged">
                                 <Image x:Name="PreviewImage"
                                        Source="{Binding SelectedRow.ImagePath, Converter={x:Static views:PreviewImageConverter.Instance}, NotifyOnTargetUpdated=True}"
                                        TargetUpdated="OnPreviewImageChanged"

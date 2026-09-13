@@ -34,7 +34,7 @@
             <ScrollViewer x:Name="Scroller"
                           HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                           PreviewMouseWheel="OnScrollerMouseWheel"
-                          SizeChanged="OnScrollerSizeChanged">
+                          ScrollChanged="OnScrollerScrollChanged">
                 <!-- LayoutTransform, not RenderTransform: the ScrollViewer's extent has to grow
                      with the zoom or the scrollbars never reach the rest of the page. -->
                 <Image x:Name="PageImage" Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Center">

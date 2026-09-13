@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
 
@@ -77,7 +78,7 @@ public partial class PageViewerWindow : Window
 
     /// <summary>
     /// A fit asked for while the window is still laying out stays pending in the policy, and the
-    /// first real size — <see cref="OnScrollerSizeChanged"/> — carries it out.
+    /// first real size — <see cref="OnScrollerScrollChanged"/> — carries it out.
     /// </summary>
     private void FitToViewport()
     {
@@ -100,15 +101,21 @@ public partial class PageViewerWindow : Window
         ZoomText.Text = (_zoom.Scale * 100).ToString("0", CultureInfo.InvariantCulture) + "%";
     }
 
-    private void OnScrollerSizeChanged(object sender, SizeChangedEventArgs e)
+    /// <summary>
+    /// Re-fits when the viewport changes size. ScrollChanged, not SizeChanged: the ScrollViewer
+    /// publishes its new viewport only after SizeChanged has been raised, so a re-fit there used the
+    /// previous size and a maximized viewer kept its small fit.
+    /// </summary>
+    private void OnScrollerScrollChanged(object sender, ScrollChangedEventArgs e)
     {
-        if (PageImage.Source is not BitmapSource image)
+        if ((e.ViewportWidthChange == 0 && e.ViewportHeightChange == 0)
+            || PageImage.Source is not BitmapSource image)
         {
             return;
         }
 
         var layout = ImageLayout.Of(image);
-        _fit.ViewportResized(layout.Width, layout.Height, Scroller.ViewportWidth, Scroller.ViewportHeight, layout.MaxScale);
+        _fit.ViewportResized(layout.Width, layout.Height, e.ViewportWidth, e.ViewportHeight, layout.MaxScale);
         ApplyZoom();
     }
 

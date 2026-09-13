@@ -324,16 +324,18 @@ public partial class GroupsView : UserControl
 
     /// <summary>
     /// Dragging a splitter resizes the preview; the page keeps fitting until the user zooms. This is
-    /// also where a fit asked for before the panel had a size finally happens.
+    /// also where a fit asked for before the panel had a size finally happens. ScrollChanged, not
+    /// SizeChanged: the ScrollViewer publishes its new viewport only after SizeChanged has been raised,
+    /// so a re-fit there used the previous size, and a fit waiting for a first size never ran.
     /// </summary>
-    private void OnPreviewScrollerSizeChanged(object sender, SizeChangedEventArgs e)
+    private void OnPreviewScrollerScrollChanged(object sender, ScrollChangedEventArgs e)
     {
-        if (PreviewImage.Source is System.Windows.Media.Imaging.BitmapSource image)
+        if ((e.ViewportWidthChange != 0 || e.ViewportHeightChange != 0)
+            && PreviewImage.Source is System.Windows.Media.Imaging.BitmapSource image)
         {
             var layout = ImageLayout.Of(image);
             _previewFit.ViewportResized(
-                layout.Width, layout.Height,
-                PreviewScroller.ViewportWidth, PreviewScroller.ViewportHeight, layout.MaxScale);
+                layout.Width, layout.Height, e.ViewportWidth, e.ViewportHeight, layout.MaxScale);
             ApplyPreviewZoom();
         }
     }
