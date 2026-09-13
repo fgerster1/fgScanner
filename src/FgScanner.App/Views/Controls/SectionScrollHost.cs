@@ -29,7 +29,6 @@ public sealed class SectionScrollHost : ScrollViewer
         HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
         Focusable = false;
-        SizeChanged += (_, _) => FitContent();
     }
 
     public double MinContentWidth
@@ -47,27 +46,39 @@ public sealed class SectionScrollHost : ScrollViewer
     protected override void OnContentChanged(object oldContent, object newContent)
     {
         base.OnContentChanged(oldContent, newContent);
-        FitContent();
+
+        // Otherwise only the presenter below is re-measured, and it hands the new section unlimited
+        // room before MeasureOverride has sized it.
+        InvalidateMeasure();
     }
 
-    private static void OnMinimumChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) =>
-        ((SectionScrollHost)d).FitContent();
-
-    private void FitContent()
+    private static void OnMinimumChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
-        VerticalScrollBarVisibility = double.IsNaN(MinContentHeight)
+        var host = (SectionScrollHost)d;
+        host.VerticalScrollBarVisibility = double.IsNaN(host.MinContentHeight)
             ? ScrollBarVisibility.Visible
             : ScrollBarVisibility.Auto;
+        host.InvalidateMeasure();
+    }
 
-        if (Content is not FrameworkElement content || ActualWidth <= 0 || ActualHeight <= 0)
+    /// <summary>
+    /// Sizes the section before the ScrollViewer measures it. Sizing it after layout instead (on
+    /// SizeChanged) left the first measure unsized: the section shown before the window had a size —
+    /// Scan, at startup — was measured with infinite height, and its thumbnail list built and decoded
+    /// every page before the window appeared.
+    /// </summary>
+    protected override Size MeasureOverride(Size constraint)
+    {
+        if (Content is FrameworkElement content
+            && double.IsFinite(constraint.Width) && double.IsFinite(constraint.Height))
         {
-            return;
+            var size = ScrollFill.Resolve(
+                constraint.Width, constraint.Height, MinContentWidth, MinContentHeight,
+                SystemParameters.VerticalScrollBarWidth, SystemParameters.HorizontalScrollBarHeight);
+            content.Width = size.Width;
+            content.Height = size.Height;
         }
 
-        var size = ScrollFill.Resolve(
-            ActualWidth, ActualHeight, MinContentWidth, MinContentHeight,
-            SystemParameters.VerticalScrollBarWidth, SystemParameters.HorizontalScrollBarHeight);
-        content.Width = size.Width;
-        content.Height = size.Height;
+        return base.MeasureOverride(constraint);
     }
 }
