@@ -19,13 +19,16 @@ public partial class GroupsView : UserControl
     private const double EntryGridMinWidth = 240;
     private const double SplitterWidth = 6;
     private const double PreviewMinWidth = 200;
+    private const double PreviewMinHeight = 90;
 
     /// <summary>
-    /// The width the user chose (restored or dragged), kept apart from the width actually shown. On a
-    /// narrow window the shown width is clamped; saving that clamped width would quietly overwrite
+    /// The size the user chose (restored or dragged), kept apart from the size actually shown. On a
+    /// small window the shown size is clamped; saving that clamped size would quietly overwrite
     /// the user's choice the first time they used a small screen.
     /// </summary>
     private double? _desiredPreviewWidth;
+
+    private double? _desiredPreviewHeight;
 
     public GroupsView()
     {
@@ -53,8 +56,8 @@ public partial class GroupsView : UserControl
         try
         {
             _desiredPreviewWidth = (await ReadLengthAsync(vm, PreviewWidthKey, 300, PreviewMinWidth, 1600)).Value;
-            ApplyPreviewWidth();
-            PreviewRow.Height = await ReadLengthAsync(vm, PreviewHeightKey, 190, 90, 2000);
+            _desiredPreviewHeight = (await ReadLengthAsync(vm, PreviewHeightKey, 190, PreviewMinHeight, 2000)).Value;
+            ApplyPreviewSize();
         }
         catch (Exception ex)
         {
@@ -78,10 +81,21 @@ public partial class GroupsView : UserControl
     /// never unloads the view, and a size that survives only if you happen to navigate away first
     /// is not remembered in any sense the user would recognise.
     /// </summary>
-    private void OnSplitterDragCompleted(
+    private void OnPreviewWidthDragCompleted(
         object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
     {
         _desiredPreviewWidth = PreviewColumn.ActualWidth;
+        SavePanelSizes();
+    }
+
+    /// <summary>
+    /// Separate from the width handler: taking the shown width as the choice here would replace a
+    /// wide saved width with the clamped one just because the user adjusted the height.
+    /// </summary>
+    private void OnPreviewHeightDragCompleted(
+        object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        _desiredPreviewHeight = PreviewRow.ActualHeight;
         SavePanelSizes();
     }
 
@@ -99,21 +113,27 @@ public partial class GroupsView : UserControl
         }
     }
 
-    private void OnDetailSplitGridSizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        if (e.WidthChanged)
-        {
-            ApplyPreviewWidth();
-        }
-    }
+    private void OnDetailSplitGridSizeChanged(object sender, SizeChangedEventArgs e) => ApplyPreviewSize();
 
-    /// <summary>Shows the chosen preview width, limited so the entry grid keeps its minimum.</summary>
-    private void ApplyPreviewWidth()
+    /// <summary>
+    /// Shows the chosen preview size, limited so the entry grid keeps its minimum width and the zoom
+    /// buttons and folder panel under the preview stay in view. The section host sizes this page to
+    /// the window, so anything a tall preview pushed below the bottom would be clipped, not scrolled.
+    /// </summary>
+    private void ApplyPreviewSize()
     {
-        if (_desiredPreviewWidth is { } desired)
+        if (_desiredPreviewWidth is { } width)
         {
             PreviewColumn.Width = new GridLength(WindowSizing.ClampPanel(
-                desired, DetailSplitGrid.ActualWidth, EntryGridMinWidth, SplitterWidth, PreviewMinWidth));
+                width, DetailSplitGrid.ActualWidth, EntryGridMinWidth, SplitterWidth, PreviewMinWidth));
+        }
+
+        if (_desiredPreviewHeight is { } height)
+        {
+            var below = PreviewTools.ActualHeight + PreviewTools.Margin.Top
+                + FolderPanel.ActualHeight + FolderPanel.Margin.Top;
+            PreviewRow.Height = new GridLength(WindowSizing.ClampPanel(
+                height, DetailSplitGrid.ActualHeight, below, SplitterWidth, PreviewMinHeight));
         }
     }
 
@@ -127,7 +147,7 @@ public partial class GroupsView : UserControl
         try
         {
             var width = _desiredPreviewWidth ?? PreviewColumn.ActualWidth;
-            var height = PreviewRow.ActualHeight;
+            var height = _desiredPreviewHeight ?? PreviewRow.ActualHeight;
             if (width > 0 && height > 0)
             {
                 _ = vm.Settings.SetAsync(
