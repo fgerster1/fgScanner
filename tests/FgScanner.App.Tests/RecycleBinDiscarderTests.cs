@@ -36,7 +36,9 @@ public sealed class RecycleBinDiscarderTests : IDisposable
         var file = Path.Combine(_session, "page-00001.png");
         File.WriteAllBytes(file, [1]);
 
-        Assert.True(new RecycleBinDiscarder().TryDiscard(_session, file, out var reason), reason);
+        var (discarded, reason) = DiscardThroughTheShell(_session, file);
+
+        Assert.True(discarded, reason);
         Assert.False(File.Exists(file));
     }
 
@@ -46,8 +48,35 @@ public sealed class RecycleBinDiscarderTests : IDisposable
         var file = Path.Combine(_session, "page-00002.png");
         File.WriteAllBytes(file, [2]);
 
-        Assert.True(new RecycleBinDiscarder().TryDiscard(_session.ToUpperInvariant(), file, out var reason), reason);
+        var (discarded, reason) = DiscardThroughTheShell(_session.ToUpperInvariant(), file);
+
+        Assert.True(discarded, reason);
         Assert.False(File.Exists(file));
+    }
+
+    /// <summary>
+    /// A real shell call, given a deadline. Where the machine's Recycle Bin will not take the file, the
+    /// shell asks before deleting it for good, and on an unattended build agent nobody answers: fail
+    /// the test rather than hang the run. The waiting thread is a background one, so it cannot keep
+    /// the test process alive.
+    /// </summary>
+    private static (bool Discarded, string Reason) DiscardThroughTheShell(string sessionFolder, string file)
+    {
+        (bool, string) outcome = (false, "");
+        var worker = new Thread(() =>
+        {
+            var discarded = new RecycleBinDiscarder().TryDiscard(sessionFolder, file, out var reason);
+            outcome = (discarded, reason);
+        })
+        {
+            IsBackground = true,
+        };
+        worker.Start();
+
+        Assert.True(
+            worker.Join(TimeSpan.FromSeconds(30)),
+            "The shell did not return within 30 s; it is probably asking whether to delete the file permanently.");
+        return outcome;
     }
 
     [Theory]
