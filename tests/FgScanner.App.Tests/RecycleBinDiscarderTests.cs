@@ -33,7 +33,9 @@ public sealed class RecycleBinDiscarderTests : IDisposable
     [Fact]
     public void A_page_inside_the_session_folder_leaves_the_folder()
     {
-        var file = Path.Combine(_session, "page-00001.png");
+        // Not named like a scan: it lands in this machine's real Recycle Bin, where an operator
+        // restoring a deleted page by hand should not mistake it for one.
+        var file = Path.Combine(_session, "fgscanner-discarder-test-1.bin");
         File.WriteAllBytes(file, [1]);
 
         var (discarded, reason) = DiscardThroughTheShell(_session, file);
@@ -45,7 +47,7 @@ public sealed class RecycleBinDiscarderTests : IDisposable
     [Fact]
     public void The_session_folder_matches_whatever_its_letter_case()
     {
-        var file = Path.Combine(_session, "page-00002.png");
+        var file = Path.Combine(_session, "fgscanner-discarder-test-2.bin");
         File.WriteAllBytes(file, [2]);
 
         var (discarded, reason) = DiscardThroughTheShell(_session.ToUpperInvariant(), file);
@@ -58,15 +60,24 @@ public sealed class RecycleBinDiscarderTests : IDisposable
     /// A real shell call, given a deadline. Where the machine's Recycle Bin will not take the file, the
     /// shell asks before deleting it for good, and on an unattended build agent nobody answers: fail
     /// the test rather than hang the run. The waiting thread is a background one, so it cannot keep
-    /// the test process alive.
+    /// the test process alive, and it hands back any exception: one left on a raw thread kills the
+    /// whole test host without naming a test.
     /// </summary>
     private static (bool Discarded, string Reason) DiscardThroughTheShell(string sessionFolder, string file)
     {
         (bool, string) outcome = (false, "");
+        Exception? error = null;
         var worker = new Thread(() =>
         {
-            var discarded = new RecycleBinDiscarder().TryDiscard(sessionFolder, file, out var reason);
-            outcome = (discarded, reason);
+            try
+            {
+                var discarded = new RecycleBinDiscarder().TryDiscard(sessionFolder, file, out var reason);
+                outcome = (discarded, reason);
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+            }
         })
         {
             IsBackground = true,
@@ -76,6 +87,11 @@ public sealed class RecycleBinDiscarderTests : IDisposable
         Assert.True(
             worker.Join(TimeSpan.FromSeconds(30)),
             "The shell did not return within 30 s; it is probably asking whether to delete the file permanently.");
+        if (error is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
+        }
+
         return outcome;
     }
 
