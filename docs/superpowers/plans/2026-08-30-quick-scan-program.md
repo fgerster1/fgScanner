@@ -2,6 +2,12 @@
 
 **Date:** 2026-08-30
 **Status:** proposed, not started. Approve before any phase begins.
+**Amended 2026-09-14** by [SPEC-2026-003](../../specs/SPEC-2026-003-scan-viewer-delete-and-quick-scan-tools.md)
+§08 Part B:
+- Franz's 2026-09-13 Scan-page requests are mapped in §1a and folded into Phases 1, 3, 5, 6, 8a and 10.
+- Phase 0 spikes 1 and 3 are done ([findings](../research/2026-08-30-quick-scan-spikes.md)). Spike 3
+  led to the Phase 10 rewrite.
+- Spike 2 still needs the scanner.
 **Reference UI:** `C:\Users\fgers\Pictures\Scanner1.png` — Pantum Scan Application (USB).
 
 ---
@@ -18,24 +24,55 @@ file. It resembles the manufacturer's utility in the screenshot — preview pane
 crop marquee, a left tool rail, Basic/Advanced settings tabs, a live info panel, named Quick
 Settings presets, and a destination block with filename, format and folder.
 
-**Eleven phases**, each one Claude Code prompt, each independently shippable:
+**Twelve phases** (Phase 8a added 2026-09-14), each one Claude Code prompt, each independently
+shippable:
 
 | # | Phase | Delivers | Size |
 |---|---|---|---|
 | 0 | Spikes | Three feasibility answers before anything is built | S |
-| 1 | Widen scan options | Custom page size, auto-deskew, blank-exclude, duplex flip | S |
+| 1 | Widen scan options | Custom page size (also on the evidence Scan page), auto-deskew, blank-exclude, duplex flip | M |
 | 2 | Quick Scan session | Non-database session, filename patterns, counters | M |
-| 3 | The screen | Section, Basic Settings, info panel, scan → folder | L |
+| 3 | The screen | Section, Basic Settings, info panel, page strip (select, delete, viewer), scan → folder | L |
 | 4 | Preview + zoom | Preview scan, rulers, zoom, pan | M |
-| 5 | Crop marquee | Marquee, Units selector, crop applied on save | M |
-| 6 | Advanced tab | Rotation, brightness/contrast/sharpen/threshold, Default | M |
+| 5 | Crop marquee | Marquee, Units selector, "draw a box and scan to it", crop in software | M |
+| 6 | Advanced tab | Rotate left/right, flip, angle, deskew, undo/redo, brightness/contrast/sharpen/threshold, Default | L |
 | 7 | Quick Settings | Named presets, save/load/delete | S |
 | 8 | PDF output | Multi-page PDF, searchable via existing OCR | S |
+| 8a | OCR text | "Copy text" from recognised pages; no .txt files | S |
 | 9 | Clipboard + printer | Scan to clipboard; scan to printer (copier mode) | M |
-| 10 | Email | Simple MAPI with an honest fallback | M |
+| 10 | Email | Share sheet, then MAPI where a client exists, then Explorer; PDF or images | L |
 
 Sizes assume the reuse inventory in §3 holds. Phases 1–3 are the minimum that produces something
 usable; 4–7 make it feel like the manufacturer's app; 8–10 complete the destination set.
+
+### 1a. The 2026-09-13 requests — where each one lands
+
+Franz's 2026-09-13 "Fixes and Changes" list asked for all of these on the Scan page. It was decided
+the same day (SPEC-2026-003) that the evidence Scan page gets **only the viewer and delete**. Pages
+there have no checksum or preserved original yet, so an edit before saving would leave no trace
+that the page was ever changed. Everything else belongs to Quick Scan. SPEC-2026-003's Round A
+answers are shown in brackets.
+
+| Request | Lands in | Notes |
+|---|---|---|
+| Delete scan | Scan page (SPEC-2026-003) · Quick Scan Phase 3 | To the Recycle Bin [Q1]; Quick Scan reuses `IStagedPageDiscarder` |
+| Double-click for a bigger page | Scan page (SPEC-2026-003) · Quick Scan Phase 3 | `PageViewerWindow` takes image paths |
+| Scan to PDF | Phase 8 | |
+| Email PDF | Phase 10 | Share sheet first [Q4] |
+| Email image(s) | Phase 10 | |
+| Print | Phase 9 | Groups already prints (§3) |
+| Custom page size, typed in | Phase 1 — Scan **and** Quick Scan [Q5] | A capture setting, not an edit |
+| Scan, draw a box, scan to that size | Phase 5 | Software crop; no saved named sizes [Q6] |
+| Crop | Phase 5 | `PageEdit.Crop` |
+| OCR page(s) | Phase 8 (searchable PDF) · Phase 8a ("Copy text") | No .txt files [Q3] |
+| Undo · Redo | Phase 6 | `UndoRedoService` is reusable (Phase 6 note) |
+| Rotate 90° counter-clockwise · clockwise | Phase 6 | |
+| Flip | Phase 6 | |
+| Angle | Phase 6 | |
+| Deskew | Phase 6 | |
+
+Not built anywhere, by decision [SPEC-2026-003 N6]: split, combine and reorder. They only make sense
+inside a group's page order.
 
 ---
 
@@ -85,6 +122,10 @@ panel maps onto code that is already here and tested; rebuilding any of it is a 
 | Rotation | `PageEdit.Rotate(Degrees)` | `Scanning/Editing/PageEdit.cs:10` |
 | Image adjustment icons | `PageEdit.Brightness / Contrast / Hue / Saturation / Sharpen / BlackWhite` | `Scanning/Editing/PageEdit.cs:18-29` |
 | Deskew | `PageEdit.Deskew`, `SkewEstimator` | `Scanning/Editing/` |
+| Flip · angle | `PageEdit.Rotate(180)` · a typed `PageEdit.Rotate(degrees)` | `App/Views/GroupDetailViewModel.Editing.cs:102,111` |
+| Undo / redo | `UndoRedoService`, `FileEditAction` — database-free (Phase 6 note) | `App/Services/UndoRedoService.cs` |
+| Print · clipboard (on Groups) | `PrintDialog` · `Clipboard.SetImage` | `App/Views/GroupDetailViewModel.Editing.cs:472,519` |
+| Page viewer · delete unsaved scans | `PageViewerWindow` (takes image paths) · `IStagedPageDiscarder` | `App/Views/Dialogs/` · `App/Services/` (SPEC-2026-003) |
 | Applying edits | `ImageEditor` | `Scanning/Editing/ImageEditor.cs` |
 | Zoom in / zoom out / fit | `ZoomController` (Min 0.05, Max 8.0, `Fit(...)`) | `App/Views/ZoomController.cs` |
 | Filename tokens | `TokenExpander` — `$(today) $(group) $(counter) $(user)` | `Core/Index/FieldValidator.cs:30` |
@@ -93,7 +134,8 @@ panel maps onto code that is already here and tested; rebuilding any of it is a 
 | Scan plumbing | `IScanService`, `IPageStorage`, `FakeScanService` | `Scanning/IScanService.cs` |
 
 **What does not exist and must be built:** the preview pane and its rulers, the crop marquee, the
-Units selector, named presets, the info panel, the section itself, clipboard, printer, and email.
+Units selector, named presets, the info panel, the section itself, and email. Clipboard and printer
+exist on Groups (rows above) and need reusing for Quick Scan's destinations, not rebuilding.
 
 ---
 
@@ -275,8 +317,9 @@ expensive to discover mid-build. Output is an answer, not code — anything buil
 **Goal:** `ScanProfileOptions` can express what NAPS2 already supports, without changing evidence
 scanning behaviour by a single pixel.
 
-**Scope:** `Scanning/ScanModels.cs`, `Scanning/Naps2ScanService.cs`, `FakeScanService.cs`, tests.
-**Out of scope:** any UI, any Quick Scan code.
+**Scope:** `Scanning/ScanModels.cs`, `Scanning/Naps2ScanService.cs`, `FakeScanService.cs`, tests,
+and the evidence Scan page's page-size list (amendment below).
+**Out of scope:** any other UI, any Quick Scan code.
 
 **Model:** Sonnet.
 
@@ -290,6 +333,11 @@ scanning behaviour by a single pixel.
   - `RotateDegrees` (default `0`)
 - Map each to NAPS2 `ScanOptions` in `Naps2ScanService`.
 - `FakeScanService` honours them so business logic stays testable without hardware.
+- **Amended 2026-09-14 (SPEC-2026-003 §05 Q5).** The evidence Scan page's Page size list gains a
+  "Custom…" entry that asks for width, height and unit, and passes `CustomPageSize`.
+  - A custom size is a capture setting, not an edit, so evidence rules allow it: the page is still
+    scanned, checksummed and preserved exactly as captured.
+  - Every other Scan-page setting stays as it is.
 
 **The constraint that matters:** the evidence capture path must be byte-identical. Every new
 property defaults to today's behaviour, and a test asserts that an options object constructed the
@@ -309,8 +357,13 @@ old way produces the same NAPS2 `ScanOptions` as before.
 > matches what it is today. When `CustomPageSize` is set it takes precedence over `PageSize`; when
 > null, nothing changes.
 >
+> Then give the evidence Scan page's Page size list (`ScanView.xaml`, `ScanViewModel.PageSizes`) a
+> "Custom…" entry that asks for width, height and unit and passes `CustomPageSize`. Choosing any
+> other size must leave the options exactly as today. A custom size is a capture setting, not an
+> edit, so it is allowed on the evidence path (SPEC-2026-003 §05 Q5).
+>
 > TDD. `dotnet build -c Release` (warnings are errors), `dotnet test -c Release`,
-> `dotnet format --verify-no-changes`. Do not touch any UI or add any Quick Scan code.
+> `dotnet format --verify-no-changes`. Do not touch any other UI or add any Quick Scan code.
 
 ---
 
@@ -426,6 +479,13 @@ Layout, mirroring the reference screenshot:
   never a dead button with no explanation), File Name (pattern preview shown resolved), Save
   format, Save to with a folder browser.
 - Scan → `IScanService.ScanAsync` → session → `ImageExportService` → file. Then show where it went.
+- **Page strip (amended 2026-09-14, SPEC-2026-003 N7).** Scanned pages show as thumbnails with the
+  same gestures as the evidence Scan page:
+  - click, Shift/Ctrl multi-select, Ctrl+A
+  - double-click or Enter opens `PageViewerWindow`, which takes image paths
+  - Delete sends the selected pages to the Recycle Bin through the existing `IStagedPageDiscarder`,
+    after the same confirmation
+  - page keys route through `ShortcutRouter`, which needs a Quick Scan section entry
 - Preview and the left tool rail are present but disabled in this phase, with tooltips.
 - Toolbar/button-bar buttons that do nothing yet must be **disabled with a reason**, never enabled
   and silently inert.
@@ -461,6 +521,10 @@ resolved filename preview updates with the pattern.
 > Resolution, Color Mode, Scan Area); the live info panel; the save panel (Folder destination,
 > filename pattern with resolved preview, format, folder browser); and a working Scan button that
 > writes one file via the existing `ImageExportService`.
+>
+> It also gets a page strip like the evidence Scan page's. Select pages, delete them to the Recycle
+> Bin through `IStagedPageDiscarder`, and double-click or press Enter to open `PageViewerWindow`.
+> Give its page keys an entry in `ShortcutRouter`. Reuse all three; do not write second copies.
 >
 > **Hard boundary: Quick Scan must never touch the database.** No groups, no documents, no pages.
 > Use `FgScanner.Core/QuickScan/` from Phase 2 for the session and naming.
@@ -549,6 +613,14 @@ resolved filename preview updates with the pattern.
   known values rather than only through the UI.
 - Info panel's Scan Area and Image Size update live from the marquee.
 - Clearing the marquee returns to full area.
+- **"Scan a page, draw a box, scan to that size" (amended 2026-09-14, SPEC-2026-003 §05 Q6)** is
+  this phase's flow end to end:
+  1. Preview.
+  2. Draw the box.
+  3. Press Scan. The final full-area scan is cropped to the box in software — spike 1 found no
+     device-side region scan.
+
+  The box is not saved as a named size.
 
 > **Prompt:**
 >
@@ -559,6 +631,9 @@ resolved filename preview updates with the pattern.
 > any zoom level. The Units dropdown (Pixels / Inches / Millimetres) drives both the rulers and the
 > marquee's readout. The info panel's Scan Area and Image Size update live from the marquee, and
 > clearing it returns to full area.
+>
+> This is the whole of "scan a page, draw a box, scan to that size": preview, draw, press Scan, and
+> the final scan comes out cropped to the box. Do not add saved named sizes.
 >
 > **The crop is applied in software, not at the scanner.** The final scan runs full-area at the
 > target DPI, then `PageEdit.Crop` trims it through `ImageEditor` — both already exist in
@@ -576,12 +651,34 @@ resolved filename preview updates with the pattern.
 ### Phase 6 — Advanced Settings tab
 
 **Goal:** the second tab, matching the reference screenshot's structure minus the two filters we
-deliberately are not building.
+deliberately are not building — plus the page tools and undo/redo from the 2026-09-13 requests.
 
 **Model:** Sonnet.
 
 **Specification:**
 - **Image Processing** group: Rotation (No Rotation / 90° / 180° / 270°).
+- **Page tools (amended 2026-09-14, SPEC-2026-003 N6).** On the selected pages, applied through
+  `ImageEditor`:
+  - rotate 90° counter-clockwise and clockwise
+  - flip
+  - angle — a typed rotation in degrees
+  - deskew
+  - **undo and redo**
+
+  This is the set the Groups page has (`GroupDetailViewModel.Editing.cs`: flip is
+  `PageEdit.Rotate(180)` at :102, angle a typed `PageEdit.Rotate` at :111). No split, combine or
+  reorder.
+- **Undo/redo reuse — checked 2026-09-14 (SPEC-2026-003 A4).** Quick Scan can use `UndoRedoService`
+  (`src/FgScanner.App/Services/UndoRedoService.cs`) as it is; it needs no second stack.
+  - Its only import is `System.IO` (:1). It snapshots image bytes into its own temp folder (:30) and
+    keeps two in-memory lists.
+  - `FileEditAction` (:95-112) copies a snapshot back, then calls a callback its owner supplies.
+  - The database work in Groups lives entirely in that callback (`GroupDetailViewModel.Editing.cs:74`,
+    whose `AfterPageFileChangedAsync` re-runs OCR, reloads rows and re-exports). Quick Scan passes a
+    callback that only refreshes its preview.
+  - It is an App-layer type, so the Quick Scan view model can use it but `FgScanner.Core/QuickScan`
+    cannot. That is right for undo, which is screen state.
+  - Dispose it with the session so its snapshot folder goes too.
 - **Image Adjustment** group: brightness, contrast, sharpen, black-and-white threshold — all four
   already exist as `PageEdit` records. Present them as the reference's four icon buttons opening
   small adjustment popovers, applied live to the preview.
@@ -599,6 +696,12 @@ deliberately are not building.
 > **Image Adjustment:** four controls — brightness, contrast, sharpen, black-and-white threshold —
 > presented as the reference's four icon buttons, each opening a small adjustment popover, applied
 > live to the preview. Plus a Default button resetting the tab.
+>
+> Also add the page tools the Groups page has: rotate 90° left and right, flip
+> (`PageEdit.Rotate(180)`), angle (a typed rotation) and deskew, plus undo and redo. Reuse
+> `UndoRedoService` and `FileEditAction` from `src/FgScanner.App/Services/UndoRedoService.cs`, with a
+> callback that only refreshes the preview; this phase's undo/redo note explains why that is
+> database-free. No split, combine or reorder.
 >
 > **All four adjustments already exist** as `PageEdit.Brightness`, `PageEdit.Contrast`,
 > `PageEdit.Sharpen` and `PageEdit.BlackWhite` in `src/FgScanner.Scanning/Editing/PageEdit.cs`,
@@ -684,6 +787,37 @@ deliberately are not building.
 
 ---
 
+### Phase 8a — OCR text (added 2026-09-14)
+
+**Goal:** the "OCR page(s)" request, in a screen with no database to keep the text in.
+
+**Model:** Sonnet.
+
+**Specification (SPEC-2026-003 §05 Q3):**
+- A **"Copy text"** button runs OCR on the selected pages and puts their text on the clipboard: in
+  page order, with a blank line between pages.
+- Searchable PDF stays Phase 8's checkbox; this phase adds nothing to PDF output.
+- **No `.txt` files** are written next to images — Franz chose not to.
+- OCR uses the existing Tesseract runner in `FgScanner.Ocr`. Read how `PdfExportService` reaches it
+  through `PdfOcrSettings` before wiring. Nothing is stored: the text exists only on the clipboard.
+- OCR is slow per page. Show progress, keep it cancellable, and say plainly when a page produced no
+  text.
+
+> **Prompt:**
+>
+> Add a "Copy text" button to Quick Scan in `C:\Users\fgers\Visual\FgmakerScanner`. It runs OCR on
+> the selected pages with the existing Tesseract runner in `FgScanner.Ocr` and puts the recognised
+> text on the clipboard, in page order, with a blank line between pages. First read how
+> `src/FgScanner.Scanning/Export/PdfExportService.cs` reaches Tesseract through `PdfOcrSettings`:
+> wire the existing runner, do not build a pipeline.
+>
+> Do not write `.txt` files, and do not store the text anywhere: Quick Scan never touches the
+> database. Show progress, keep it cancellable, and say so when a page yields no text.
+>
+> OCR tests run real Tesseract (CLAUDE.md). TDD at view-model level, Release build clean, format clean.
+
+---
+
 ### Phase 9 — Clipboard and printer
 
 **Goal:** scan straight to the clipboard, and scan-to-printer so the machine works as a copier.
@@ -718,20 +852,40 @@ deliberately are not building.
 
 ### Phase 10 — Email
 
-**Goal:** the Email button in the reference screenshot, done honestly.
+**Goal:** the Email button in the reference screenshot, done honestly — and on this station it must
+actually produce an email.
 
-**Model:** Opus — the fallback design matters more than the happy path.
+**Model:** Opus — the route order and the fallback design matter more than any one call.
+
+**Rewritten 2026-09-14** after spike 3 and SPEC-2026-003 §05 Q4. The original design made Simple
+MAPI the happy path. Spike 3 found no MAPI client on the station — only new Outlook, which has no
+MAPI — so that Email button would never have produced an email there.
 
 **Specification:**
-- **Read Phase 0's spike findings first.** Simple MAPI (`MAPISendMailW`) has reported breakage on
-  Windows 11, and the default MAPI client comes from
-  `HKEY_LOCAL_MACHINE\Software\Clients\Mail`.
-- Attempt Simple MAPI via P/Invoke: save the scan to a temp file, attach, open the client's compose
-  window. Never send silently — the operator sees and sends the message.
-- **The fallback is the real design work.** If no MAPI client is registered, or the call fails, do
-  not show a raw error. Save the file to the normal destination folder, open that folder in
-  Explorer with the file selected, and say plainly: the scan is saved here, attach it yourself.
-  A dead-end error on a machine with no Outlook is a bug; a graceful hand-off is a feature.
+- **Sends PDF or images**, whatever the destination panel is set to produce. Several images go as
+  several attachments.
+- **Never sends silently.** Every route ends with the operator looking at a message and pressing Send.
+- **Route order:**
+  1. **Windows Share sheet** — `DataTransferManager` through `IDataTransferManagerInterop.GetForWindow`,
+     which is supported for unpackaged WPF. It hands real file attachments to new Outlook and any
+     other share-aware app.
+  2. **Simple MAPI** (`MAPISendMailW`) — only when classic Outlook or another MAPI client is present.
+     Detect this by probing, never by calling. A client is present only when all three hold
+     (spike 3):
+     - `HKLM\SOFTWARE\Clients\Mail` has a non-empty default value
+     - that client's `DLLPathEx`/`DLLPath` points at a file that exists
+     - `Windows Messaging Subsystem` has a non-empty `MAPI` value
+  3. **Explorer with the file selected**, with a plain sentence: the scan is saved here, attach it
+     yourself. Never a raw error code.
+- **The first step is a spike, not code.** The Share sheet needs a Windows SDK target framework
+  (`net10.0-windows10.0.x`) for the WinRT projection, and that change is untried in this solution.
+  Before writing the feature, check that:
+  - the solution still builds and its tests pass
+  - the win-x64 publish is still non-single-file (the LGPL separation in CLAUDE.md)
+  - the installer still works
+
+  If any of these fails, stop and report. MAPI-then-Explorer is the fallback plan, never a silent
+  substitution.
 - **Never copy NAPS2's email code** — it lives in NAPS2.Lib, which is GPL. Re-implement.
 
 > **Prompt:**
@@ -739,22 +893,28 @@ deliberately are not building.
 > Add the Email destination to Quick Scan in `C:\Users\fgers\Visual\FgmakerScanner`, and enable the
 > Email button that earlier phases left disabled.
 >
-> **Read `docs/superpowers/research/2026-08-30-quick-scan-spikes.md` first** — spike 3 determined
-> whether Simple MAPI works on this machine.
+> **Read spike 3 in `docs/superpowers/research/2026-08-30-quick-scan-spikes.md` first.** This station
+> has no MAPI client, only new Outlook.
 >
-> Happy path: save the scan to a temp file, then use Simple MAPI (`MAPISendMailW` from
-> `mapi32.dll`, via P/Invoke) to open the default mail client's compose window with the file
-> attached. **Never send silently** — the operator reviews and sends.
+> **Start with a spike.** Move the App project to a Windows SDK target framework
+> (`net10.0-windows10.0.x`) so `DataTransferManager` is available. Confirm that
+> `dotnet build -c Release`, `dotnet test -c Release`, the win-x64 publish (still non-single-file,
+> non-trimmed) and the installer all still work. If any fails, stop and report rather than working
+> around it.
 >
-> **The fallback matters more than the happy path.** MAPI has reported breakage on Windows 11, and
-> a machine with no registered MAPI client (`HKEY_LOCAL_MACHINE\Software\Clients\Mail`) is normal
-> now. If MAPI is unavailable or fails, do not show a raw error code: save the file to the usual
-> destination folder, open Explorer with it selected, and tell the operator plainly that the scan
-> is saved and they can attach it themselves. Test that path explicitly — it is the one most users
-> will hit.
+> Then build the routes, in this order:
+> 1. The Windows Share sheet via `IDataTransferManagerInterop.GetForWindow`, carrying the PDF or
+>    image files as attachments.
+> 2. Simple MAPI (`MAPISendMailW`), only when spike 3's registry probe says a MAPI client is present.
+>    Probe; never call MAPI to find out.
+> 3. Otherwise, save to the destination folder, open Explorer with the file selected, and tell the
+>    operator plainly to attach it themselves.
+>
+> **Never send silently.** Test the route choice and the fallback explicitly; the fallback's wording
+> is part of the feature.
 >
 > **Licensing: never copy NAPS2's email implementation.** It is in NAPS2.Lib, which is GPL, and
-> this project is not. Re-implement from the Win32 API.
+> this project is not. Re-implement from the Windows APIs.
 >
 > No database access. Release build clean, format clean.
 
@@ -847,6 +1007,7 @@ Keep it to a few lines. CLAUDE.md is read at the start of every session and pays
 | 6 Advanced tab | Sonnet | Wiring existing edits |
 | 7 Presets | Sonnet | Serialisation, well specified |
 | 8 PDF | Sonnet | Mostly wiring |
+| 8a OCR text | Sonnet | Wiring the existing Tesseract runner |
 | 9 Clipboard/printer | Sonnet | Two small integrations |
 | 10 Email | **Opus** | The fallback design is the hard part |
 
@@ -906,7 +1067,8 @@ value here divided by cost, given what this codebase already has.
 |---|---|---|
 | Phase 1 changes evidence scanning behaviour | Legal capture path regresses | Every new option defaults to current behaviour; a test pins the existing mapping |
 | Marquee coordinate conversion is wrong | Silently mis-cropped scans | Direct unit tests on preview-px → physical → output-px, not just UI tests |
-| MAPI unavailable on Windows 11 | Email dead-ends | Phase 0 spike; fallback is the specified behaviour, not an afterthought |
+| MAPI unavailable on Windows 11 — confirmed on the station (spike 3) | Email dead-ends | Share sheet is the first route (Phase 10); MAPI only where a client is detected; Explorer last |
+| The Windows SDK target framework breaks the build, publish or installer | Phase 10 cannot use the Share sheet | Phase 10 opens with that change as a spike and stops if it fails |
 | Quick Scan output lands in an evidence folder | Casual scan mistaken for evidence | Structural wall (§5.1) plus the two-net refusal (§5.3), tested both ways |
 | **Evidence scanned in Quick Scan by mistake** | **Box captured with no index, checksums or originals — and no error. Must be rescanned** | Header states what the screen is not for; visually distinct sections; the guide opens with the choice (§5.4) |
 | GUI cannot be verified by an agent | Ships unverified | `docs/manual-tests.md` checklist per phase, as phase 19 established |
@@ -927,7 +1089,18 @@ value here divided by cost, given what this codebase already has.
    icon together, per §5.4. Colour alone would fail exactly the hurried glance it exists to catch.
 5. **Nothing is hidden behind a station-type flag.** Quick Scan ships visible everywhere.
 
-**Nothing is open. This plan is ready to execute.**
+**Answered 2026-09-13** (SPEC-2026-003 Round A):
+
+6. **Deleted scans go to the Windows Recycle Bin**, on the Scan page and in Quick Scan (Q1).
+7. **`docs/spec-scan-section.md` is superseded by this plan** (Q2). Save to group stays on the Scan
+   page, because note-sheet capture depends on it.
+8. **OCR means a searchable PDF plus "Copy text"**, with no `.txt` files (Q3) — Phases 8 and 8a.
+9. **Email tries the Share sheet first, then MAPI where a client exists, then Explorer** (Q4) —
+   Phase 10.
+10. **Custom page size comes to both surfaces** (Q5) — Phase 1.
+11. **"Draw a box" crops the final scan in software**, with no saved named sizes (Q6) — Phase 5.
+
+**Open:** spike 2 (preview cost) still needs the scanner. Nothing else is open.
 
 ### 9.1 A forward-looking note, outside this plan's scope
 

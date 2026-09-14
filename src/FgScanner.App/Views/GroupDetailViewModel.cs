@@ -322,18 +322,21 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         }
 
         var start = SelectedRow is null ? 0 : Rows.IndexOf(SelectedRow);
-        var viewer = new Dialogs.PageViewerWindow([.. Rows], start)
-        {
-            Owner = System.Windows.Application.Current?.MainWindow,
-        };
-        viewer.ShowDialog();
+        var shown = Rows.ToList();
+        var landed = ShowPageViewer([.. shown.Select(r => r.ImagePath)], start);
 
         // The grid follows the viewer, so closing on page 7 does not drop the user back on page 1.
-        if (viewer.Current is { } landed)
+        if (landed >= 0 && landed < shown.Count)
         {
-            SelectedRow = Rows.FirstOrDefault(r => r.DocumentId == landed.DocumentId) ?? landed;
+            SelectedRow = Rows.FirstOrDefault(r => r.DocumentId == shown[landed].DocumentId) ?? shown[landed];
         }
     }
+
+    /// <summary>
+    /// Shows the viewer over these paths from a start index and returns the index it closed on.
+    /// Replaceable so the viewer's effect on the grid can be tested without a window.
+    /// </summary>
+    public Func<IReadOnlyList<string>, int, int> ShowPageViewer { get; set; } = Dialogs.PageViewerWindow.ShowModal;
 
     /// <summary>
     /// Reviews suspected duplicates in this group. Deletion goes through the Trash, so a wrong

@@ -20,6 +20,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     private readonly ProfileOcrTrigger _ocrTrigger;
     private readonly PageEditingToolset _toolset;
     private readonly TrashService _trashService;
+    private readonly IStagedPageDiscarder _discarder;
     private CancellationTokenSource? _scanCts;
 
     public ScanViewModel(
@@ -30,8 +31,10 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         ActiveGroupStore activeGroup,
         ProfileOcrTrigger ocrTrigger,
         PageEditingToolset toolset,
-        TrashService trashService)
+        TrashService trashService,
+        IStagedPageDiscarder? stagedPageDiscarder = null)
     {
+        _discarder = stagedPageDiscarder ?? new RecycleBinDiscarder();
         _scanService = scanService;
         _sessionService = sessionService;
         _groupService = groupService;
@@ -49,7 +52,12 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             SaveToGroupCommand.NotifyCanExecuteChanged();
         };
 
-        Pages.CollectionChanged += (_, _) => SaveToGroupCommand.NotifyCanExecuteChanged();
+        Pages.CollectionChanged += (_, _) =>
+        {
+            SaveToGroupCommand.NotifyCanExecuteChanged();
+            OpenPageViewerCommand.NotifyCanExecuteChanged();
+        };
+        SelectedPages.CollectionChanged += (_, _) => DeleteSelectedPagesCommand.NotifyCanExecuteChanged();
 
         foreach (var page in sessionService.Session.Pages)
         {
@@ -73,6 +81,110 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     public ObservableCollection<ScanDeviceInfo> Devices { get; } = [];
 
     public ObservableCollection<ScannedPage> Pages { get; } = [];
+
+    /// <summary>The thumbnails selected on screen, kept in sync by the view.</summary>
+    public ObservableCollection<ScannedPage> SelectedPages { get; } = [];
+
+    /// <summary>
+    /// Shows the viewer over these paths from a start index and returns the index it closed on.
+    /// Replaceable so opening the viewer can be tested without a window.
+    /// </summary>
+    public Func<IReadOnlyList<string>, int, int> ShowPageViewer { get; set; } = Dialogs.PageViewerWindow.ShowModal;
+
+    private bool CanOpenPageViewer() => Pages.Count > 0;
+
+    /// <summary>
+    /// Opens the scanned pages full size, before they are saved, so a crooked or double-fed page is
+    /// caught while it can still be rescanned. View-only: nothing about the page changes here.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanOpenPageViewer))]
+    private void OpenPageViewer(ScannedPage? page)
+    {
+        var ordered = Pages.OrderBy(p => p.SequenceNumber).ToList();
+        var chosen = page ?? SelectedPages.FirstOrDefault();
+        var start = chosen is null ? 0 : Math.Max(0, ordered.IndexOf(chosen));
+        var landed = ShowPageViewer([.. ordered.Select(p => p.FilePath)], start);
+
+        // Delete acts on the selection, so it follows the viewer: closing on a double-fed page and
+        // pressing Delete must remove that page, not the one the viewer was opened on.
+        if (landed >= 0 && landed < ordered.Count)
+        {
+            SelectedPages.Clear();
+            SelectedPages.Add(ordered[landed]);
+        }
+    }
+
+    /// <summary>Asks before deleting, with Cancel as the default answer. Replaceable so tests show no dialog.</summary>
+    public Func<string, bool> ConfirmDelete { get; set; } = message =>
+        System.Windows.MessageBox.Show(
+            message,
+            "Delete scanned pages",
+            System.Windows.MessageBoxButton.OKCancel,
+            System.Windows.MessageBoxImage.Warning,
+            System.Windows.MessageBoxResult.Cancel) == System.Windows.MessageBoxResult.OK;
+
+    /// <summary>
+    /// Set while pages move into a group. Adoption moves the files, so a delete then recycles nothing
+    /// and the page it meant to remove lands in the group anyway. The save that follows "Scan into
+    /// this group" runs after IsScanning has cleared, so that guard does not cover it. A count, not a
+    /// flag: Save to group can start while that auto-save is still running, and the first to finish
+    /// must not re-enable Delete while the other is moving files.
+    /// </summary>
+    private int _savesRunning;
+
+    private bool CanDeleteSelectedPages() => SelectedPages.Count > 0 && !IsScanning && _savesRunning == 0;
+
+    /// <summary>
+    /// Deletes the selected pages before they reach a group, to the Recycle Bin so a mis-click can be
+    /// put back. They leave the recovery index before their files go, because an index naming a
+    /// missing file stops recovery at that file. A file the Recycle Bin refuses stays in the session
+    /// folder, no longer listed, and is removed with the folder.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanDeleteSelectedPages))]
+    private void DeleteSelectedPages()
+    {
+        var doomed = Pages.Where(SelectedPages.Contains).ToList();
+        var noun = doomed.Count == 1 ? "page" : "pages";
+        if (!ConfirmDelete(
+            $"Move {doomed.Count} scanned {noun} to the Recycle Bin? They have not been saved to a group."))
+        {
+            return;
+        }
+
+        var session = _sessionService.Session;
+        try
+        {
+            session.ForgetPages(doomed.Select(p => p.FilePath));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // No file goes while the index on disk may still name it, so the pages stay on screen.
+            // Nothing above this catches a command's exception: letting it out closes the app.
+            Log.Warning(ex, "Could not update the recovery index in {Folder} before deleting pages", session.FolderPath);
+            StatusText = $"Could not delete: the scan session's recovery index could not be updated ({ex.Message}). "
+                + "Nothing was deleted; try again.";
+            return;
+        }
+
+        var refused = new List<string>();
+        foreach (var page in doomed)
+        {
+            if (!_discarder.TryDiscard(session.FolderPath, page.FilePath, out var reason))
+            {
+                refused.Add(Path.GetFileName(page.FilePath));
+                Log.Warning("Could not move staged page {File} to the Recycle Bin: {Reason}", page.FilePath, reason);
+            }
+
+            Pages.Remove(page);
+            SelectedPages.Remove(page);
+        }
+
+        Log.Information("Deleted {Count} staged page(s) from {Folder}", doomed.Count, session.FolderPath);
+        StatusText = refused.Count == 0
+            ? $"Deleted {doomed.Count} page(s) — in the Recycle Bin."
+            : $"Deleted {doomed.Count} page(s). Could not move {string.Join(", ", refused)} to the Recycle Bin; "
+                + (refused.Count == 1 ? "it is" : "they are") + " no longer listed and removed with the scan session.";
+    }
 
     [ObservableProperty]
     private ScanDriver _selectedDriver;
@@ -113,6 +225,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     [NotifyCanExecuteChangedFor(nameof(CancelScanCommand))]
     [NotifyCanExecuteChangedFor(nameof(CancelAnnotatedCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveToGroupCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DeleteSelectedPagesCommand))]
     private bool _isScanning;
 
     [ObservableProperty]
@@ -430,6 +543,8 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     private async Task SaveToGroupAsync()
     {
         var group = _activeGroup.Current!;
+        _savesRunning++;
+        DeleteSelectedPagesCommand.NotifyCanExecuteChanged();
         try
         {
             var triage = await _toolset.Triage.TriageAsync(
@@ -494,6 +609,11 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         {
             Log.Error(ex, "Saving pages to group {Group}", group.Name);
             StatusText = $"Saving to group failed: {ex.Message}";
+        }
+        finally
+        {
+            _savesRunning--;
+            DeleteSelectedPagesCommand.NotifyCanExecuteChanged();
         }
     }
 

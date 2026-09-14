@@ -8,39 +8,47 @@ using System.Windows.Media.Imaging;
 namespace FgScanner.App.Views.Dialogs;
 
 /// <summary>
-/// A page at full resolution, with the group's other pages a key away. The in-place preview is
-/// 300px wide in the corner of a grid; reading a scan means seeing it properly.
+/// A page at full resolution, with the other pages a key away. The in-place preview is 300px wide
+/// in the corner of a grid; reading a scan means seeing it properly. It takes image paths rather
+/// than group rows so that scans not yet saved to a group can be checked the same way.
 ///
 /// Exactly one page is decoded at a time. A 2480x3507 scan costs ~35 MB decoded, so pre-loading
 /// neighbours to make paging feel snappier would spend hundreds of megabytes on a large group.
 /// </summary>
 public partial class PageViewerWindow : Window
 {
-    private readonly IReadOnlyList<DocumentRow> _pages;
+    private readonly IReadOnlyList<string> _imagePaths;
     private readonly PageNavigator _navigator;
     private readonly ZoomController _zoom = new();
     private readonly FitPolicy _fit;
 
-    public PageViewerWindow(IReadOnlyList<DocumentRow> pages, int startIndex)
+    public PageViewerWindow(IReadOnlyList<string> imagePaths, int startIndex)
     {
         InitializeComponent();
         _fit = new FitPolicy(_zoom);
-        _pages = pages;
-        _navigator = new PageNavigator(pages.Count, startIndex);
+        _imagePaths = imagePaths;
+        _navigator = new PageNavigator(imagePaths.Count, startIndex);
         Loaded += (_, _) => Show(_navigator.Index);
     }
 
-    /// <summary>The page left showing, so the grid's selection can follow the viewer.</summary>
-    public DocumentRow? Current =>
-        _pages.Count == 0 ? null : _pages[Math.Clamp(_navigator.Index, 0, _pages.Count - 1)];
+    /// <summary>The page left showing, so the caller's selection can follow the viewer.</summary>
+    public int CurrentIndex => _navigator.Index;
+
+    /// <summary>Shows the viewer over the main window and returns the index of the page it closed on.</summary>
+    public static int ShowModal(IReadOnlyList<string> imagePaths, int startIndex)
+    {
+        var viewer = new PageViewerWindow(imagePaths, startIndex) { Owner = Application.Current?.MainWindow };
+        viewer.ShowDialog();
+        return viewer.CurrentIndex;
+    }
 
     private void Show(int _)
     {
-        var row = Current;
+        var path = _imagePaths.Count == 0 ? null : _imagePaths[_navigator.Index];
         // Dropping the previous bitmap before decoding the next keeps one page in memory, not two.
         PageImage.Source = null;
-        PageImage.Source = row is null ? null : LoadFullImage(row.ImagePath);
-        FileNameText.Text = row?.ImagePath ?? "";
+        PageImage.Source = path is null ? null : LoadFullImage(path);
+        FileNameText.Text = path ?? "";
         PositionText.Text = _navigator.Position;
         FirstButton.IsEnabled = _navigator.CanGoPrevious;
         PreviousButton.IsEnabled = _navigator.CanGoPrevious;

@@ -1,6 +1,9 @@
 # Spec — Scan section becomes scan-to-folder
 
-**Status:** approved design, not implemented · **Written:** 2026-08-24
+**Status:** **Superseded 2026-09-13** by the Quick Scan program plan
+(`docs/superpowers/plans/2026-08-30-quick-scan-program.md`), per SPEC-2026-003 §05 Q2. Save to group
+stays on the Scan page because note-sheet capture depends on it; scanning to a folder for everyday
+documents is Quick Scan's job. Kept for the record — do not build. · **Written:** 2026-08-24
 **Sequencing:** deferred until v0.1.0 ships — do not start before the release is out.
 
 Filed in `docs/` alongside `scope-auto-orientation.md` rather than under

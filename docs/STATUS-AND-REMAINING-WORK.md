@@ -34,13 +34,13 @@ Scan; the work is split into three specs.
 | Scan page: delete scan | [SPEC-2026-003](specs/SPEC-2026-003-scan-viewer-delete-and-quick-scan-tools.md) | Pages not yet saved to a group |
 | Scan page: double-click for a bigger page | SPEC-2026-003 | Reuses the Groups page viewer |
 | Scan to PDF | Quick Scan Phase 8 (plan amended by SPEC-003) | `PdfExportService` already exists |
-| Email PDF / email images | Quick Scan Phase 10 | Spike 3: MAPI not viable on this PC; route is SPEC-003 §05 Q4 |
+| Email PDF / email images | Quick Scan Phase 10 (rewritten) | Share sheet first, MAPI where a client exists, Explorer last (SPEC-003 §05 Q4) |
 | Print | Quick Scan Phase 9 | Groups already has Print… |
-| Custom page size, typed in | Quick Scan Phase 1 (+ Scan page per SPEC-003 §05 Q5) | NAPS2 supports it |
+| Custom page size, typed in | Quick Scan Phase 1, on Scan and Quick Scan (SPEC-003 §05 Q5) | NAPS2 supports it |
 | Scan, draw a box, scan to that size | Quick Scan Phases 4–5 | Spike 1: software crop only |
 | Crop | Quick Scan Phase 5 | `PageEdit.Crop` exists |
-| OCR page(s) | Quick Scan (new phase, SPEC-003 §05 Q3) | No database in Quick Scan |
-| Undo, redo, rotate ccw/cw, flip, angle, deskew | Quick Scan Phase 6 (amended) | All exist as `PageEdit`s |
+| OCR page(s) | Quick Scan Phase 8 (searchable PDF) + new Phase 8a ("Copy text") | No .txt files (SPEC-003 §05 Q3) |
+| Undo, redo, rotate ccw/cw, flip, angle, deskew | Quick Scan Phase 6 (amended) | Edits are `PageEdit`s; `UndoRedoService` is database-free and reusable |
 | Scroll bars everywhere on small screens | [SPEC-2026-001](specs/SPEC-2026-001-fit-and-scrolling.md) | Window opens bigger than a 1366×768 screen |
 | Groups: preview Fit fits vertically | SPEC-2026-001 | **Bug, measured:** Fit shows a 300-DPI page at ~1/3 size |
 | Groups: double-click viewer Fit fits vertically | SPEC-2026-001 | Same bug |
@@ -89,11 +89,11 @@ Scan; the work is split into three specs.
 
 ### 3.4 Planned, not built
 
-- **Quick Scan program, Phases 1–10** (`docs/superpowers/plans/2026-08-30-quick-scan-program.md`),
-  plus its support work: project skill `fgscanner-wpf-section`, CLAUDE.md section, ADRs 0006–0008,
+- **Quick Scan program, Phases 1–10 and 8a** (`docs/superpowers/plans/2026-08-30-quick-scan-program.md`,
+  amended 2026-09-14 with the 2026-09-13 Scan-page requests — see its §1a), plus its support work: project skill `fgscanner-wpf-section`, CLAUDE.md section, ADRs 0006–0008,
   `docs/spec-quick-scan.md`, `QUICK-SCAN-HOWTO.txt`. — L
-- **Scan section becomes scan-to-folder** (`docs/spec-scan-section.md`, approved 2026-08-24, never
-  built) — conflicts with note-sheet capture; SPEC-003 §05 Q2 proposes retiring it. — decision
+- **Scan section becomes scan-to-folder** (`docs/spec-scan-section.md`) — **superseded 2026-09-13**
+  by the Quick Scan plan (SPEC-003 §05 Q2); Save to group stays on Scan. — closed
 - **Scan settings reset every launch**: `Profile.ScanSettingsJson`, `OcrLanguages`,
   `AiDescriptionEnabled` exist but nothing reads them (`src/FgScanner.Data/Entities.cs:58,69,71`).
   — M

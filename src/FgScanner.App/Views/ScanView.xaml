@@ -92,31 +92,62 @@
             </StackPanel>
         </ScrollViewer>
 
-        <!-- Thumbnails (virtualized) -->
-        <ListBox Grid.Column="1"
-                 ItemsSource="{Binding Pages}"
-                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                 VirtualizingPanel.IsVirtualizing="True"
-                 VirtualizingPanel.VirtualizationMode="Recycling">
-            <ListBox.ItemsPanel>
-                <ItemsPanelTemplate>
-                    <VirtualizingStackPanel />
-                </ItemsPanelTemplate>
-            </ListBox.ItemsPanel>
-            <ListBox.ItemTemplate>
-                <DataTemplate>
-                    <StackPanel Orientation="Horizontal" Margin="4">
-                        <Border BorderBrush="Gray" BorderThickness="1">
-                            <Image Width="140"
-                                   Source="{Binding FilePath, Converter={x:Static views:ThumbnailConverter.Instance}}"
-                                   Stretch="Uniform" />
-                        </Border>
-                        <TextBlock VerticalAlignment="Center" Margin="10,0,0,0">
-                            <Run Text="Page " /><Run Text="{Binding SequenceNumber, Mode=OneWay}" />
-                        </TextBlock>
-                    </StackPanel>
-                </DataTemplate>
-            </ListBox.ItemTemplate>
-        </ListBox>
+        <!-- Thumbnails (virtualized). Double-click or Enter checks a page full size, and Delete
+             removes it, before it is saved to a group. -->
+        <DockPanel Grid.Column="1">
+            <Button DockPanel.Dock="Bottom" HorizontalAlignment="Left"
+                    Content="Delete selected…" Command="{Binding DeleteSelectedPagesCommand}"
+                    Padding="12,6" Margin="0,6,0,0"
+                    ToolTipService.ShowOnDisabled="True"
+                    ToolTip="Move the selected scans to the Recycle Bin before they are saved (Delete). Select one or more pages first; not available while scanning." />
+            <ListBox x:Name="PageList"
+                     ItemsSource="{Binding Pages}"
+                     SelectionMode="Extended"
+                     SelectionChanged="OnPageSelectionChanged"
+                     MouseDoubleClick="OnPageDoubleClick"
+                     KeyDown="OnPageListKeyDown"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     VirtualizingPanel.IsVirtualizing="True"
+                     VirtualizingPanel.VirtualizationMode="Recycling">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                        <Setter Property="AutomationProperties.Name">
+                            <Setter.Value>
+                                <MultiBinding Converter="{x:Static views:PagePositionConverter.Instance}">
+                                    <Binding />
+                                    <Binding Path="DataContext.Pages" RelativeSource="{RelativeSource AncestorType=ListBox}" />
+                                    <Binding Path="DataContext.Pages.Count" RelativeSource="{RelativeSource AncestorType=ListBox}" />
+                                </MultiBinding>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel />
+                    </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal" Margin="4">
+                            <Border BorderBrush="Gray" BorderThickness="1">
+                                <Image Width="140"
+                                       Source="{Binding FilePath, Converter={x:Static views:ThumbnailConverter.Instance}}"
+                                       Stretch="Uniform" />
+                            </Border>
+                            <TextBlock VerticalAlignment="Center" Margin="10,0,0,0">
+                                <TextBlock.Text>
+                                    <MultiBinding Converter="{x:Static views:PagePositionConverter.Instance}">
+                                        <Binding />
+                                        <Binding Path="DataContext.Pages" RelativeSource="{RelativeSource AncestorType=ListBox}" />
+                                        <Binding Path="DataContext.Pages.Count" RelativeSource="{RelativeSource AncestorType=ListBox}" />
+                                    </MultiBinding>
+                                </TextBlock.Text>
+                            </TextBlock>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </DockPanel>
     </Grid>
 </UserControl>

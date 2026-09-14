@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Draft |
-| **Revision** | A |
+| **Status** | Approved |
+| **Revision** | B |
 | **Tier** | Feature |
 | **Author** | Claude, for Franz Gerster |
 | **Date** | 2026-09-13 |
@@ -38,14 +38,19 @@ JimsStuff pipeline depends on. Done carelessly, a length setting could change wh
 receives, or be silently wiped by "Build the Evidence profile". This spec keeps the export contract
 byte-for-byte unchanged and names the tests that prove it.
 
-**What we need from you.** Seven decisions (§05): how the editor opens, what "CRUD" covers, how memo
-text behaves, and what happens when someone types past a limit.
+**Decided (Round A, 2026-09-13).**
+- The editor is a separate modal window.
+- In it you can edit values, delete a page to Trash, and add pages with the existing buttons.
+- Memo text wraps on screen but stores no line breaks, and is limited to 2000 characters.
+- Pane sizes are remembered per group.
+- Typing stops at a field's limit, and a paste that would go over is refused with a message.
 
 ## 02 · Outcomes
 
 - **Goal** — correct and complete a page's index values while looking at the page, without
   scrolling a grid sideways, on the station's screen.
-- **Who benefits** — Jim entering Evidence values; any operator indexing a group.
+- **Who benefits** — Jim entering Evidence values, and Franz indexing groups under other profiles.
+  Nothing in the editor may depend on the Evidence profile (Franz, Round A: "not only for Jim's stuff").
 - **How we will know it worked**
   - All 13 Evidence fields of a selected page can be read and edited in one view at the smallest
     supported screen, with scrolling at most (manual, AC-15).
@@ -82,8 +87,14 @@ text behaves, and what happens when someone types past a limit.
 
 ## 04 · Current state
 
-- **Stack** — .NET 10 WPF Fluent, CommunityToolkit MVVM, EF Core 10 + SQLite. 516 tests passing
-  (Debug, `605ce9d`, 2026-09-13).
+- **Stack** — .NET 10 WPF Fluent, CommunityToolkit MVVM, EF Core 10 + SQLite. 545 tests passing
+  (Release, `4e3b954`, after SPEC-001 merged).
+- **Line numbers** below were read at `605ce9d`, before SPEC-001 merged. They were re-checked at
+  `4e3b954`:
+  - `RebuildColumns` is now at `GroupsView.xaml.cs:350`.
+  - `OpenPageViewer` is at `GroupDetailViewModel.cs:317-336`.
+  - The `ProfileService` lines are unchanged.
+  - Other `GroupsView.xaml(.cs)` lines have moved — find them by name.
 - **Field model** — `FieldDefinition` (`src/FgScanner.Data/Entities.cs:114-143`): Id, SchemaId,
   Order, Name, Type, Required, Sticky, Scope, DefaultValue, ListChoicesJson. **No length, width or
   multiline property exists.**
@@ -130,6 +141,31 @@ text behaves, and what happens when someone types past a limit.
   portal's display of multi-line values; `SettingsViewModel`'s profile load path.
 
 ## 05 · Questions for Franz
+
+**Answered 2026-09-13, Round A** — [review page](https://claude.ai/code/artifact/b2c902c4-c72e-4530-816f-fdc3512cddc4),
+db doc `review/SPEC-2026-002-rA`, verdict **approve**. Every blocking question took option (a), and
+every call N1–N9 was agreed.
+
+| # | Answer |
+|---|---|
+| Q1 | (a) Separate modal window |
+| Q2 | (a) Edit, delete to Trash, add with the existing buttons |
+| Q3 | (a) Wraps on screen; Enter moves to the next field; no line breaks stored |
+| Q4 | (a) Memo 1–2000 characters |
+| Q5 | (a) Per group; a group not opened before starts from the last layout |
+| Q6 | (a) "The size" is the draggable divider |
+| Q7 | (a) Typing stops at the limit; an over-long paste is refused with a message |
+
+Franz's notes, verbatim:
+- **General** — "This is not only for Jim's stuff, but I will also be scanning other information."
+  Applied to §02, AC-15 and §11.2: the editor works for any profile, and the manual checks run on a
+  non-Evidence group too.
+- **N4** — "This is for screen editing, so the actual character length does matter; viewing the
+  material is what matters." Read as agreement that lengths serve on-screen editing and stay out of
+  the export files. **Open:** whether a text box's on-screen width should also follow its length. §03
+  says no. The prompt pack asks Franz to confirm before Prompt 4 builds the form.
+
+The questions as asked are kept below for the record.
 
 **Blocking**
 
@@ -356,7 +392,8 @@ The app's WPF Fluent theme governs (§05 N9).
   *Proven by:* `RecordEditorViewModelTests.cs` → "batch field in form writes to the group"
 - **AC-14** — The migration applies to a 0.4.0-shaped database; existing fields read null/false.
   *Proven by:* `tests/FgScanner.Data.Tests/MigrationFixtureTests.cs` → "field length migration is additive"
-- **AC-15** — The editor opens on the selected page. All three panes resize. A memo box cannot be
+- **AC-15** — On an Evidence group and on a group under another profile, the editor opens on the
+  selected page. All three panes resize. A memo box cannot be
   dragged wider than its pane. Sizes return on reopen for that group, and a different group keeps
   its own.
   *Proven by:* manual — Franz, `docs/manual-tests.md` § Record editor
@@ -387,8 +424,12 @@ The app's WPF Fluent theme governs (§05 N9).
 
 **11.2 — Test data.** The Data tests' existing temp SQLite databases. The migration test migrates to
 `AddFieldScopeAndGroupBatchFields` first, inserts a field, then applies the new migration. The
-manifest snapshot comes from the existing export test fixtures. Manually: build the Evidence
-profile, give Title a length of 80 and Notes memo, and scan or import a few pages.
+manifest snapshot comes from the existing export test fixtures. Manually:
+1. Build the Evidence profile.
+2. Give Title a length of 80 and turn on memo for Notes.
+3. Scan or import a few pages.
+4. Repeat the open, resize and reopen checks on a group under an ordinary non-Evidence profile that
+   has a memo field (Franz, Round A).
 
 **11.3 — Verification suite.** Close FG Scanner first (a running Release copy locks the build). Then
 `dotnet build -c Release`, `dotnet test -c Release`, `dotnet format --verify-no-changes`. Manual:
@@ -507,7 +548,7 @@ drag. Not a performance question; revisit only if a profile ever exceeds `MaxFie
 ## 20 · Prompt pack
 
 See [SPEC-2026-002-group-record-editor-PROMPTS.md](./SPEC-2026-002-group-record-editor-PROMPTS.md) —
-7 prompts, written once this spec is approved:
+7 prompts, written 2026-09-13 on approval:
 1. Schema, migration and validation
 2. Settings and grid
 3. Editor view model and layout store
@@ -531,7 +572,7 @@ See [SPEC-2026-002-group-record-editor-PROMPTS.md](./SPEC-2026-002-group-record-
 
 | | |
 |---|---|
-| **Review round answered** | ☐ date: — · Round A: https://claude.ai/code/artifact/b2c902c4-c72e-4530-816f-fdc3512cddc4 (db doc `review/SPEC-2026-002-rA`) |
-| **Franz approved** | ☐ date: |
+| **Review round answered** | ☑ date: 2026-09-13 · Round A: https://claude.ai/code/artifact/b2c902c4-c72e-4530-816f-fdc3512cddc4 (db doc `review/SPEC-2026-002-rA`) |
+| **Franz approved** | ☑ date: 2026-09-13 (Round A, verdict approve) |
 | **Built** | ☐ date: |
 | **Verified in production** | ☐ date: |

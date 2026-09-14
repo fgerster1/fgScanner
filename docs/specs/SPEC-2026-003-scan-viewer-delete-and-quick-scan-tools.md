@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Draft |
-| **Revision** | A |
+| **Status** | Approved |
+| **Revision** | B |
 | **Tier** | Feature |
 | **Author** | Claude, for Franz Gerster |
 | **Date** | 2026-09-13 |
@@ -47,7 +47,14 @@ existing 10-phase plan — several weeks of work, started phase by phase once yo
 people already use; tests cover every key on every screen. A deleted scan could be the wrong one,
 so deletes go to the Windows Recycle Bin (§05 Q1).
 
-**What we need from you.** Six decisions (§05). Four shape the Quick Scan plan update.
+**Decided (Round A, 2026-09-13).**
+- Deleted scans go to the Windows Recycle Bin.
+- The old scan-to-folder spec is retired in favour of Quick Scan.
+- In Quick Scan:
+  - OCR makes searchable PDFs, plus a "Copy text" button.
+  - Email tries the Windows Share sheet first, then MAPI, then opens the folder.
+  - "Draw a box" crops the final scan in software.
+- Custom page size comes to both Scan and Quick Scan.
 
 ## 02 · Outcomes
 
@@ -108,14 +115,16 @@ so deletes go to the Windows Recycle Bin (§05 Q1).
   - `ForgetPages` exists because an index naming missing files breaks recovery (`:86-90`).
 - **Trash** — `TrashService.DeleteDocumentAsync` requires a database `Document` (`TrashService.cs:30-33`).
   Staged pages have none.
-- **Viewer** — `PageViewerWindow(IReadOnlyList<DocumentRow>, int)` (`PageViewerWindow.xaml.cs:23`)
-  uses only `ImagePath` (`:40-41`). Its one caller maps back by `DocumentId`
+- **Viewer** — `PageViewerWindow(IReadOnlyList<DocumentRow>, int)` (`Views/Dialogs/PageViewerWindow.xaml.cs:24`)
+  uses only `ImagePath` (`:42-43`). Its one caller maps back by `DocumentId`
   (`GroupDetailViewModel.cs:316-336`).
 - **Shortcuts — the bug.** `ShellWindow.ApplyShortcuts` binds every shortcut at **window level**
-  (`ShellWindow.xaml.cs:62-91`).
+  (`ShellWindow.xaml.cs:77-106`, re-checked at `4e3b954`).
   - `DeletePage`, `Undo`, `Redo`, `RotateLeft` and `RotateRight` route through `DetailCommand`,
     which executes on `GroupsViewModel.Detail` **whenever a group is open, regardless of which
-    section is showing** (`:99-104,119-130`).
+    section is showing** (`:108-145`).
+  - `Commit` goes through the same `DetailCommand` (`:114`). §03 leaves it unchanged; it is raised
+    with Franz separately.
   - The default Delete gesture is plain `Delete` (`src/FgScanner.Core/ShortcutMap.cs:52`).
   - Found by reading, **not yet reproduced**. A focused TextBox handles Delete itself, so the bug
     fires when focus is on a list, button or grid outside Groups. Prompt 1 proves it with a test
@@ -131,13 +140,28 @@ so deletes go to the Windows Recycle Bin (§05 Q1).
 - **Older spec** — `docs/spec-scan-section.md` (2026-08-24, "approved design, not implemented")
   would make Scan a scan-to-folder tool and **remove Save to group** (`:85-93`). That predates the
   note-sheet sequence, which depends on Save to group.
-- **Tests** — 516 passing (Debug, `605ce9d`). Relevant: `ShellTests.cs`, `ScanReturnTests.cs`,
+- **Tests** — 545 passing (Release, `4e3b954`, after SPEC-001 merged). Relevant: `ShellTests.cs`, `ScanReturnTests.cs`,
   `AnnotatedScanTests.cs`, `PageViewerTests.cs`, `tests/FgScanner.Scanning.Tests/RecoveryTests`.
 - **Not examined** — `ShellViewModel` section switching; `RecoveryManager` orphan reading;
   `UndoRedoService`'s dependencies (Quick Scan reuse must be checked database-free before the plan
   claims it); Windows Recycle Bin behaviour on the station's drives.
 
 ## 05 · Questions for Franz
+
+**Answered 2026-09-13, Round A** — [review page](https://claude.ai/code/artifact/77e41ea4-403e-4493-8e27-85cf7b96b379),
+db doc `review/SPEC-2026-003-rA`, verdict **approve**. Every blocking question took option (a), and
+every call N1–N8 was agreed. No notes.
+
+| # | Answer |
+|---|---|
+| Q1 | (a) Windows Recycle Bin |
+| Q2 | (a) Mark `docs/spec-scan-section.md` superseded by Quick Scan |
+| Q3 | (a) Quick Scan OCR: searchable PDF plus a "Copy text" button |
+| Q4 | (a) Share sheet first; MAPI when classic Outlook is present; otherwise open the folder |
+| Q5 | (a) Custom page size on both Scan and Quick Scan |
+| Q6 | (a) Preview, draw the box, final scan cropped to it in software; no saved named sizes |
+
+The questions as asked are kept below for the record.
 
 **Blocking**
 
@@ -385,8 +409,8 @@ page. Not a performance question.
 
 | # | What could break | Why | Evidence (file:line) | Mitigation |
 |---|---|---|---|---|
-| R1 | Groups shortcuts stop working, or start firing somewhere new | Routing moves out of `ShellWindow` | `ShellWindow.xaml.cs:93-130` | `ShortcutRouter` with a test per key × section (AC-8 to AC-10) |
-| R2 | Page viewer from Groups opens on the wrong page, or the grid loses its place | Constructor changes from rows to paths | `GroupDetailViewModel.cs:316-336`, `PageViewerWindow.xaml.cs:23-33` | AC-2 |
+| R1 | Groups shortcuts stop working, or start firing somewhere new | Routing moves out of `ShellWindow` | `ShellWindow.xaml.cs:108-145` | `ShortcutRouter` with a test per key × section (AC-8 to AC-10) |
+| R2 | Page viewer from Groups opens on the wrong page, or the grid loses its place | Constructor changes from rows to paths | `GroupDetailViewModel.cs:316-336`, `Dialogs/PageViewerWindow.xaml.cs:24-34` | AC-2 |
 | R3 | A crash mid-delete makes recovery stop at a missing file | The index would name a file already discarded | `RecoverySession.cs:86-105` | Forget first, then discard (§08) |
 | R4 | Save to group adopts a deleted page, or misses one | Save orders `Pages` by `SequenceNumber` | `ScanViewModel.cs:435-438` | Pages removed from the collection; gaps are harmless; AC-7 |
 | R5 | Note-sheet state confused by a delete | The sequence tracks adopted documents | `ScanViewModel.cs:442-448` | Captures are never staged; the delete touches only staged files |
@@ -432,7 +456,7 @@ page. Not a performance question.
 ## 20 · Prompt pack
 
 See [SPEC-2026-003-scan-viewer-delete-and-quick-scan-tools-PROMPTS.md](./SPEC-2026-003-scan-viewer-delete-and-quick-scan-tools-PROMPTS.md)
-— 6 prompts, written once this spec is approved:
+— 6 prompts, written 2026-09-13 on approval:
 1. Shortcut router, failing test first
 2. Viewer paths and Scan page viewer
 3. Staged delete
@@ -442,20 +466,47 @@ See [SPEC-2026-003-scan-viewer-delete-and-quick-scan-tools-PROMPTS.md](./SPEC-20
 
 ## 21 · Definition of done
 
-- [ ] All acceptance criteria met
-- [ ] Failing tests written first, now passing
-- [ ] Full suite green
-- [ ] `/code-review max` run, findings resolved or accepted in writing
-- [ ] Security review — _not applicable, not web-facing_
-- [ ] Documentation updated per §18
+- [x] All acceptance criteria met. AC-1..AC-10 and AC-12 are covered by tests (§10), with 628 passing
+  at `225ddb5`. AC-11 was signed off by Franz on 2026-09-14 (§22).
+- [x] Failing tests written first, now passing. The red runs were recorded at Prompts 1–3, and the
+  review's fixes also started from failing tests.
+- [x] Full suite green: `dotnet test -c Release` gives 628 total, 0 failed (`225ddb5`, 2026-09-14).
+- [x] `/code-review max` run on 2026-09-14 by a fresh reviewer: 9 fix commits, and every declined or
+  deferred finding is recorded in §22.
+- [x] Security review — _not applicable, not web-facing_. The file-deletion boundary was reviewed
+  under Prompt 5.
+- [x] Documentation updated per §18:
+  - CLAUDE.md
+  - the Quick Scan plan and `spec-scan-section.md` (Prompt 4)
+  - `manual-tests.md`
+  - `user-guide.md`
+  - `evidence-setup-walkthrough.txt`, per Franz's 2026-09-14 decision in §22
+  - `FEATURE-PARITY.md`
+  - memory
 - [ ] Installed on the station; Jim's walkthrough step confirmed
-- [ ] Rollback — _waived: revert only, no data_
+- [x] Rollback — _waived: revert only, no data_
 
 ## 22 · Sign-off
 
 | | |
 |---|---|
-| **Review round answered** | ☐ date: — · Round A: https://claude.ai/code/artifact/77e41ea4-403e-4493-8e27-85cf7b96b379 (db doc `review/SPEC-2026-003-rA`) |
-| **Franz approved** | ☐ date: |
+| **Review round answered** | ☑ date: 2026-09-13 · Round A: https://claude.ai/code/artifact/77e41ea4-403e-4493-8e27-85cf7b96b379 (db doc `review/SPEC-2026-003-rA`) |
+| **Franz approved** | ☑ date: 2026-09-13 (Round A, verdict approve) |
+| **Manual checks (Prompts 1–3)** | ☑ date: 2026-09-14 · Franz, dev PC, `--fake-scanner`, branch `phase-21-scan-viewer-delete` at `a7100be`: 14 of 14 pass. Covered the Delete key on Search vs Groups; the viewer from Scan (double-click, Enter) and from Groups (grid follows); staged delete (count confirmation, labels close up, files in the Recycle Bin and one restored, button disabled when nothing is selected or while scanning, Save to group takes only the kept pages, relaunch recovery skips deleted pages). Not yet walked on the station. |
+| **Code review (Prompt 5)** | ☑ date: 2026-09-14 · cold review of `main...HEAD`. Fixed, each with a failing test first where one could be written: the discarder refuses `*` and `?` in a path, which the shell would expand to every page (`dfa5082`); Delete is unavailable while a save is in flight, and an unwritable recovery index no longer closes the app (`399c8de`); the Recycle Bin call is owned by the active window (`5f24e7a`); the two real-shell discarder tests fail after 30 s instead of hanging (`31c4291`). After `/code-review max`: a failed index write leaves the session's pages in place, so exit cannot delete scans still on screen, and overlapping saves keep Delete off (`dc3ca57`); page keys route by the section on screen, not the nav selection (`3be6990`); the discarder test keeps a worker-thread exception inside its test and no longer names its files like scans (`df259c3`); the Scan selection follows the viewer, so Delete removes the page last looked at (`28e13f5`). |
+| **Review — pre-existing, declined** | Scan and Save to group can both start while a save is in flight, including the auto-save after "Scan into this group" or a note-sheet capture. Pages scanned during the save are wiped by its `Pages.Clear()` and `ResetSession()`. Two overlapping `ScanAsync` runs share `_scanCts`, so the later `finally` throws. Two concurrent saves can give two documents the same `sequence`, which the importer refuses. All of this is on `main` too, and §03 rules out changing Save to group and auto-save here. **Needs its own fix soon.** |
+| **Review — spec decision kept** | A page the Recycle Bin refuses, or whose permanent-delete question gets "No", still leaves the list and the index (§08) and is removed at the next session reset. Revisit if the station's bin refuses files. |
+| **Review — docs follow-up** | Restoring a deleted staged page from the Recycle Bin puts it back in the unlisted session folder, which the next Save to group or exit deletes. The manual check passed only because the file reappeared. Prompt 6's user guide must say to copy a restored page out before saving. Re-importing restored pages would be a feature. |
+| **Review — declined** | A "Yes" to Windows' permanent-delete question still reports "in the Recycle Bin". `SHFileOperationW` cannot tell recycled from destroyed, and this happens only where the bin refuses files. |
+| **Review — declined** | A corrupt image with a damaged header throws `FileFormatException`, which neither `ThumbnailConverter` nor the viewer's `LoadFullImage` catches, so the app closes. Pre-existing on `main`, where the thumbnail hits it first. Needs a separate fix to both. |
+| **Review — declined** | Page keys other than Delete, plus Scan annotated, Save to group and Commit, still act from every section. §03 and AC-10 keep this, and Commit is raised with Franz separately (§04). A Scan shortcut rebound to bare Enter cannot fire while focus is in the thumbnail list. |
+| **Review — manual check to add** | After deleting the focused thumbnail, the list may lose its focus anchor, so Down goes to Page 1. Not reproduced; add it to Prompt 6's manual block. |
+| **Review — spec revision** | `FOF_WANTNUKEWARNING` stays, although §08 does not list it. Where the Recycle Bin cannot take a file, Windows asks before a permanent delete; without it the file would go silently while the status line said "in the Recycle Bin". Known cost: one question per page when the bin refuses every file. A "No" leaves the file unlisted in the session folder, and the next session reset removes it anyway. |
+| **Review — declined** | §12 "200 pages … with status progress": the discards run synchronously on the UI thread, so a progress line could not render. There is one status line at the end. Revisit if a large delete is noticeably slow on the station. |
+| **Review — declined** | §12 "Viewer open while pages change — modal, so cannot happen" is not strictly true: a scan or save already in flight keeps running under the modal viewer. The viewer holds a snapshot of the paths and shows a file that has gone as blank, so no code change. |
+| **Review — declined** | A junction or symlink created inside the session folder passes the path guard. That is outside §13's threat model: a corrupt index cannot create one, and anyone who can already has the operator's file rights. |
+| **Review — declined** | Every bound shortcut now marks its key handled even when its command cannot run. The Scan and Save keys used to pass through when disabled. No effect with the default gestures, which all carry a modifier or are Delete/F-keys. |
+| **AC-11 — plan diff** | ☑ date: 2026-09-14 · Franz confirmed the Quick Scan plan amendment (`a7100be`) matches his Round A answers. |
+| **Jim's walkthrough — decision** | 2026-09-14, Franz: failed scans (a double-feed, or a jammed, torn or cut-off picture) **may be deleted before saving**, and the sheet is then scanned again. Step 6.9 of `evidence-setup-walkthrough.txt` is reworded, replacing its old "do not delete pages" rule. Scan everything and never delete because of what is on the paper (Step 6.8) still apply, as does no deleting after save. Part 9 gains "deleted a scan and never rescanned the sheet". |
 | **Built** | ☐ date: |
 | **Verified in production** | ☐ date: |

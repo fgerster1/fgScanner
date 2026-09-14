@@ -167,6 +167,51 @@ public sealed class RecoveryTests : IDisposable
     }
 
     [Fact]
+    public void Forgotten_pages_are_not_recovered()
+    {
+        // A page deleted on the Scan page leaves the index first, and its file may stay behind if
+        // the Recycle Bin refuses it. After a crash that file must not come back as a scan.
+        var session = RecoverySession.Create(_root);
+        var first = AddPage(session, 1);
+        var deleted = AddPage(session, 2);
+        var third = AddPage(session, 3);
+
+        session.ForgetPages([deleted.FilePath]);
+        session.Dispose();
+
+        var orphan = Assert.Single(new RecoveryManager(_root).FindOrphanedSessions());
+        Assert.Equal([first.FilePath, third.FilePath], orphan.Pages.Select(p => p.FilePath));
+    }
+
+    [Fact]
+    public void An_index_that_cannot_be_written_forgets_nothing()
+    {
+        // The Scan page reports "Nothing was deleted" when this throws. If the session had already let
+        // go of the pages, closing the app would see an empty session and delete the scans still shown.
+        using var session = RecoverySession.Create(_root);
+        var first = AddPage(session, 1);
+        var second = AddPage(session, 2);
+        var third = AddPage(session, 3);
+        session.Flush();
+        var indexPath = Path.Combine(session.FolderPath, RecoverySession.IndexFileName);
+
+        using (new FileStream(indexPath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            var thrown = Record.Exception(() => session.ForgetPages([second.FilePath]));
+            Assert.True(thrown is IOException or UnauthorizedAccessException, thrown?.ToString());
+        }
+
+        Assert.Equal([first.FilePath, second.FilePath, third.FilePath], session.Pages.Select(p => p.FilePath));
+
+        session.ForgetPages([second.FilePath]);
+
+        var index = System.Text.Json.JsonSerializer.Deserialize<RecoveryIndex>(File.ReadAllText(indexPath))!;
+        Assert.Equal(
+            [Path.GetFileName(first.FilePath), Path.GetFileName(third.FilePath)],
+            index.Pages.Select(p => p.FileName));
+    }
+
+    [Fact]
     public void Forgetting_a_page_that_is_not_in_the_session_changes_nothing()
     {
         using var session = RecoverySession.Create(_root);
