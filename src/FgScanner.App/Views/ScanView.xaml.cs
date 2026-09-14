@@ -54,9 +54,21 @@ public partial class ScanView : UserControl
 
     private void OpenViewer(ScannedPage? page)
     {
-        if (DataContext is ScanViewModel vm && vm.OpenPageViewerCommand.CanExecute(page))
+        if (DataContext is not ScanViewModel vm || !vm.OpenPageViewerCommand.CanExecute(page))
         {
-            vm.OpenPageViewerCommand.Execute(page);
+            return;
+        }
+
+        vm.OpenPageViewerCommand.Execute(page);
+
+        // The view model moved the selection to the page the viewer closed on. The list has to show
+        // it too, and hold focus there, or what looks selected and what Delete removes disagree.
+        if (vm.SelectedPages.FirstOrDefault() is { } landed)
+        {
+            PageList.SelectedItem = landed;
+            PageList.ScrollIntoView(landed);
+            PageList.UpdateLayout();
+            (PageList.ItemContainerGenerator.ContainerFromItem(landed) as ListBoxItem)?.Focus();
         }
     }
 }

@@ -103,7 +103,15 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         var ordered = Pages.OrderBy(p => p.SequenceNumber).ToList();
         var chosen = page ?? SelectedPages.FirstOrDefault();
         var start = chosen is null ? 0 : Math.Max(0, ordered.IndexOf(chosen));
-        ShowPageViewer([.. ordered.Select(p => p.FilePath)], start);
+        var landed = ShowPageViewer([.. ordered.Select(p => p.FilePath)], start);
+
+        // Delete acts on the selection, so it follows the viewer: closing on a double-fed page and
+        // pressing Delete must remove that page, not the one the viewer was opened on.
+        if (landed >= 0 && landed < ordered.Count)
+        {
+            SelectedPages.Clear();
+            SelectedPages.Add(ordered[landed]);
+        }
     }
 
     /// <summary>Asks before deleting, with Cancel as the default answer. Replaceable so tests show no dialog.</summary>

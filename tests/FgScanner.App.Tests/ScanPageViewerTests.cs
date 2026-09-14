@@ -117,6 +117,22 @@ public sealed class ScanPageViewerTests : IDisposable
         Assert.Equal(3, shownStart);
     }
 
+    /// <summary>
+    /// Delete acts on the selection, so the selection must follow the viewer: open on page 2, page
+    /// through to a double-fed page 5, close, press Delete, and page 5 is the one that goes.
+    /// </summary>
+    [Fact]
+    public async Task The_selection_follows_the_viewer_to_the_page_it_closed_on()
+    {
+        var vm = await ScanFivePagesAsync();
+        vm.SelectedPages.Add(vm.Pages[1]);
+        vm.ShowPageViewer = (_, _) => 4;
+
+        vm.OpenPageViewerCommand.Execute(vm.Pages[1]);
+
+        Assert.Equal([vm.Pages[4]], vm.SelectedPages);
+    }
+
     [Fact]
     public void There_is_nothing_to_view_before_anything_is_scanned()
     {
