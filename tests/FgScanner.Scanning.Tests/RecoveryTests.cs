@@ -167,6 +167,23 @@ public sealed class RecoveryTests : IDisposable
     }
 
     [Fact]
+    public void Forgotten_pages_are_not_recovered()
+    {
+        // A page deleted on the Scan page leaves the index first, and its file may stay behind if
+        // the Recycle Bin refuses it. After a crash that file must not come back as a scan.
+        var session = RecoverySession.Create(_root);
+        var first = AddPage(session, 1);
+        var deleted = AddPage(session, 2);
+        var third = AddPage(session, 3);
+
+        session.ForgetPages([deleted.FilePath]);
+        session.Dispose();
+
+        var orphan = Assert.Single(new RecoveryManager(_root).FindOrphanedSessions());
+        Assert.Equal([first.FilePath, third.FilePath], orphan.Pages.Select(p => p.FilePath));
+    }
+
+    [Fact]
     public void Forgetting_a_page_that_is_not_in_the_session_changes_nothing()
     {
         using var session = RecoverySession.Create(_root);

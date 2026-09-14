@@ -93,6 +93,7 @@ public partial class App : Application
                 }
 
                 services.AddSingleton<ScanSessionService>();
+                services.AddSingleton<IStagedPageDiscarder, RecycleBinDiscarder>();
                 services.AddDbContextFactory<FgScannerDbContext>(o =>
                     o.UseSqlite($"Data Source={DbBootstrapper.DefaultDbPath}"));
                 services.AddSingleton<GroupService>();

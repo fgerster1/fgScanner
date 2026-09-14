@@ -20,6 +20,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     private readonly ProfileOcrTrigger _ocrTrigger;
     private readonly PageEditingToolset _toolset;
     private readonly TrashService _trashService;
+    private readonly IStagedPageDiscarder _discarder;
     private CancellationTokenSource? _scanCts;
 
     public ScanViewModel(
@@ -30,8 +31,10 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         ActiveGroupStore activeGroup,
         ProfileOcrTrigger ocrTrigger,
         PageEditingToolset toolset,
-        TrashService trashService)
+        TrashService trashService,
+        IStagedPageDiscarder? stagedPageDiscarder = null)
     {
+        _discarder = stagedPageDiscarder ?? new RecycleBinDiscarder();
         _scanService = scanService;
         _sessionService = sessionService;
         _groupService = groupService;
@@ -54,6 +57,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             SaveToGroupCommand.NotifyCanExecuteChanged();
             OpenPageViewerCommand.NotifyCanExecuteChanged();
         };
+        SelectedPages.CollectionChanged += (_, _) => DeleteSelectedPagesCommand.NotifyCanExecuteChanged();
 
         foreach (var page in sessionService.Session.Pages)
         {
@@ -102,6 +106,56 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         ShowPageViewer([.. ordered.Select(p => p.FilePath)], start);
     }
 
+    /// <summary>Asks before deleting, with Cancel as the default answer. Replaceable so tests show no dialog.</summary>
+    public Func<string, bool> ConfirmDelete { get; set; } = message =>
+        System.Windows.MessageBox.Show(
+            message,
+            "Delete scanned pages",
+            System.Windows.MessageBoxButton.OKCancel,
+            System.Windows.MessageBoxImage.Warning,
+            System.Windows.MessageBoxResult.Cancel) == System.Windows.MessageBoxResult.OK;
+
+    private bool CanDeleteSelectedPages() => SelectedPages.Count > 0 && !IsScanning;
+
+    /// <summary>
+    /// Deletes the selected pages before they reach a group, to the Recycle Bin so a mis-click can be
+    /// put back. They leave the recovery index before their files go, because an index naming a
+    /// missing file stops recovery at that file. A file the Recycle Bin refuses stays in the session
+    /// folder, no longer listed, and is removed with the folder.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanDeleteSelectedPages))]
+    private void DeleteSelectedPages()
+    {
+        var doomed = Pages.Where(SelectedPages.Contains).ToList();
+        var noun = doomed.Count == 1 ? "page" : "pages";
+        if (!ConfirmDelete(
+            $"Move {doomed.Count} scanned {noun} to the Recycle Bin? They have not been saved to a group."))
+        {
+            return;
+        }
+
+        var session = _sessionService.Session;
+        session.ForgetPages(doomed.Select(p => p.FilePath));
+        var refused = new List<string>();
+        foreach (var page in doomed)
+        {
+            if (!_discarder.TryDiscard(session.FolderPath, page.FilePath, out var reason))
+            {
+                refused.Add(Path.GetFileName(page.FilePath));
+                Log.Warning("Could not move staged page {File} to the Recycle Bin: {Reason}", page.FilePath, reason);
+            }
+
+            Pages.Remove(page);
+            SelectedPages.Remove(page);
+        }
+
+        Log.Information("Deleted {Count} staged page(s) from {Folder}", doomed.Count, session.FolderPath);
+        StatusText = refused.Count == 0
+            ? $"Deleted {doomed.Count} page(s) — in the Recycle Bin."
+            : $"Deleted {doomed.Count} page(s). Could not move {string.Join(", ", refused)} to the Recycle Bin; "
+                + "it is no longer listed and is removed with the scan session.";
+    }
+
     [ObservableProperty]
     private ScanDriver _selectedDriver;
 
@@ -141,6 +195,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     [NotifyCanExecuteChangedFor(nameof(CancelScanCommand))]
     [NotifyCanExecuteChangedFor(nameof(CancelAnnotatedCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveToGroupCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DeleteSelectedPagesCommand))]
     private bool _isScanning;
 
     [ObservableProperty]

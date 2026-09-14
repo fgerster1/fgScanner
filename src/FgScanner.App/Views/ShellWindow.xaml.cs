@@ -155,6 +155,7 @@ public partial class ShellWindow : Window
             ShortcutTarget.GroupRotateLeft => detail?.RotateLeftCommand,
             ShortcutTarget.GroupRotateRight => detail?.RotateRightCommand,
             ShortcutTarget.GroupDeletePage => detail?.DeleteSelectedCommand,
+            ShortcutTarget.ScanDeleteStagedPages => scan.DeleteSelectedPagesCommand,
             _ => null,
         };
     }
