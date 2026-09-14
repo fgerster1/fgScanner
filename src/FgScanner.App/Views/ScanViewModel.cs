@@ -115,7 +115,14 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             System.Windows.MessageBoxImage.Warning,
             System.Windows.MessageBoxResult.Cancel) == System.Windows.MessageBoxResult.OK;
 
-    private bool CanDeleteSelectedPages() => SelectedPages.Count > 0 && !IsScanning;
+    /// <summary>
+    /// Set while pages move into a group. Adoption moves the files, so a delete then recycles nothing
+    /// and the page it meant to remove lands in the group anyway. The save that follows "Scan into
+    /// this group" runs after IsScanning has cleared, so that guard does not cover it.
+    /// </summary>
+    private bool _saving;
+
+    private bool CanDeleteSelectedPages() => SelectedPages.Count > 0 && !IsScanning && !_saving;
 
     /// <summary>
     /// Deletes the selected pages before they reach a group, to the Recycle Bin so a mis-click can be
@@ -135,7 +142,20 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         }
 
         var session = _sessionService.Session;
-        session.ForgetPages(doomed.Select(p => p.FilePath));
+        try
+        {
+            session.ForgetPages(doomed.Select(p => p.FilePath));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // No file goes while the index on disk may still name it, so the pages stay on screen.
+            // Nothing above this catches a command's exception: letting it out closes the app.
+            Log.Warning(ex, "Could not update the recovery index in {Folder} before deleting pages", session.FolderPath);
+            StatusText = $"Could not delete: the scan session's recovery index could not be updated ({ex.Message}). "
+                + "Nothing was deleted; try again.";
+            return;
+        }
+
         var refused = new List<string>();
         foreach (var page in doomed)
         {
@@ -153,7 +173,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         StatusText = refused.Count == 0
             ? $"Deleted {doomed.Count} page(s) — in the Recycle Bin."
             : $"Deleted {doomed.Count} page(s). Could not move {string.Join(", ", refused)} to the Recycle Bin; "
-                + "it is no longer listed and is removed with the scan session.";
+                + (refused.Count == 1 ? "it is" : "they are") + " no longer listed and removed with the scan session.";
     }
 
     [ObservableProperty]
@@ -513,6 +533,8 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     private async Task SaveToGroupAsync()
     {
         var group = _activeGroup.Current!;
+        _saving = true;
+        DeleteSelectedPagesCommand.NotifyCanExecuteChanged();
         try
         {
             var triage = await _toolset.Triage.TriageAsync(
@@ -577,6 +599,11 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         {
             Log.Error(ex, "Saving pages to group {Group}", group.Name);
             StatusText = $"Saving to group failed: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+            DeleteSelectedPagesCommand.NotifyCanExecuteChanged();
         }
     }
 

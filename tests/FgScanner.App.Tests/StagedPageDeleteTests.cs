@@ -214,6 +214,44 @@ public sealed class StagedPageDeleteTests : IDisposable
         Assert.Equal(4, pages.Count);
     }
 
+    /// <summary>
+    /// Adoption moves the files into the group, so a delete that lands mid-save recycles nothing and
+    /// the page the operator deleted is in the group anyway. The save after "Scan into this group"
+    /// runs with IsScanning already false, so the scanning guard alone does not cover it.
+    /// </summary>
+    [Fact]
+    public async Task Delete_is_unavailable_while_pages_are_being_saved_to_a_group()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        _activeGroup.Current = await _groupService.CreateGroupAsync(_root, "Box 12", null, ct);
+        var vm = await ScanFivePagesAsync();
+        vm.SelectedPages.Add(vm.Pages[0]);
+        bool? canDeleteMidSave = null;
+        _activeGroup.GroupContentChanged += () => canDeleteMidSave = vm.DeleteSelectedPagesCommand.CanExecute(null);
+
+        await vm.SaveToGroupCommand.ExecuteAsync(null);
+
+        Assert.False(canDeleteMidSave);
+        Assert.True(vm.DeleteSelectedPagesCommand.CanExecute(null)); // the guard lifts once the save is over
+    }
+
+    [Fact]
+    public async Task A_recovery_index_that_cannot_be_written_deletes_nothing_and_says_so()
+    {
+        var vm = await ScanFivePagesAsync();
+        vm.SelectedPages.Add(vm.Pages[0]);
+        var indexPath = Path.Combine(_sessionService.Session.FolderPath, RecoverySession.IndexFileName);
+
+        using (new FileStream(indexPath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            vm.DeleteSelectedPagesCommand.Execute(null);
+        }
+
+        Assert.Equal(5, vm.Pages.Count);
+        Assert.Empty(_discarder.Discarded);
+        Assert.Contains("Nothing was deleted", vm.StatusText);
+    }
+
     [Fact]
     public void Page_labels_close_the_gap_after_a_delete()
     {
