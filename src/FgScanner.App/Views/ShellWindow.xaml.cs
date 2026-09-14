@@ -112,11 +112,12 @@ public partial class ShellWindow : Window
 
     /// <summary>
     /// Resolved when the key is pressed, not when the bindings are applied, because the section
-    /// showing changes after binding.
+    /// showing changes after binding. Routed by the section on screen rather than the nav selection,
+    /// which Ctrl+Click can clear while Groups stays showing and would leave the page keys dead.
     /// </summary>
     private void RunShortcut(string action)
     {
-        var target = ShortcutRouter.Route(action, _viewModel.SelectedSection);
+        var target = ShortcutRouter.Route(action, _shownSection ?? "");
         if (target == ShortcutTarget.SelectProfile)
         {
             SelectProfile(action);
