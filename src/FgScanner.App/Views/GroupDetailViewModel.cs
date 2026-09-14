@@ -339,6 +339,24 @@ public sealed partial class GroupDetailViewModel : ObservableObject
     public Func<IReadOnlyList<string>, int, int> ShowPageViewer { get; set; } = Dialogs.PageViewerWindow.ShowModal;
 
     /// <summary>
+    /// Opens the record editor on the selected page. Modal for the viewer's reason: the editor works
+    /// on this view model's rows, and a second surface editing them at once would show stale values.
+    /// </summary>
+    [RelayCommand]
+    private void OpenRecordEditor()
+    {
+        // The editor subscribes to this view model; once its window closes it must stop following it.
+        using var editor = new RecordEditorViewModel(this);
+        ShowRecordEditor(editor);
+    }
+
+    /// <summary>
+    /// Shows the record editor and returns when it closes. Replaceable so the editor's effect on the
+    /// grid can be tested without a window.
+    /// </summary>
+    public Action<RecordEditorViewModel> ShowRecordEditor { get; set; } = _ => { };
+
+    /// <summary>
     /// Reviews suspected duplicates in this group. Deletion goes through the Trash, so a wrong
     /// answer to an image hint stays recoverable.
     /// </summary>

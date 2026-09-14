@@ -1,0 +1,149 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using FgScanner.Data;
+
+namespace FgScanner.App.Services;
+
+/// <summary>
+/// Where the record editor's dividers and memo boxes were left. Pane sizes are device-independent
+/// pixels; memo heights are lines of text, so a box keeps its meaning if the font size changes.
+/// </summary>
+public sealed record RecordEditorLayout(double FormWidth, double TopHeight, IReadOnlyDictionary<string, MemoSize> Memo);
+
+/// <summary>A memo box's width in device-independent pixels and its height in lines.</summary>
+public sealed record MemoSize(double Width, double Height);
+
+/// <summary>
+/// Remembers the record editor's layout per group, over the Settings table (SPEC-2026-002 §07).
+/// Nothing here touches WPF: the window measures, and this decides what a measurement may be.
+/// </summary>
+public sealed class RecordEditorLayoutStore(AppSettingsService settings, Serilog.ILogger? log = null)
+{
+    /// <summary>The starting point for a group the editor has not been opened on (§05 Q5).</summary>
+    public const string LastKey = "RecordEditor.Layout.Last";
+
+    /// <summary>The smallest a pane is restored at, so a divider dragged nearly shut can still be found and grabbed.</summary>
+    public const double MinPane = 200;
+
+    public const double MinMemoWidth = 80;
+
+    public const double MinMemoLines = 2;
+
+    public const double MaxMemoLines = 20;
+
+    private readonly Serilog.ILogger _log = log ?? Serilog.Log.Logger;
+
+    public static string KeyFor(Guid groupId) => $"RecordEditor.Layout.{groupId}";
+
+    public async Task<RecordEditorLayout> LoadAsync(
+        Guid groupId, double windowWidth, double windowHeight, CancellationToken cancellationToken = default)
+    {
+        var json = await settings.GetAsync(KeyFor(groupId), "", cancellationToken);
+        if (json.Length == 0)
+        {
+            json = await settings.GetAsync(LastKey, "", cancellationToken);
+        }
+
+        var stored = json.Length == 0 ? null : Parse(json, groupId);
+        return Clamp(stored ?? Defaults(windowWidth, windowHeight), windowWidth, windowHeight);
+    }
+
+    public async Task SaveAsync(Guid groupId, RecordEditorLayout layout, CancellationToken cancellationToken = default)
+    {
+        var json = JsonSerializer.Serialize(new LayoutJson
+        {
+            FormWidth = layout.FormWidth,
+            TopHeight = layout.TopHeight,
+            Memo = layout.Memo.ToDictionary(m => m.Key, m => (MemoJson?)new MemoJson { Width = m.Value.Width, Height = m.Value.Height }),
+        });
+        await settings.SetAsync(KeyFor(groupId), json, cancellationToken);
+        await settings.SetAsync(LastKey, json, cancellationToken);
+    }
+
+    /// <summary>
+    /// Fits a layout into a window. A layout saved on a large screen is read on the station's smaller
+    /// one, and a pane pushed past the window edge takes its divider with it.
+    /// </summary>
+    public static RecordEditorLayout Clamp(RecordEditorLayout layout, double windowWidth, double windowHeight)
+    {
+        var formWidth = ClampPane(layout.FormWidth, windowWidth);
+        var memo = new Dictionary<string, MemoSize>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, size) in layout.Memo)
+        {
+            memo[name] = ClampMemo(size, formWidth);
+        }
+
+        return new RecordEditorLayout(formWidth, ClampPane(layout.TopHeight, windowHeight), memo);
+    }
+
+    /// <summary>A memo box may be as wide as the form pane and no wider (§08), and 2–20 lines tall.</summary>
+    public static MemoSize ClampMemo(MemoSize size, double paneWidth)
+    {
+        paneWidth = double.IsFinite(paneWidth) ? Math.Max(0, paneWidth) : 0;
+        var width = double.IsFinite(size.Width)
+            ? Math.Clamp(size.Width, Math.Min(MinMemoWidth, paneWidth), paneWidth)
+            : paneWidth;
+        var height = double.IsFinite(size.Height) ? Math.Clamp(size.Height, MinMemoLines, MaxMemoLines) : MinMemoLines;
+        return new MemoSize(width, height);
+    }
+
+    private static RecordEditorLayout Defaults(double windowWidth, double windowHeight) =>
+        new(windowWidth / 2, windowHeight / 2, new Dictionary<string, MemoSize>());
+
+    private static double ClampPane(double value, double window)
+    {
+        // A window too small for two minimum panes is split evenly rather than letting one vanish.
+        if (window < 2 * MinPane)
+        {
+            return window / 2;
+        }
+
+        return double.IsFinite(value) ? Math.Clamp(value, MinPane, window - MinPane) : window / 2;
+    }
+
+    private RecordEditorLayout? Parse(string json, Guid groupId)
+    {
+        try
+        {
+            var stored = JsonSerializer.Deserialize<LayoutJson>(json) ?? throw new JsonException("The layout is null.");
+            var memo = new Dictionary<string, MemoSize>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (name, size) in stored.Memo ?? [])
+            {
+                if (size is not null)
+                {
+                    memo[name] = new MemoSize(size.Width ?? double.NaN, size.Height ?? double.NaN);
+                }
+            }
+
+            // A missing number is NaN rather than 0, so Clamp gives it the default instead of the minimum.
+            return new RecordEditorLayout(stored.FormWidth ?? double.NaN, stored.TopHeight ?? double.NaN, memo);
+        }
+        catch (JsonException ex)
+        {
+            // Logged by group id only (§14); the next save rewrites the value.
+            _log.Warning(ex, "The record editor layout for group {GroupId} could not be read; using the defaults", groupId);
+            return null;
+        }
+    }
+
+    private sealed class LayoutJson
+    {
+        [JsonPropertyName("formWidth")]
+        public double? FormWidth { get; set; }
+
+        [JsonPropertyName("topHeight")]
+        public double? TopHeight { get; set; }
+
+        [JsonPropertyName("memo")]
+        public Dictionary<string, MemoJson?>? Memo { get; set; }
+    }
+
+    private sealed class MemoJson
+    {
+        [JsonPropertyName("width")]
+        public double? Width { get; set; }
+
+        [JsonPropertyName("height")]
+        public double? Height { get; set; }
+    }
+}
