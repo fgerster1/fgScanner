@@ -91,17 +91,36 @@ public sealed class RecoverySession : IPageStorage, IDisposable
     public void ForgetPages(IEnumerable<string> filePaths)
     {
         var gone = filePaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        List<ScannedPage> removed;
         lock (_sync)
         {
-            if (_pages.RemoveAll(p => gone.Contains(p.FilePath)) == 0)
+            removed = _pages.FindAll(p => gone.Contains(p.FilePath));
+            if (removed.Count == 0)
             {
                 return;
             }
 
+            _pages.RemoveAll(p => gone.Contains(p.FilePath));
             _indexDirty = true;
         }
 
-        WriteIndexIfDue(force: true);
+        try
+        {
+            WriteIndexIfDue(force: true);
+        }
+        catch
+        {
+            // A caller that sees this throw keeps showing the pages. Were they gone from here, a clean
+            // exit would find an empty session and delete the folder, and those scans with it.
+            lock (_sync)
+            {
+                _pages.AddRange(removed);
+                _pages.Sort((a, b) => a.SequenceNumber.CompareTo(b.SequenceNumber));
+                _indexDirty = true;
+            }
+
+            throw;
+        }
     }
 
     /// <summary>Flushes the index immediately (end of a scan run, or before showing UI state).</summary>

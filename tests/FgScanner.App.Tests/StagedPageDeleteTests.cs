@@ -248,6 +248,7 @@ public sealed class StagedPageDeleteTests : IDisposable
         }
 
         Assert.Equal(5, vm.Pages.Count);
+        Assert.Equal(5, _sessionService.Session.Pages.Count); // or closing the app deletes the pages still shown
         Assert.Empty(_discarder.Discarded);
         Assert.Contains("Nothing was deleted", vm.StatusText);
     }

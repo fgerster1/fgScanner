@@ -118,11 +118,13 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     /// <summary>
     /// Set while pages move into a group. Adoption moves the files, so a delete then recycles nothing
     /// and the page it meant to remove lands in the group anyway. The save that follows "Scan into
-    /// this group" runs after IsScanning has cleared, so that guard does not cover it.
+    /// this group" runs after IsScanning has cleared, so that guard does not cover it. A count, not a
+    /// flag: Save to group can start while that auto-save is still running, and the first to finish
+    /// must not re-enable Delete while the other is moving files.
     /// </summary>
-    private bool _saving;
+    private int _savesRunning;
 
-    private bool CanDeleteSelectedPages() => SelectedPages.Count > 0 && !IsScanning && !_saving;
+    private bool CanDeleteSelectedPages() => SelectedPages.Count > 0 && !IsScanning && _savesRunning == 0;
 
     /// <summary>
     /// Deletes the selected pages before they reach a group, to the Recycle Bin so a mis-click can be
@@ -533,7 +535,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     private async Task SaveToGroupAsync()
     {
         var group = _activeGroup.Current!;
-        _saving = true;
+        _savesRunning++;
         DeleteSelectedPagesCommand.NotifyCanExecuteChanged();
         try
         {
@@ -602,7 +604,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         }
         finally
         {
-            _saving = false;
+            _savesRunning--;
             DeleteSelectedPagesCommand.NotifyCanExecuteChanged();
         }
     }
