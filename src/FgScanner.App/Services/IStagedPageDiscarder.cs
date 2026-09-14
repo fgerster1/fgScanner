@@ -52,6 +52,9 @@ public sealed class RecycleBinDiscarder : IStagedPageDiscarder
 
         var operation = new FileOperation
         {
+            // Owned by the app's window so the shell's permanent-delete question disables it. Unowned,
+            // the operator could scan or save to a group while this delete waits on the answer.
+            Window = GetActiveWindow(),
             Function = FoDelete,
             // The shell reads a list of paths ended by an empty one; marshalling adds the final null.
             From = Path.GetFullPath(filePath) + "\0",
@@ -103,6 +106,9 @@ public sealed class RecycleBinDiscarder : IStagedPageDiscarder
         [MarshalAs(UnmanagedType.LPWStr)]
         public string? ProgressTitle;
     }
+
+    [DllImport("user32")]
+    private static extern IntPtr GetActiveWindow();
 
     [DllImport("shell32", EntryPoint = "SHFileOperationW", CharSet = CharSet.Unicode)]
     private static extern int SHFileOperation(ref FileOperation operation);
