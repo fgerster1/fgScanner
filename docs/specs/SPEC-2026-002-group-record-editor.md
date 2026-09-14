@@ -162,8 +162,10 @@ Franz's notes, verbatim:
   non-Evidence group too.
 - **N4** — "This is for screen editing, so the actual character length does matter; viewing the
   material is what matters." Read as agreement that lengths serve on-screen editing and stay out of
-  the export files. **Open:** whether a text box's on-screen width should also follow its length. §03
-  says no. The prompt pack asks Franz to confirm before Prompt 4 builds the form.
+  the export files. **Answered 2026-09-14 (Franz):** "No — length and width should be allowed to be
+  different; they should be independent of each other." A text box's on-screen width does not follow
+  its character length. §03 stands: ordinary boxes fill the form width, and memo boxes are resized
+  by dragging. The Prompt 4 gate is cleared.
 
 The questions as asked are kept below for the record.
 
