@@ -40,7 +40,8 @@
                 <TextBox Text="{Binding BaseDirectory, Mode=OneWay}" IsReadOnly="True" Background="Transparent" />
             </DockPanel>
 
-            <TextBlock Text="Custom fields (up to 12; saving creates a new schema version)" Opacity="0.7" Margin="0,0,0,4" />
+            <TextBlock Text="Custom fields (up to 16; saving creates a new schema version). Length is 1–100 characters, or 1–2000 for a memo; leave it blank for no limit."
+                       TextWrapping="Wrap" Opacity="0.7" Margin="0,0,0,4" />
             <DataGrid ItemsSource="{Binding Fields}" AutoGenerateColumns="False" CanUserAddRows="False"
                       MinHeight="140" MaxHeight="280" Margin="0,0,0,6" x:Name="FieldsGrid">
                 <DataGrid.Columns>
@@ -69,6 +70,48 @@
                             <Style TargetType="CheckBox">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding Scope}" Value="Batch">
+                                        <Setter Property="IsEnabled" Value="False" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridCheckBoxColumn.EditingElementStyle>
+                    </DataGridCheckBoxColumn>
+                    <!-- Length and Memo apply to Text fields only, so both are disabled for any other type. -->
+                    <DataGridTextColumn Header="Length" Width="60"
+                                        Binding="{Binding Length, TargetNullValue='', UpdateSourceTrigger=LostFocus}">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock" BasedOn="{x:Static DataGridTextColumn.DefaultElementStyle}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsText}" Value="False">
+                                        <Setter Property="IsEnabled" Value="False" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                        <DataGridTextColumn.EditingElementStyle>
+                            <Style TargetType="TextBox" BasedOn="{x:Static DataGridTextColumn.DefaultEditingElementStyle}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsText}" Value="False">
+                                        <Setter Property="IsEnabled" Value="False" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridTextColumn.EditingElementStyle>
+                    </DataGridTextColumn>
+                    <DataGridCheckBoxColumn Header="Memo" Binding="{Binding Memo}" Width="55">
+                        <DataGridCheckBoxColumn.ElementStyle>
+                            <Style TargetType="CheckBox">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsText}" Value="False">
+                                        <Setter Property="IsEnabled" Value="False" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGridCheckBoxColumn.ElementStyle>
+                        <DataGridCheckBoxColumn.EditingElementStyle>
+                            <Style TargetType="CheckBox">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsText}" Value="False">
                                         <Setter Property="IsEnabled" Value="False" />
                                     </DataTrigger>
                                 </Style.Triggers>

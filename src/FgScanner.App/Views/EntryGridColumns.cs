@@ -1,3 +1,4 @@
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using FgScanner.Core.Index;
@@ -13,6 +14,9 @@ public static class EntryGridColumns
 {
     public static void Build(DataGrid grid, IReadOnlyList<FieldDefinition> fields)
     {
+        // A cell is edited in a TextBox the grid creates on demand, so the limit is handed over then.
+        grid.PreparingCellForEdit -= OnPreparingCellForEdit;
+        grid.PreparingCellForEdit += OnPreparingCellForEdit;
         grid.Columns.Clear();
         grid.Columns.Add(new DataGridTextColumn
         {
@@ -66,14 +70,38 @@ public static class EntryGridColumns
             }
             else
             {
-                grid.Columns.Add(new DataGridTextColumn
+                var column = new DataGridTextColumn
                 {
                     Header = field.Name + (field.Required ? " *" : ""),
                     Binding = binding,
                     Width = new DataGridLength(1, DataGridLengthUnitType.Star),
                     IsReadOnly = isBatch,
-                });
+                };
+                TextLengthGuard.SetLimit(column, field.MaxLength);
+                if (field.Memo)
+                {
+                    column.ElementStyle = OneLine();
+                }
+
+                grid.Columns.Add(column);
             }
         }
+    }
+
+    private static void OnPreparingCellForEdit(object? sender, DataGridPreparingCellForEditEventArgs e)
+    {
+        if (e.EditingElement is TextBox box)
+        {
+            TextLengthGuard.SetLimit(box, TextLengthGuard.GetLimit(e.Column));
+        }
+    }
+
+    /// <summary>A memo reads as one line in the grid, trimmed with an ellipsis; the value itself is untouched.</summary>
+    private static Style OneLine()
+    {
+        var style = new Style(typeof(TextBlock), DataGridTextColumn.DefaultElementStyle);
+        style.Setters.Add(new Setter(TextBlock.TextWrappingProperty, TextWrapping.NoWrap));
+        style.Setters.Add(new Setter(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis));
+        return style;
     }
 }

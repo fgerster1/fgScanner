@@ -35,6 +35,16 @@ public partial class GroupsView : UserControl
             }
         };
         Unloaded += (_, _) => SavePanelSizes();
+        AddHandler(TextLengthGuard.RefusedEvent, new EventHandler<LengthRefusedEventArgs>(OnLengthRefused));
+    }
+
+    /// <summary>A refused paste says why on the group's status line, where the operator is already looking.</summary>
+    private void OnLengthRefused(object? sender, LengthRefusedEventArgs e)
+    {
+        if (_detail is not null)
+        {
+            _detail.StatusText = e.Message;
+        }
     }
 
     /// <summary>
