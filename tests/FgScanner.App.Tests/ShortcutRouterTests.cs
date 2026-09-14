@@ -12,6 +12,15 @@ public sealed class ShortcutRouterTests
 {
     private static readonly string[] AllSections = ["Scan", "Groups", "Search", "Trash", "Settings"];
 
+    private static readonly string[] PageKeys =
+    [
+        ShortcutMap.Actions.DeletePage,
+        ShortcutMap.Actions.Undo,
+        ShortcutMap.Actions.Redo,
+        ShortcutMap.Actions.RotateLeft,
+        ShortcutMap.Actions.RotateRight,
+    ];
+
     public static TheoryData<string, string, ShortcutTarget> ScanKeysOnEverySection()
     {
         var data = new TheoryData<string, string, ShortcutTarget>();
@@ -41,6 +50,42 @@ public sealed class ShortcutRouterTests
     [InlineData(ShortcutMap.Actions.DeletePage, ShortcutTarget.GroupDeletePage)]
     public void Page_keys_on_Groups_act_on_the_open_group(string action, ShortcutTarget expected) =>
         Assert.Equal(expected, ShortcutRouter.Route(action, "Groups"));
+
+    /// <summary>
+    /// The bug this router exists for: with a group open in Groups and the Scan section showing,
+    /// Delete trashed the group's selected page, out of sight.
+    /// </summary>
+    [Fact]
+    public void Delete_on_Scan_never_touches_the_open_group() =>
+        Assert.NotEqual(ShortcutTarget.GroupDeletePage, ShortcutRouter.Route(ShortcutMap.Actions.DeletePage, "Scan"));
+
+    [Fact]
+    public void Delete_on_Scan_is_for_the_scanned_pages_not_yet_saved() =>
+        Assert.Equal(ShortcutTarget.ScanDeleteStagedPages, ShortcutRouter.Route(ShortcutMap.Actions.DeletePage, "Scan"));
+
+    public static TheoryData<string, string> PageKeysOffGroups()
+    {
+        var data = new TheoryData<string, string>();
+        foreach (var section in new[] { "Search", "Trash", "Settings" })
+        {
+            foreach (var action in PageKeys)
+            {
+                data.Add(action, section);
+            }
+        }
+
+        foreach (var action in PageKeys.Where(a => a != ShortcutMap.Actions.DeletePage))
+        {
+            data.Add(action, "Scan");
+        }
+
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(PageKeysOffGroups))]
+    public void Page_keys_do_nothing_where_there_is_no_page_to_act_on(string action, string section) =>
+        Assert.Equal(ShortcutTarget.None, ShortcutRouter.Route(action, section));
 
     [Fact]
     public void Every_default_shortcut_is_bound()
