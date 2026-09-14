@@ -57,6 +57,29 @@ public sealed class IndexExporterTests : IDisposable
         await VerifyFile(Path.Combine(_dir, "manifest.json"));
     }
 
+    /// <summary>
+    /// The JimsStuff importer reads manifest.json and index.json. A length is an on-screen setting, so
+    /// giving every field one must leave both files byte-for-byte as they were. Memo never reaches
+    /// IndexFieldDef at all.
+    /// </summary>
+    [Fact]
+    public async Task Manifest_fields_ignore_length_and_memo()
+    {
+        await ExportAsync(IndexFormat.Csv, IndexFormat.Json);
+        var manifest = await File.ReadAllTextAsync(Path.Combine(_dir, "manifest.json"), TestContext.Current.CancellationToken);
+        var index = await File.ReadAllTextAsync(Path.Combine(_dir, "index.json"), TestContext.Current.CancellationToken);
+
+        var limited = ExporterTestData.Build(IndexFormat.Csv, IndexFormat.Json) with
+        {
+            GroupDirectory = _dir,
+            Fields = [.. ExporterTestData.Fields.Select(f => f with { MaxLength = 40 })],
+        };
+        await new IndexExporter().ExportAsync(limited, TestContext.Current.CancellationToken);
+
+        Assert.Equal(manifest, await File.ReadAllTextAsync(Path.Combine(_dir, "manifest.json"), TestContext.Current.CancellationToken));
+        Assert.Equal(index, await File.ReadAllTextAsync(Path.Combine(_dir, "index.json"), TestContext.Current.CancellationToken));
+    }
+
     [Fact]
     public async Task Csv_starts_with_utf8_bom_and_uses_crlf()
     {

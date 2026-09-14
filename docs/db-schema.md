@@ -29,6 +29,8 @@ is taken automatically before every schema migration).
 | Id | TEXT | no | PK |
 | DefaultValue | TEXT | yes |  |
 | ListChoicesJson | TEXT | yes |  |
+| MaxLength | INTEGER | yes |  |
+| Memo | INTEGER | no |  |
 | Name | TEXT | no |  |
 | Order | INTEGER | no |  |
 | Required | INTEGER | no |  |

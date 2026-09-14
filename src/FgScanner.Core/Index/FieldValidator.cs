@@ -13,6 +13,13 @@ public static class FieldValidator
             return field.Required ? $"{field.Name} is required." : null;
         }
 
+        // Counted in UTF-16 code units (string.Length), the unit a WPF TextBox counts in, so the limit
+        // entry stops at and the limit checked here agree. An emoji counts as two.
+        if (field.MaxLength is { } limit && value.Length > limit)
+        {
+            return $"{field.Name} is {value.Length} characters; the limit is {limit}.";
+        }
+
         return field.Type switch
         {
             IndexFieldType.Date when !DateOnly.TryParseExact(value, "yyyy-MM-dd", out _) =>

@@ -140,6 +140,27 @@ public class FieldDefinition
 
     /// <summary>JSON array of choices; only for <see cref="FieldType.List"/>.</summary>
     public string? ListChoicesJson { get; set; }
+
+    /// <summary>
+    /// Longest value the operator may enter, in UTF-16 characters; null means no limit. Text fields
+    /// only. It governs on-screen entry and validation and is deliberately not exported: the index
+    /// files and manifest.json are an external contract, and nothing downstream needs a length.
+    /// </summary>
+    public int? MaxLength { get; set; }
+
+    /// <summary>
+    /// A long Text field, shown in a larger box the operator can resize. A flag rather than a new
+    /// <see cref="FieldType"/>: FieldType casts positionally to IndexFieldType and its name is
+    /// written into manifest.json, so a new type would change the export contract. Not exported.
+    /// </summary>
+    public bool Memo { get; set; }
+
+    /// <summary>
+    /// The one place a stored field becomes what validation and export see. Six callers used to build
+    /// it by hand, and they drifted: four dropped Scope, and each would have had to learn MaxLength.
+    /// </summary>
+    public FgScanner.Core.Index.IndexFieldDef ToIndexFieldDef() =>
+        new(Name, (FgScanner.Core.Index.IndexFieldType)Type, Required, Scope, MaxLength);
 }
 
 /// <summary>A batch tied to a directory; the directory name is the group name (PLAN §5.1).</summary>

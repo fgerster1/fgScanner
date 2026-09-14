@@ -112,6 +112,28 @@ public sealed class EvidenceProfileSeedTests : IDisposable
     }
 
     /// <summary>
+    /// Lengths and memo are the operator's on-screen choices, not part of the contract. A repair that
+    /// rebuilt every field purely from code would wipe them and move every group a layout version on.
+    /// </summary>
+    [Fact]
+    public async Task Repair_keeps_the_operators_lengths_and_memo()
+    {
+        var profile = await _profiles.EnsureEvidenceProfileAsync(TestContext.Current.CancellationToken);
+        var fields = (await _profiles.GetLatestSchemaAsync(profile.Id, TestContext.Current.CancellationToken))
+            .Fields.OrderBy(f => f.Order).ToList();
+        fields.Single(f => f.Name == "Title").MaxLength = 80;
+        fields.Single(f => f.Name == "Notes").Memo = true;
+        var tuned = await _profiles.SaveSchemaAsync(profile.Id, fields, TestContext.Current.CancellationToken);
+
+        await _profiles.EnsureEvidenceProfileAsync(TestContext.Current.CancellationToken);
+
+        var repaired = await _profiles.GetLatestSchemaAsync(profile.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(tuned.Version, repaired.Version);
+        Assert.Equal(80, repaired.Fields.Single(f => f.Name == "Title").MaxLength);
+        Assert.True(repaired.Fields.Single(f => f.Name == "Notes").Memo);
+    }
+
+    /// <summary>
     /// Seeding repairs a profile somebody has already damaged — that is most of the point.
     /// </summary>
     [Fact]

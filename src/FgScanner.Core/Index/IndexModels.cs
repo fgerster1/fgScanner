@@ -27,8 +27,9 @@ public enum FieldScope
     Batch,
 }
 
+/// <summary>A field as validation and export see it. MaxLength is for validation only; no writer emits it.</summary>
 public sealed record IndexFieldDef(
-    string Name, IndexFieldType Type, bool Required, FieldScope Scope = FieldScope.Row);
+    string Name, IndexFieldType Type, bool Required, FieldScope Scope = FieldScope.Row, int? MaxLength = null);
 
 /// <summary>
 /// One export row (= one document). Custom values are canonical strings: ISO dates, invariant numbers.

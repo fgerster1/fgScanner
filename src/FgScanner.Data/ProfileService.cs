@@ -13,6 +13,12 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
     /// </summary>
     public const int MaxFields = 16;
 
+    /// <summary>Longest length an ordinary Text field may be given (SPEC-2026-002 §05).</summary>
+    public const int MaxTextLength = 100;
+
+    /// <summary>Longest length a memo field may be given.</summary>
+    public const int MaxMemoLength = 2000;
+
     /// <summary>The profile <see cref="EnsureEvidenceProfileAsync"/> creates and repairs.</summary>
     public const string EvidenceProfileName = "Evidence";
 
@@ -79,6 +85,11 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
 
         profile ??= await CreateAsync(EvidenceProfileName, cancellationToken).ConfigureAwait(false);
 
+        // The contract fixes names, types and flags; a length or a memo box is the operator's on-screen
+        // choice. Carried forward by name, so pressing repair neither wipes them nor mints a version.
+        var current = (await GetLatestSchemaAsync(profile.Id, cancellationToken).ConfigureAwait(false))
+            .Fields.ToDictionary(f => f.Name, StringComparer.Ordinal);
+
         var fields = EvidenceProfile.Fields
             .Select(spec => new FieldDefinition
             {
@@ -91,6 +102,8 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
                 ListChoicesJson = spec.ListChoices is { Count: > 0 } choices
                     ? JsonSerializer.Serialize(choices)
                     : null,
+                MaxLength = current.GetValueOrDefault(spec.Name)?.MaxLength,
+                Memo = current.GetValueOrDefault(spec.Name)?.Memo ?? false,
             })
             .ToList();
 
@@ -209,6 +222,17 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
             throw new InvalidOperationException($"Field name \"{duplicate.Key}\" is used more than once.");
         }
 
+        foreach (var field in fields)
+        {
+            var (maxLength, memo) = Sizing(field);
+            var limit = memo ? MaxMemoLength : MaxTextLength;
+            if (maxLength is < 1 || maxLength > limit)
+            {
+                throw new InvalidOperationException(
+                    $"Field \"{field.Name.Trim()}\": the length must be between 1 and {limit} characters.");
+            }
+        }
+
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         // Saving a layout that has not actually changed used to mint a version anyway, so clicking
@@ -235,6 +259,7 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
         var order = 0;
         foreach (var field in fields)
         {
+            var (maxLength, memo) = Sizing(field);
             db.FieldDefinitions.Add(new FieldDefinition
             {
                 Id = Guid.NewGuid(),
@@ -247,6 +272,8 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
                 Scope = field.Scope,
                 DefaultValue = field.DefaultValue,
                 ListChoicesJson = field.ListChoicesJson,
+                MaxLength = maxLength,
+                Memo = memo,
             });
         }
 
@@ -274,8 +301,16 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
             || field.Sticky != submitted[i].Sticky
             || field.Scope != submitted[i].Scope
             || field.DefaultValue != submitted[i].DefaultValue
-            || field.ListChoicesJson != submitted[i].ListChoicesJson).Any();
+            || field.ListChoicesJson != submitted[i].ListChoicesJson
+            || (field.MaxLength, field.Memo) != Sizing(submitted[i])).Any();
     }
+
+    /// <summary>
+    /// A field's length and memo flag as they will be stored. Both belong to Text fields only, so on any
+    /// other type they are cleared rather than kept as settings nothing reads.
+    /// </summary>
+    private static (int? MaxLength, bool Memo) Sizing(FieldDefinition field) =>
+        field.Type == FieldType.Text ? (field.MaxLength, field.Memo) : (null, false);
 
     public async Task UpdateOcrEnabledAsync(
         Guid profileId, bool ocrEnabled, CancellationToken cancellationToken = default)
@@ -335,6 +370,11 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
     {
         /// <summary>Init-prop with a default so version-1 files without it still load as row-scoped.</summary>
         public string Scope { get; init; } = nameof(FgScanner.Core.Index.FieldScope.Row);
+
+        /// <summary>Format version 3. Init-props, so version 1 and 2 files load with no limit and no memo.</summary>
+        public int? MaxLength { get; init; }
+
+        public bool Memo { get; init; }
     }
 
     /// <summary>Serializes a profile + its latest schema as schema-versioned JSON (.fgprofile).</summary>
@@ -343,12 +383,16 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         var profile = await db.Profiles.FirstAsync(p => p.Id == profileId, cancellationToken).ConfigureAwait(false);
         var schema = await GetLatestSchemaAsync(profileId, cancellationToken).ConfigureAwait(false);
+
+        // Version 3 only when a field uses it: 0.4.0 refuses a version it does not know, and a profile
+        // with no lengths or memo boxes has no reason to be unreadable there.
+        var formatVersion = schema.Fields.Any(f => f.MaxLength is not null || f.Memo) ? 3 : 2;
         var file = new FgProfileFile(
-            2, profile.Name, profile.OcrEnabled,
+            formatVersion, profile.Name, profile.OcrEnabled,
             profile.ExportCsv, profile.ExportXlsx, profile.ExportXml, profile.ExportJson, profile.CsvDelimiter,
             [.. schema.Fields.Select(f => new FgProfileField(
                 f.Name, f.Type.ToString(), f.Required, f.Sticky, f.DefaultValue, f.ListChoicesJson)
-                { Scope = f.Scope.ToString() })])
+                { Scope = f.Scope.ToString(), MaxLength = f.MaxLength, Memo = f.Memo })])
         {
             SeparatorDetectionEnabled = profile.SeparatorDetectionEnabled,
             KeepSeparatorPages = profile.KeepSeparatorPages,
@@ -362,10 +406,10 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
     {
         var file = System.Text.Json.JsonSerializer.Deserialize<FgProfileFile>(json)
             ?? throw new InvalidOperationException("Not a valid .fgprofile file.");
-        if (file.FormatVersion is not (1 or 2))
+        if (file.FormatVersion is not (1 or 2 or 3))
         {
             throw new InvalidOperationException(
-                $"Unsupported .fgprofile format version {file.FormatVersion} (this build reads versions 1 and 2).");
+                $"Unsupported .fgprofile format version {file.FormatVersion} (this build reads versions 1 to 3).");
         }
 
         var existing = (await ListAsync(cancellationToken).ConfigureAwait(false)).Select(p => p.Name)
@@ -394,6 +438,12 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
                         : FgScanner.Core.Index.FieldScope.Row,
                     DefaultValue = f.DefaultValue,
                     ListChoicesJson = f.ListChoicesJson,
+                    // The same file boundary: a length out of range degrades to no limit.
+                    MaxLength = f.MaxLength is { } length && length >= 1
+                        && length <= (f.Memo ? MaxMemoLength : MaxTextLength)
+                            ? length
+                            : null,
+                    Memo = f.Memo,
                 })],
                 cancellationToken).ConfigureAwait(false);
         }

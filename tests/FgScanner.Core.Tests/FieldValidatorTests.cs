@@ -41,6 +41,19 @@ public class FieldValidatorTests
     }
 
     [Fact]
+    public void Over_length_text_is_invalid_and_text_at_the_limit_is_valid()
+    {
+        var title = new IndexFieldDef("Title", IndexFieldType.Text, Required: false, MaxLength: 40);
+
+        Assert.Equal("Title is 41 characters; the limit is 40.", FieldValidator.Validate(title, new string('a', 41)));
+        Assert.Null(FieldValidator.Validate(title, new string('a', 40)));
+    }
+
+    [Fact]
+    public void A_field_with_no_length_accepts_any_length() =>
+        Assert.Null(FieldValidator.Validate(RequiredText, new string('a', 5000)));
+
+    [Fact]
     public void Tokens_expand()
     {
         var expanded = TokenExpander.Expand("$(group)-$(counter)", "Taxes", 7);

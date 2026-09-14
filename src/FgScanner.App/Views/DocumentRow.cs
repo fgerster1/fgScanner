@@ -114,7 +114,7 @@ public sealed class RowValues(IReadOnlyList<FieldDefinition> fields) : INotifyPr
         }
 
         var error = FieldValidator.Validate(
-            new IndexFieldDef(field.Name, (IndexFieldType)field.Type, field.Required),
+            field.ToIndexFieldDef(),
             _values.GetValueOrDefault(fieldName),
             IndexingService.ParseChoices(field.ListChoicesJson));
         if (error is null)

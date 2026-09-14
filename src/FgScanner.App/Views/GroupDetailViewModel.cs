@@ -161,7 +161,7 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         // the export agree by construction: what an operator sees is what index.csv gets.
         var batchValues = JsonSerializer.Deserialize<Dictionary<string, string?>>(Group.BatchFieldsJson) ?? [];
         var indexFields = Fields
-            .Select(f => new IndexFieldDef(f.Name, (IndexFieldType)f.Type, f.Required, f.Scope))
+            .Select(f => f.ToIndexFieldDef())
             .ToList();
         var sequence = 0;
         foreach (var page in pages)
