@@ -466,14 +466,25 @@ See [SPEC-2026-003-scan-viewer-delete-and-quick-scan-tools-PROMPTS.md](./SPEC-20
 
 ## 21 · Definition of done
 
-- [ ] All acceptance criteria met
-- [ ] Failing tests written first, now passing
-- [ ] Full suite green
-- [ ] `/code-review max` run, findings resolved or accepted in writing
-- [ ] Security review — _not applicable, not web-facing_
-- [ ] Documentation updated per §18
+- [x] All acceptance criteria met. AC-1..AC-10 and AC-12 are covered by tests (§10), with 628 passing
+  at `225ddb5`. AC-11 was signed off by Franz on 2026-09-14 (§22).
+- [x] Failing tests written first, now passing. The red runs were recorded at Prompts 1–3, and the
+  review's fixes also started from failing tests.
+- [x] Full suite green: `dotnet test -c Release` gives 628 total, 0 failed (`225ddb5`, 2026-09-14).
+- [x] `/code-review max` run on 2026-09-14 by a fresh reviewer: 9 fix commits, and every declined or
+  deferred finding is recorded in §22.
+- [x] Security review — _not applicable, not web-facing_. The file-deletion boundary was reviewed
+  under Prompt 5.
+- [x] Documentation updated per §18:
+  - CLAUDE.md
+  - the Quick Scan plan and `spec-scan-section.md` (Prompt 4)
+  - `manual-tests.md`
+  - `user-guide.md`
+  - `evidence-setup-walkthrough.txt`, per Franz's 2026-09-14 decision in §22
+  - `FEATURE-PARITY.md`
+  - memory
 - [ ] Installed on the station; Jim's walkthrough step confirmed
-- [ ] Rollback — _waived: revert only, no data_
+- [x] Rollback — _waived: revert only, no data_
 
 ## 22 · Sign-off
 
@@ -495,6 +506,7 @@ See [SPEC-2026-003-scan-viewer-delete-and-quick-scan-tools-PROMPTS.md](./SPEC-20
 | **Review — declined** | §12 "Viewer open while pages change — modal, so cannot happen" is not strictly true: a scan or save already in flight keeps running under the modal viewer. The viewer holds a snapshot of the paths and shows a file that has gone as blank, so no code change. |
 | **Review — declined** | A junction or symlink created inside the session folder passes the path guard. That is outside §13's threat model: a corrupt index cannot create one, and anyone who can already has the operator's file rights. |
 | **Review — declined** | Every bound shortcut now marks its key handled even when its command cannot run. The Scan and Save keys used to pass through when disabled. No effect with the default gestures, which all carry a modifier or are Delete/F-keys. |
-| **Review — open** | AC-11 (Franz reviews the Quick Scan plan diff) has no sign-off row yet. |
+| **AC-11 — plan diff** | ☑ date: 2026-09-14 · Franz confirmed the Quick Scan plan amendment (`a7100be`) matches his Round A answers. |
+| **Jim's walkthrough — decision** | 2026-09-14, Franz: failed scans (a double-feed, or a jammed, torn or cut-off picture) **may be deleted before saving**, and the sheet is then scanned again. Step 6.9 of `evidence-setup-walkthrough.txt` is reworded, replacing its old "do not delete pages" rule. Scan everything and never delete because of what is on the paper (Step 6.8) still apply, as does no deleting after save. Part 9 gains "deleted a scan and never rescanned the sheet". |
 | **Built** | ☐ date: |
 | **Verified in production** | ☐ date: |

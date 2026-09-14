@@ -395,11 +395,38 @@ STEP 6.8 — SCAN EVERYTHING
     If a page is strange, write about it in "Notes". Do not put it in a
     separate pile.
 
-STEP 6.9 — Do not fix pages
+STEP 6.9 — Check the pages BEFORE you save. Do not fix them.
 
-    Do not rotate, crop, or delete pages. If a page feeds badly, write it in
-    Notes and scan that sheet again as an extra page. Someone will sort it out
-    later.
+    Double-click a page to see it full size. Use the arrow keys to look at
+    the others. Close it when you are done.
+
+    A SCAN THAT FAILED may be deleted before you save it to the group.
+    Failed means the machine got it wrong, for example:
+        - two sheets went through stuck together
+        - the sheet jammed, and the picture is torn, folded or cut off
+
+    To delete it:
+        1. Click the bad page. (Ctrl+click to pick more than one.)
+        2. Press Delete.
+        3. Press OK.
+        4. Scan THAT SHEET again.
+
+    WHAT YOU SHOULD SEE: the page is gone from the list, and the page numbers
+    close up (Page 1, Page 2, Page 3 ...).
+
+    RULES:
+        - Delete only a bad PICTURE. Every sheet must end up with one good
+          scan. If you delete one, scan that sheet again right away.
+        - Never delete a page because of what is ON the paper. Blank, a
+          duplicate, odd or embarrassing: scan it and keep it (Step 6.8).
+        - Once the pages are saved to the group, do not delete them. Write
+          the problem in Notes and scan the sheet again as an extra page.
+        - Do not rotate or crop pages.
+
+    A deleted scan goes to the Windows Recycle Bin. If you deleted the wrong
+    one, do not restore it from there. Scan that sheet again instead.
+    (A restored file goes back into the program's hidden folder and is thrown
+    away the next time you save.)
 
 
 ===============================================================================
@@ -530,6 +557,9 @@ Every one of these gives you NO warning. That is why they are listed.
 
   * Changing a field after you committed and copied. The handed-over copy goes
     stale and no longer matches.
+
+  * Deleting a failed scan and not scanning that sheet again (Step 6.9). The
+    sheet is simply missing. Only your hand count (Step 6.3) catches it.
 
   * Renaming a group after scanning. The name is permanent.
 

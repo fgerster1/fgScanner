@@ -16,6 +16,19 @@ folder. Everything else — OCR, AI descriptions, PDF export — feeds that inde
 - **Batch scan…** runs several passes with a prompt or delay between them and
   saves to the active group at the end.
 - If the app is killed mid-scan, the next start offers to recover the pages.
+- **Check a page before saving:** double-click a thumbnail, or select it and press Enter, to open it
+  full size. The arrow keys page through the other scans. When you close the viewer, the page you
+  were on stays selected.
+- **Delete a failed scan before saving:**
+  - Select one or more thumbnails (Ctrl/Shift+click, or Ctrl+A for all).
+  - Press Delete or **Delete selected…**, then confirm.
+  - The files go to the **Windows Recycle Bin**, and the page labels renumber.
+  - Delete is unavailable while a scan or a save is running.
+
+  Pages already saved to a group are deleted from Groups instead, into FG Scanner's Trash.
+- **Restoring a deleted scan:** the Recycle Bin puts the file back in FG Scanner's hidden scan-session
+  folder (`%APPDATA%\FGScanner\recovery\…`). That folder is cleared after Save to group, so copy the
+  restored file somewhere else straight away — or simply scan the sheet again.
 
 ## Profiles and index fields (Settings)
 
@@ -88,6 +101,13 @@ are rejected with "Unrecognized command or argument".
 Rebindable in Settings. Defaults: Ctrl+Enter scan, Ctrl+S save to group,
 Ctrl+Shift+Enter commit, Ctrl+Z/Y undo/redo, Ctrl+Shift+←/→ rotate,
 Delete → Trash, F2–F12 select profile 1–11.
+
+The page keys — Delete, undo/redo and rotate — act only on the screen that is showing:
+- **Groups:** they act on the selected page, and Delete moves it to the Trash.
+- **Scan:** Delete removes the selected unsaved scans, to the Recycle Bin.
+- **Search, Trash and Settings:** they do nothing.
+
+The scan, save, commit and profile keys work from any screen.
 
 ## Your data
 

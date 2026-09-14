@@ -314,3 +314,32 @@ and walk the list; then repeat at **125%**. Put your own resolution and scale ba
 - [ ] Batch scan…, Adjust…, Export images…, Export PDF…, Re-process…, Delete group…, Move all scans…, a name prompt (Create…), Duplicates…, and the page viewer each open fully on screen with their buttons visible
 - [ ] In each, Tab reaches the fields before the buttons, and clicking a caption does not take focus out of the field being typed in
 - [ ] First run (a fresh profile folder): the Welcome dialog fits the screen with "Start scanning" visible
+
+## Scan page review (SPEC-2026-003)
+
+Run with `FgScanner.exe --fake-scanner`. Set Source to Feeder so one Scan gives several pages.
+
+> **Passed 2026-09-14 on the dev PC** (Franz, 14 of 14, before the code-review fixes). The rows marked
+> *(review)* were added by the code review and have not been walked yet. Nothing here has been walked
+> on the station.
+
+**Page keys act only on the screen showing**
+- [ ] With a group open in Groups and a page selected, go to Search, click in the results list, and press Delete: nothing is deleted
+- [ ] Do the same on Trash and Settings, and try Ctrl+Z, Ctrl+Y and Ctrl+Shift+←/→ too: nothing changes in the group
+- [ ] Back on Groups, Delete moves the selected page to the Trash as before; Ctrl+Shift+← rotates it
+
+**The viewer**
+- [ ] Scan 5 pages and double-click the third: the viewer shows "Page 3 of 5", and the arrow keys page through
+- [ ] Click a thumbnail and press Enter: the viewer opens on that page
+- [ ] *(review)* Open page 2, page to page 4, close: page 4 is the one selected and focused, and Delete would remove page 4
+- [ ] In Groups, double-click the preview, page forward and close: the grid lands on the page you closed on
+
+**Delete before saving**
+- [ ] Ctrl+click 2 thumbnails and press Delete: the confirmation names 2 pages, with Cancel as the default; press OK and the rest renumber Page 1–3
+- [ ] Press Cancel instead: nothing changes
+- [ ] The deleted `page-0000N.png` files are in the Windows Recycle Bin
+- [ ] "Delete selected…" is greyed out with nothing selected, while a scan runs, and *(review)* while Save to group is running (use "Scan into this group", which saves automatically)
+- [ ] *(review)* Delete the focused thumbnail, then press Down: focus moves to the next page, not back to Page 1
+- [ ] Select a group, then Save to group: the group gets only the kept pages
+- [ ] Scan 3 more, delete 1, close FG Scanner without saving, and relaunch: recovery offers 2 pages
+- [ ] *(review)* Restore a deleted page from the Recycle Bin, then Save to group: the restored file is **not** in the group, and it is gone from the session folder. This is expected; the user guide says to copy it out first.

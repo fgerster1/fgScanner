@@ -50,6 +50,7 @@ FgScanner.Cli  (headless fgscanner.exe; Core/Scanning/Data/Ocr/Ai — never App/
 - Comments explain *why*, never what. Validate at boundaries (user input, files, external APIs) only. No features beyond the task.
 - Hardware access only through `IScanService`. All index/file writes atomic (temp + `File.Replace`). Dates ISO-8601; numbers invariant culture.
 - UI is English-only; user-visible strings are written inline, no .resx (docs/adr/0001).
+- Shortcuts are bound on the main window, so they fire whichever section is showing. `ShortcutRouter` decides which section each one acts on — a new shortcut must say which section it belongs to, and a page key must never reach a section that is not on screen (SPEC-2026-003).
 
 **Tests:**
 - Business logic must run without a scanner (FakeScanService). OCR tests run real Tesseract (deterministic — never mock the engine). AI tests use MockHttp — never live keys, never network in CI. CSV/PDF assertions via Verify snapshots (scrub PDF /CreationDate /ModDate /ID).
