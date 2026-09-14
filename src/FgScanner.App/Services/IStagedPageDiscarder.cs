@@ -42,6 +42,14 @@ public sealed class RecycleBinDiscarder : IStagedPageDiscarder
             return false;
         }
 
+        // The shell expands wildcards in the paths it is given, so "*" would take every page, not one.
+        if (filePath.AsSpan().IndexOfAny('*', '?') >= 0)
+        {
+            reason = $"{filePath} names more than one file.";
+            Log.Error("Refused to discard {File}: the shell would expand its wildcard", filePath);
+            return false;
+        }
+
         var operation = new FileOperation
         {
             Function = FoDelete,

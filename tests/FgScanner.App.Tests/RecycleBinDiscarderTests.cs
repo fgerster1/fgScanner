@@ -56,8 +56,9 @@ public sealed class RecycleBinDiscarderTests : IDisposable
     [InlineData("page-00001.png")] // the folder that holds every session
     public void A_file_outside_the_session_folder_is_refused_and_kept(string relative)
     {
-        var file = Path.GetFullPath(Path.Combine(_root, relative));
-        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        // Handed over as written, not normalized first, so the ".." case reaches the guard as "..".
+        var file = Path.Combine(_root, relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(file))!);
         File.WriteAllBytes(file, [1]);
 
         Assert.False(new RecycleBinDiscarder().TryDiscard(_session, file, out var reason));
@@ -70,5 +71,22 @@ public sealed class RecycleBinDiscarderTests : IDisposable
     {
         Assert.False(new RecycleBinDiscarder().TryDiscard(_session, _session, out _));
         Assert.True(Directory.Exists(_session));
+    }
+
+    /// <summary>The shell expands wildcards in the paths it is given, so one of these would take every page.</summary>
+    [Theory]
+    [InlineData("*")]
+    [InlineData("page-0000?.png")]
+    public void A_wildcard_is_refused_and_every_page_is_kept(string name)
+    {
+        var first = Path.Combine(_session, "page-00001.png");
+        var second = Path.Combine(_session, "page-00002.png");
+        File.WriteAllBytes(first, [1]);
+        File.WriteAllBytes(second, [2]);
+
+        Assert.False(new RecycleBinDiscarder().TryDiscard(_session, Path.Combine(_session, name), out var reason));
+        Assert.NotEmpty(reason);
+        Assert.True(File.Exists(first));
+        Assert.True(File.Exists(second));
     }
 }
