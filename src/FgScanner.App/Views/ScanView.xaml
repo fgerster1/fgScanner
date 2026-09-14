@@ -92,12 +92,23 @@
             </StackPanel>
         </ScrollViewer>
 
-        <!-- Thumbnails (virtualized) -->
-        <ListBox Grid.Column="1"
+        <!-- Thumbnails (virtualized). Double-click or Enter checks a page full size before it is saved. -->
+        <ListBox x:Name="PageList"
+                 Grid.Column="1"
                  ItemsSource="{Binding Pages}"
+                 SelectionMode="Extended"
+                 SelectionChanged="OnPageSelectionChanged"
+                 MouseDoubleClick="OnPageDoubleClick"
+                 KeyDown="OnPageListKeyDown"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  VirtualizingPanel.IsVirtualizing="True"
                  VirtualizingPanel.VirtualizationMode="Recycling">
+            <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                    <Setter Property="AutomationProperties.Name"
+                            Value="{Binding SequenceNumber, StringFormat='Page {0}'}" />
+                </Style>
+            </ListBox.ItemContainerStyle>
             <ListBox.ItemsPanel>
                 <ItemsPanelTemplate>
                     <VirtualizingStackPanel />

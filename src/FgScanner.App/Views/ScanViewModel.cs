@@ -49,7 +49,11 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             SaveToGroupCommand.NotifyCanExecuteChanged();
         };
 
-        Pages.CollectionChanged += (_, _) => SaveToGroupCommand.NotifyCanExecuteChanged();
+        Pages.CollectionChanged += (_, _) =>
+        {
+            SaveToGroupCommand.NotifyCanExecuteChanged();
+            OpenPageViewerCommand.NotifyCanExecuteChanged();
+        };
 
         foreach (var page in sessionService.Session.Pages)
         {
@@ -73,6 +77,30 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     public ObservableCollection<ScanDeviceInfo> Devices { get; } = [];
 
     public ObservableCollection<ScannedPage> Pages { get; } = [];
+
+    /// <summary>The thumbnails selected on screen, kept in sync by the view.</summary>
+    public ObservableCollection<ScannedPage> SelectedPages { get; } = [];
+
+    /// <summary>
+    /// Shows the viewer over these paths from a start index and returns the index it closed on.
+    /// Replaceable so opening the viewer can be tested without a window.
+    /// </summary>
+    public Func<IReadOnlyList<string>, int, int> ShowPageViewer { get; set; } = Dialogs.PageViewerWindow.ShowModal;
+
+    private bool CanOpenPageViewer() => Pages.Count > 0;
+
+    /// <summary>
+    /// Opens the scanned pages full size, before they are saved, so a crooked or double-fed page is
+    /// caught while it can still be rescanned. View-only: nothing about the page changes here.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanOpenPageViewer))]
+    private void OpenPageViewer(ScannedPage? page)
+    {
+        var ordered = Pages.OrderBy(p => p.SequenceNumber).ToList();
+        var chosen = page ?? SelectedPages.FirstOrDefault();
+        var start = chosen is null ? 0 : Math.Max(0, ordered.IndexOf(chosen));
+        ShowPageViewer([.. ordered.Select(p => p.FilePath)], start);
+    }
 
     [ObservableProperty]
     private ScanDriver _selectedDriver;

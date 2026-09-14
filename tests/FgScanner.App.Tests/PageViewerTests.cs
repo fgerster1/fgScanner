@@ -1,6 +1,11 @@
+using System.IO;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using FgScanner.App.Services;
 using FgScanner.App.Views;
+using FgScanner.Core.Index;
+using FgScanner.Data;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace FgScanner.App.Tests;
@@ -331,5 +336,102 @@ public sealed class PageNavigatorTests
         Assert.Equal("", nav.Position);
         Assert.False(nav.CanGoNext);
         Assert.False(nav.CanGoPrevious);
+    }
+}
+
+/// <summary>
+/// The viewer takes image paths so that Scan's unsaved pages can use it too. Groups must still land
+/// its grid on the page the viewer closed on, or closing on page 7 drops the user back on page 1.
+/// </summary>
+public sealed class GroupPageViewerTests : IDisposable
+{
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "fgscanner-tests", Guid.NewGuid().ToString("N"));
+    private readonly string _dbPath;
+    private readonly GroupService _groupService;
+    private readonly ProfileService _profileService;
+    private readonly IndexingService _indexingService;
+    private readonly TrashService _trashService;
+
+    public GroupPageViewerTests()
+    {
+        Directory.CreateDirectory(_root);
+        _dbPath = Path.Combine(_root, "test.db");
+        using (var db = new FgScannerDbContext(DbBootstrapper.BuildOptions(_dbPath)))
+        {
+            db.Database.Migrate();
+        }
+
+        var factory = new TestFactory(_dbPath);
+        _groupService = new GroupService(factory);
+        _profileService = new ProfileService(factory);
+        _indexingService = new IndexingService(factory, _profileService, new IndexExporter());
+        _trashService = new TrashService(factory, Path.Combine(_root, "trash"));
+    }
+
+    public void Dispose()
+    {
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        try
+        {
+            Directory.Delete(_root, recursive: true);
+        }
+        catch (IOException)
+        {
+        }
+    }
+
+    private sealed class TestFactory(string dbPath) : IDbContextFactory<FgScannerDbContext>
+    {
+        public FgScannerDbContext CreateDbContext() => new(DbBootstrapper.BuildOptions(dbPath));
+    }
+
+    private PageEditingToolset CreateToolset() => new(
+        new FgScanner.Scanning.Editing.ImageEditor(),
+        new FgScanner.Scanning.Export.PdfExportService(),
+        new FgScanner.Scanning.Export.ImageExportService(),
+        new FgScanner.Scanning.Import.FileImportService(),
+        new ReorderService(new TestFactory(_dbPath)),
+        new OcrQueueService(new TestFactory(_dbPath)),
+        new AiQueueService(new TestFactory(_dbPath)),
+        new RetroProcessService(new TestFactory(_dbPath), _groupService, _trashService),
+        new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false),
+        new AppSettingsService(new TestFactory(_dbPath)),
+        new CaptureTriageService(new TestFactory(_dbPath), new AppSettingsService(new TestFactory(_dbPath))),
+        new DuplicateFinder(new TestFactory(_dbPath)));
+
+    [Fact]
+    public async Task Grid_follows_the_viewers_index()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var group = await _groupService.CreateGroupAsync(_root, "Viewer", null, ct);
+        var staging = Directory.CreateDirectory(Path.Combine(_root, "staging")).FullName;
+        var files = new List<string>();
+        for (byte i = 1; i <= 3; i++)
+        {
+            var file = Path.Combine(staging, $"scan_0000{i}.png");
+            await File.WriteAllBytesAsync(file, [i, i, i], ct);
+            files.Add(file);
+        }
+
+        await _groupService.AdoptPagesAsync(group.Id, files, _ => false, ct);
+        var vm = new GroupDetailViewModel(
+            group, _groupService, _profileService, _indexingService, _trashService, new ActiveGroupStore(),
+            CreateToolset());
+        await vm.LoadAsync();
+        vm.SelectedRow = vm.Rows[0];
+        IReadOnlyList<string>? shown = null;
+        var shownStart = -1;
+        vm.ShowPageViewer = (paths, start) =>
+        {
+            shown = paths;
+            shownStart = start;
+            return 2;
+        };
+
+        vm.OpenPageViewerCommand.Execute(null);
+
+        Assert.Equal(vm.Rows.Select(r => r.ImagePath), shown);
+        Assert.Equal(0, shownStart);
+        Assert.Same(vm.Rows[2], vm.SelectedRow);
     }
 }
