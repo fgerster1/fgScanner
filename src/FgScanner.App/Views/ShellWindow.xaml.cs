@@ -82,7 +82,7 @@ public partial class ShellWindow : Window
             if (string.IsNullOrEmpty(gesture)
                 || !ShortcutMap.TryParseGesture(gesture, out var modifierNames, out var keyName)
                 || !Enum.TryParse<Key>(keyName, ignoreCase: true, out var key)
-                || CommandFor(action) is not { } command)
+                || !ShortcutRouter.Handles(action))
             {
                 continue;
             }
@@ -101,48 +101,63 @@ public partial class ShellWindow : Window
             }
 
             // KeyBinding's Key/Modifiers setters accept bare keys that KeyGesture would reject.
-            InputBindings.Add(new KeyBinding { Key = key, Modifiers = modifiers, Command = command });
+            InputBindings.Add(new KeyBinding
+            {
+                Key = key,
+                Modifiers = modifiers,
+                Command = new DelegatingCommand(() => RunShortcut(action)),
+            });
         }
     }
 
-    private ICommand? CommandFor(string action) => action switch
+    /// <summary>
+    /// Resolved when the key is pressed, not when the bindings are applied, because the section
+    /// showing changes after binding.
+    /// </summary>
+    private void RunShortcut(string action)
     {
-        ShortcutMap.Actions.Scan => _viewModel.ScanViewModel.ScanCommand,
-        ShortcutMap.Actions.ScanAnnotated => _viewModel.ScanViewModel.ScanAnnotatedCommand,
-        ShortcutMap.Actions.ScanNoteFace => _viewModel.ScanViewModel.ScanNoteFaceCommand,
-        ShortcutMap.Actions.SaveToGroup => _viewModel.ScanViewModel.SaveToGroupCommand,
-        ShortcutMap.Actions.Commit => DetailCommand(d => d.CommitCommand),
-        ShortcutMap.Actions.Undo => DetailCommand(d => d.UndoCommand),
-        ShortcutMap.Actions.Redo => DetailCommand(d => d.RedoCommand),
-        ShortcutMap.Actions.RotateLeft => DetailCommand(d => d.RotateLeftCommand),
-        ShortcutMap.Actions.RotateRight => DetailCommand(d => d.RotateRightCommand),
-        ShortcutMap.Actions.DeletePage => DetailCommand(d => d.DeleteSelectedCommand),
-        var name when name.StartsWith("Profile", StringComparison.Ordinal)
-            && int.TryParse(name["Profile".Length..], out var index) =>
-            new DelegatingCommand(() =>
-            {
-                var profiles = _viewModel.GroupsViewModel.Profiles;
-                if (index >= 1 && index <= profiles.Count)
-                {
-                    _viewModel.GroupsViewModel.SelectedProfile = profiles[index - 1];
-                }
-            }),
-        _ => null,
-    };
-
-    /// <summary>Routes to whichever group is currently open; a no-op when none is.</summary>
-    private DelegatingCommand DetailCommand(Func<GroupDetailViewModel, ICommand> pick) =>
-        new DelegatingCommand(() =>
+        var target = ShortcutRouter.Route(action, _viewModel.SelectedSection);
+        if (target == ShortcutTarget.SelectProfile)
         {
-            if (_viewModel.GroupsViewModel.Detail is { } detail)
-            {
-                var command = pick(detail);
-                if (command.CanExecute(null))
-                {
-                    command.Execute(null);
-                }
-            }
-        });
+            SelectProfile(action);
+            return;
+        }
+
+        if (CommandFor(target) is { } command && command.CanExecute(null))
+        {
+            command.Execute(null);
+        }
+    }
+
+    private void SelectProfile(string action)
+    {
+        var profiles = _viewModel.GroupsViewModel.Profiles;
+        if (ShortcutRouter.TryProfileIndex(action, out var index) && index >= 1 && index <= profiles.Count)
+        {
+            _viewModel.GroupsViewModel.SelectedProfile = profiles[index - 1];
+        }
+    }
+
+    /// <summary>Group targets act on whichever group is open; with none open they do nothing.</summary>
+    private ICommand? CommandFor(ShortcutTarget target)
+    {
+        var scan = _viewModel.ScanViewModel;
+        var detail = _viewModel.GroupsViewModel.Detail;
+        return target switch
+        {
+            ShortcutTarget.Scan => scan.ScanCommand,
+            ShortcutTarget.ScanAnnotated => scan.ScanAnnotatedCommand,
+            ShortcutTarget.ScanNoteFace => scan.ScanNoteFaceCommand,
+            ShortcutTarget.SaveToGroup => scan.SaveToGroupCommand,
+            ShortcutTarget.GroupCommit => detail?.CommitCommand,
+            ShortcutTarget.GroupUndo => detail?.UndoCommand,
+            ShortcutTarget.GroupRedo => detail?.RedoCommand,
+            ShortcutTarget.GroupRotateLeft => detail?.RotateLeftCommand,
+            ShortcutTarget.GroupRotateRight => detail?.RotateRightCommand,
+            ShortcutTarget.GroupDeletePage => detail?.DeleteSelectedCommand,
+            _ => null,
+        };
+    }
 
     private sealed class DelegatingCommand(Action execute) : ICommand
     {
