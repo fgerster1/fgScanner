@@ -576,5 +576,6 @@ See [SPEC-2026-002-group-record-editor-PROMPTS.md](./SPEC-2026-002-group-record-
 |---|---|
 | **Review round answered** | ☑ date: 2026-09-13 · Round A: https://claude.ai/code/artifact/b2c902c4-c72e-4530-816f-fdc3512cddc4 (db doc `review/SPEC-2026-002-rA`) |
 | **Franz approved** | ☑ date: 2026-09-13 (Round A, verdict approve) |
+| **Manual checks walked** | ☑ date: 2026-09-16 · Franz, dev machine, on the build at `3f907f9`. The Prompt 4 block (form, dividers, memo grip, sizes remembered per group, Ctrl+PageUp/PageDown, over-long paste refused, form edit reaching the grid, Delete inside a text field editing text rather than deleting the page, tab order, zoom) and the Prompt 5 block (delete to Trash with `index.json` updated, landing on the next page, import keeping the page, selection on close, empty state) — all passed, nothing failed. AC-15 and AC-16 evidenced. |
 | **Built** | ☐ date: |
 | **Verified in production** | ☐ date: |
