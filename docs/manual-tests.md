@@ -343,3 +343,48 @@ Run with `FgScanner.exe --fake-scanner`. Set Source to Feeder so one Scan gives 
 - [ ] Select a group, then Save to group: the group gets only the kept pages
 - [ ] Scan 3 more, delete 1, close FG Scanner without saving, and relaunch: recovery offers 2 pages
 - [ ] *(review)* Restore a deleted page from the Recycle Bin, then Save to group: the restored file is **not** in the group, and it is gone from the session folder. This is expected; the user guide says to copy it out first.
+
+## Record editor (SPEC-2026-002)
+
+> **Passed 2026-09-16 on the dev PC** (Franz, "nothing failed"), on an Evidence group, on the build
+> at `3f907f9` — that is, **before** the code-review fixes. The rows marked *(review)* were added by
+> the code review afterwards and have not been walked. The two rows marked *(not walked)* are
+> conditions AC-15 names that the record does not confirm. Nothing here has been walked on the station.
+
+**Settings — length and memo**
+- [ ] Settings → custom fields: the label reads "up to 16", and there are **Length** and **Memo** columns
+- [ ] Give a Text field Length 10, tick Memo on a second Text field, save — a new field layout version is made
+- [ ] A Date field's Length box is disabled
+- [ ] Length 0, or 101 on an ordinary Text field, or 2001 on a memo: refused, and the message names the field
+
+**The Groups grid**
+- [ ] Open a group on that profile → "Use latest field layout"
+- [ ] Typing an 11th character into the length-10 field is refused
+- [ ] Pasting 20 characters into it is refused, with a message, and the cell keeps what it had
+- [ ] The memo column shows one line, trimmed with "…" — the value itself is untouched (widen the column to check)
+
+**The editor window** — select a page, press "Record editor…" on the Groups toolbar
+- [ ] All 13 Evidence fields can be read in one view, with scrolling at most
+- [ ] Drag the divider between the fields and the page, and the one above the page list — both panes resize
+- [ ] Drag a memo box's corner grip: it will not go wider than its pane, and stops between 2 and 20 lines tall
+- [ ] Close and reopen: the sizes come back. Open a different group's editor: it keeps its own sizes
+- [ ] Ctrl+PageDown and Ctrl+PageUp: the fields, the page and the list all move together
+- [ ] Paste something too long into a length-limited field: refused, with the reason on the status line at the bottom
+- [ ] Type a value in the form — the same cell in the list below shows it; close and reopen — it is still there
+- [ ] Click into a text field, type, and press **Delete**: it deletes a character. The page must **not** be deleted
+- [ ] Tab from the fields reaches the zoom buttons, then the page list
+- [ ] −, +, Fit and 100% work on the page and the zoom percentage updates
+- [ ] A page whose image file has been renamed on disk shows "Image file not found" with the path, and its fields still open
+- [ ] *(review)* A List field whose stored value is **not** one of today's choices: open the editor, close it, and the value is still there (check the Groups grid, or `index.json` on a committed group)
+- [ ] *(review)* With focus on a List field in the form, press **Delete**: the page must **not** be deleted
+- [ ] *(review)* Drag a divider immediately after opening, before the window has settled: your drag stays put
+
+**Delete, add and close** — on a committed group
+- [ ] Delete a page: it is in the Trash, `index.json` no longer lists it, and the editor moves to the next page
+- [ ] Import 2 images: the editor stays on the page you were editing, and the new pages appear in the list
+- [ ] Close: the Groups grid is on that same page
+- [ ] On a scratch group, delete every page: the editor stays open, says "No pages in this group yet", and Delete greys out
+
+**Still to walk**
+- [ ] *(not walked)* The open, resize and reopen checks on a group under a **non-Evidence** profile that has a memo field (AC-15)
+- [ ] *(not walked)* The same at **1280 × 1024**, the smallest supported screen (AC-15)

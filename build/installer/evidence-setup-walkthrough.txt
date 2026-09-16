@@ -264,6 +264,13 @@ STEP 5.7
     DocType dropdown.
 
     WHAT YOU SHOULD SEE: DocType is a dropdown list, not an empty typing box.
+
+    NOTE (optional — you never have to use this): with a page selected you can
+    press "Record editor..." on the toolbar. It shows that one page's fields
+    next to the page itself, in a bigger window, with the other pages listed
+    underneath. It is the same information as the list below, in a roomier
+    place, and what you type there is saved the same way. Close it with the
+    Close button. Nothing in this walkthrough needs it.
     It should offer 13 choices.
 
 STEP 5.8

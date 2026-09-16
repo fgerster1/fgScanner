@@ -566,12 +566,18 @@ See [SPEC-2026-002-group-record-editor-PROMPTS.md](./SPEC-2026-002-group-record-
 
 ## 21 · Definition of done
 
-- [ ] All acceptance criteria met
-- [ ] Failing tests written first, now passing
-- [ ] Full suite green
-- [ ] `/code-review max` run, findings resolved or accepted in writing
-- [ ] Security review — _not applicable, not web-facing_
-- [ ] Documentation updated per §18
+- [x] All acceptance criteria met — AC-1..AC-14, AC-16..AC-18 with tests; **AC-7 partly** (the
+      decision function is tested, its WPF wiring is not — §22) and **AC-15 partly** (walked, but the
+      record does not confirm a non-Evidence group or 1280×1024 — §22)
+- [x] Failing tests written first, now passing — watched fail at each prompt, including the six
+      review-fix tests on 2026-09-16
+- [x] Full suite green — 692 tests, Release, 0 warnings, `dotnet format` clean
+- [x] Code review run, findings resolved or accepted in writing — two cold reviewers, 2026-09-16;
+      fixes in `e2e1c26`, acceptances in §22. (Run as reviewer sessions rather than `/code-review max`,
+      which only Franz can launch.)
+- [x] Security review — _not applicable, not web-facing_
+- [x] Documentation updated per §18 — ADR-0009, CLAUDE.md, manual-tests.md, user-guide.md,
+      FEATURE-PARITY.md, the walkthrough note
 - [ ] Installed on the station; migration backup confirmed; manual block walked
 - [ ] Rollback checked once on the dev machine (0.4.0 opens a migrated database)
 
