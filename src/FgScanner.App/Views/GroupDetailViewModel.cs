@@ -53,6 +53,9 @@ public sealed partial class GroupDetailViewModel : ObservableObject
 
     public Group Group { get; }
 
+    /// <summary>The app settings store, for views that remember their own sizes.</summary>
+    public AppSettingsService Settings => _toolset.Settings;
+
     public ObservableCollection<DocumentRow> Rows { get; } = [];
 
     /// <summary>Field editors for "values for the next scan" (pre-scan entry, PLAN §5.4). Row-scoped only — a batch field belongs to <see cref="BatchFields"/> instead.</summary>
@@ -354,7 +357,7 @@ public sealed partial class GroupDetailViewModel : ObservableObject
     /// Shows the record editor and returns when it closes. Replaceable so the editor's effect on the
     /// grid can be tested without a window.
     /// </summary>
-    public Action<RecordEditorViewModel> ShowRecordEditor { get; set; } = _ => { };
+    public Action<RecordEditorViewModel> ShowRecordEditor { get; set; } = Dialogs.RecordEditorWindow.ShowModal;
 
     /// <summary>
     /// Reviews suspected duplicates in this group. Deletion goes through the Trash, so a wrong

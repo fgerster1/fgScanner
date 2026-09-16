@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using FgScanner.App.Services;
 using FgScanner.Core.Index;
 using FgScanner.Data;
 
@@ -30,6 +31,7 @@ public sealed partial class RecordEditorViewModel : ObservableObject, IDisposabl
     public RecordEditorViewModel(GroupDetailViewModel detail)
     {
         _detail = detail;
+        Layout = new RecordEditorLayoutStore(detail.Settings);
         _detail.PropertyChanged += OnDetailPropertyChanged;
         _detail.Rows.CollectionChanged += OnRowsChanged;
         _detail.SchemaLoaded += BuildFormFields;
@@ -45,7 +47,24 @@ public sealed partial class RecordEditorViewModel : ObservableObject, IDisposabl
         }
     }
 
+    /// <summary>Raised after the form fields are rebuilt, so the window can rebuild its grid columns too.</summary>
+    public event Action? FieldsRebuilt;
+
     public ObservableCollection<DocumentRow> Rows => _detail.Rows;
+
+    public Group Group => _detail.Group;
+
+    public IReadOnlyList<FieldDefinition> Fields => _detail.Fields;
+
+    /// <summary>Where the editor's pane and memo sizes are remembered for this group.</summary>
+    public RecordEditorLayoutStore Layout { get; }
+
+    /// <summary>The group's status line, shown in the editor as well: a refused paste says why where the operator is looking.</summary>
+    public string StatusText
+    {
+        get => _detail.StatusText;
+        set => _detail.StatusText = value;
+    }
 
     /// <summary>The group's batch fields, shown once at the top of the form (§05 N6).</summary>
     public ObservableCollection<FormField> BatchFormFields { get; } = [];
@@ -130,6 +149,8 @@ public sealed partial class RecordEditorViewModel : ObservableObject, IDisposabl
             formField.Bind(_detail.SelectedRow?.Values);
             RowFormFields.Add(formField);
         }
+
+        FieldsRebuilt?.Invoke();
     }
 
     private void Follow(DocumentRow? row)
@@ -156,6 +177,10 @@ public sealed partial class RecordEditorViewModel : ObservableObject, IDisposabl
         if (e.PropertyName == nameof(GroupDetailViewModel.SelectedRow))
         {
             Follow(_detail.SelectedRow);
+        }
+        else if (e.PropertyName == nameof(GroupDetailViewModel.StatusText))
+        {
+            OnPropertyChanged(nameof(StatusText));
         }
     }
 
@@ -212,6 +237,9 @@ public sealed class FormField : ObservableObject, IDisposable
     public bool IsBatch => _batchEditor is not null;
 
     public bool IsText => Field.Type == FieldType.Text;
+
+    /// <summary>A text field that is not a memo: one line, filling the form's width.</summary>
+    public bool IsPlainText => IsText && !Field.Memo;
 
     /// <summary>
     /// Length and memo mean something only on Text. ProfileService clears them on other types when
