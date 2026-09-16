@@ -165,7 +165,7 @@ public sealed class IndexingService(
             }
 
             var error = FieldValidator.Validate(
-                new IndexFieldDef(field.Name, (IndexFieldType)field.Type, field.Required),
+                field.ToIndexFieldDef(),
                 value,
                 ParseChoices(field.ListChoicesJson));
             if (error is not null)
@@ -307,7 +307,7 @@ public sealed class IndexingService(
         foreach (var field in schema.Fields.Where(f => f.Scope == FgScanner.Core.Index.FieldScope.Batch))
         {
             var error = FieldValidator.Validate(
-                new IndexFieldDef(field.Name, (IndexFieldType)field.Type, field.Required, field.Scope),
+                field.ToIndexFieldDef(),
                 batchValues.GetValueOrDefault(field.Name),
                 ParseChoices(field.ListChoicesJson));
             if (error is not null)
@@ -325,7 +325,7 @@ public sealed class IndexingService(
             {
                 var choices = ParseChoices(field.ListChoicesJson);
                 var error = FieldValidator.Validate(
-                    new IndexFieldDef(field.Name, (IndexFieldType)field.Type, field.Required),
+                    field.ToIndexFieldDef(),
                     values.GetValueOrDefault(field.Name),
                     choices);
                 if (error is not null)
@@ -356,7 +356,7 @@ public sealed class IndexingService(
         {
             profileName = profile.Name;
             var schema = await profileService.GetSchemaAsync(profile.Id, group.SchemaVersion, cancellationToken).ConfigureAwait(false);
-            fields = [.. schema.Fields.Select(f => new IndexFieldDef(f.Name, (IndexFieldType)f.Type, f.Required, f.Scope))];
+            fields = [.. schema.Fields.Select(f => f.ToIndexFieldDef())];
             formats.Clear();
             if (profile.ExportCsv)
             {

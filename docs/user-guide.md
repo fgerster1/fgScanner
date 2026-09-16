@@ -32,10 +32,19 @@ folder. Everything else — OCR, AI descriptions, PDF export — feeds that inde
 
 ## Profiles and index fields (Settings)
 
-A profile holds up to 12 typed fields — Text, Date (ISO), Number, List — each
+A profile holds up to 16 typed fields — Text, Date (ISO), Number, List — each
 optionally Required (blocks commit), Sticky (carries to the next page), or
 defaulted (tokens: `$(today)`, `$(group)`, `$(counter)`, `$(user)`). Saving
 field changes creates a new schema version; existing groups keep theirs.
+
+**Length and memo (Text fields).** A Text field can carry a **Length** — 1 to
+100 characters — and can be marked **Memo**, which gives it a larger box you
+can resize and raises its limit to 2000. Leave Length blank for no limit. Both
+are about typing and checking values on screen: neither is written to the index
+files, and shortening a length never shortens values already stored — they show
+as invalid until someone corrects them. Typing stops at the limit, and a paste
+that would go over is refused whole, with a message, rather than being silently
+cut short.
 Profiles also choose the export formats and the CSV delimiter, and can be
 shared as `.fgprofile` files (Export/Import buttons).
 
@@ -46,6 +55,15 @@ rotate ⟲/⟳/flip/custom angle, Deskew, Adjust… (brightness, contrast, hue,
 saturation, sharpen, black & white, crop), Split, Combine, reorder
 (▲ ▼ / Reverse / Interleave for manual duplex), Undo/Redo (Ctrl+Z / Ctrl+Y).
 Deleting a page moves it to **Trash**, restorable for 30 days (configurable).
+
+**Record editor.** "Record editor…" on the toolbar opens the selected page in a window of its own:
+its fields on the left, the page on the right, and the rest of the group in a list below. Drag the
+dividers to give a pane more room, and drag the corner grip of a memo box to make it bigger; the
+sizes come back the next time you open that group. Ctrl+PageDown and Ctrl+PageUp move to the next
+and previous page, and the fields, the image and the list stay on the same page. The toolbar also
+has Undo, Redo, Add missed page…, Import PDF/images… and Delete page (to Trash). What you type here
+goes exactly where the grid's cells go — it is the same record, in a bigger window. Closing it
+leaves the Groups list on the page you were editing.
 
 **Preview and page viewer.** Fit shows the whole page — in the preview beside the grid and in the
 full-size viewer (double-click the preview). 100% is the page at its actual paper size. The page

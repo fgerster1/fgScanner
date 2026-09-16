@@ -732,7 +732,20 @@ public sealed partial class FieldRow : ObservableObject
     private string _name = "";
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsText))]
     private FieldType _type = FieldType.Text;
+
+    /// <summary>Only a Text field takes a length or a memo box; the grid disables both columns otherwise.</summary>
+    public bool IsText => Type == FieldType.Text;
+
+    partial void OnTypeChanged(FieldType value)
+    {
+        if (value != FieldType.Text)
+        {
+            Length = null;
+            Memo = false;
+        }
+    }
 
     [ObservableProperty]
     private bool _required;
@@ -762,6 +775,12 @@ public sealed partial class FieldRow : ObservableObject
     [ObservableProperty]
     private string? _choices;
 
+    [ObservableProperty]
+    private int? _length;
+
+    [ObservableProperty]
+    private bool _memo;
+
     public static FieldRow From(FieldDefinition field) => new()
     {
         Name = field.Name,
@@ -773,6 +792,8 @@ public sealed partial class FieldRow : ObservableObject
         Choices = field.ListChoicesJson is null
             ? null
             : string.Join("; ", IndexingService.ParseChoices(field.ListChoicesJson) ?? []),
+        Length = field.MaxLength,
+        Memo = field.Memo,
     };
 
     public FieldDefinition ToDefinition() => new()
@@ -786,6 +807,8 @@ public sealed partial class FieldRow : ObservableObject
         ListChoicesJson = Type == FieldType.List && !string.IsNullOrWhiteSpace(Choices)
             ? JsonSerializer.Serialize(Choices.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
             : null,
+        MaxLength = Length,
+        Memo = Memo,
     };
 }
 

@@ -95,6 +95,54 @@ public sealed class ProfileImportExportTests : IDisposable
         Assert.Equal(FieldScope.Batch, schema.Fields.Single(f => f.Name == "Box").Scope);
     }
 
+    [Fact]
+    public async Task Length_and_memo_round_trip_as_format_version_3()
+    {
+        var profile = await _profiles.CreateAsync("Letters", Ct);
+        await _profiles.SaveSchemaAsync(profile.Id,
+        [
+            new FieldDefinition { Name = "Title", Type = FieldType.Text, MaxLength = 80 },
+            new FieldDefinition { Name = "Notes", Type = FieldType.Text, Memo = true, MaxLength = 2000 },
+        ], Ct);
+
+        var json = await _profiles.ExportProfileJsonAsync(profile.Id, Ct);
+        Assert.Contains("\"FormatVersion\": 3", json, StringComparison.Ordinal);
+
+        var imported = await _profiles.ImportProfileJsonAsync(json, Ct);
+        var schema = await _profiles.GetLatestSchemaAsync(imported.Id, Ct);
+        Assert.Equal(80, schema.Fields.Single(f => f.Name == "Title").MaxLength);
+        var notes = schema.Fields.Single(f => f.Name == "Notes");
+        Assert.True(notes.Memo);
+        Assert.Equal(2000, notes.MaxLength);
+    }
+
+    /// <summary>A file is outside input: a bad length degrades to no limit rather than refusing the profile.</summary>
+    [Fact]
+    public async Task An_out_of_range_length_in_a_file_is_dropped_rather_than_refused()
+    {
+        const string v3 = """
+            {
+              "FormatVersion": 3,
+              "Name": "Tampered",
+              "OcrEnabled": false,
+              "ExportCsv": true,
+              "ExportXlsx": false,
+              "ExportXml": false,
+              "ExportJson": false,
+              "CsvDelimiter": ",",
+              "Fields": [
+                { "Name": "Title", "Type": "Text", "Required": false, "Sticky": false,
+                  "DefaultValue": null, "ListChoicesJson": null, "MaxLength": 5000, "Memo": false }
+              ]
+            }
+            """;
+
+        var imported = await _profiles.ImportProfileJsonAsync(v3, Ct);
+
+        var title = Assert.Single((await _profiles.GetLatestSchemaAsync(imported.Id, Ct)).Fields);
+        Assert.Null(title.MaxLength);
+    }
+
     /// <summary>
     /// Profiles already exported onto the hand-off USB stick are version 1. Refusing them would
     /// strand the operator mid-box with a file that worked yesterday.

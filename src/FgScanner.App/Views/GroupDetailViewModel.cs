@@ -53,6 +53,9 @@ public sealed partial class GroupDetailViewModel : ObservableObject
 
     public Group Group { get; }
 
+    /// <summary>The app settings store, for views that remember their own sizes.</summary>
+    public AppSettingsService Settings => _toolset.Settings;
+
     public ObservableCollection<DocumentRow> Rows { get; } = [];
 
     /// <summary>Field editors for "values for the next scan" (pre-scan entry, PLAN §5.4). Row-scoped only — a batch field belongs to <see cref="BatchFields"/> instead.</summary>
@@ -161,7 +164,7 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         // the export agree by construction: what an operator sees is what index.csv gets.
         var batchValues = JsonSerializer.Deserialize<Dictionary<string, string?>>(Group.BatchFieldsJson) ?? [];
         var indexFields = Fields
-            .Select(f => new IndexFieldDef(f.Name, (IndexFieldType)f.Type, f.Required, f.Scope))
+            .Select(f => f.ToIndexFieldDef())
             .ToList();
         var sequence = 0;
         foreach (var page in pages)
@@ -337,6 +340,31 @@ public sealed partial class GroupDetailViewModel : ObservableObject
     /// Replaceable so the viewer's effect on the grid can be tested without a window.
     /// </summary>
     public Func<IReadOnlyList<string>, int, int> ShowPageViewer { get; set; } = Dialogs.PageViewerWindow.ShowModal;
+
+    /// <summary>
+    /// Opens the record editor on the selected page. Modal for the viewer's reason: the editor works
+    /// on this view model's rows, and a second surface editing them at once would show stale values.
+    /// </summary>
+    [RelayCommand]
+    private void OpenRecordEditor()
+    {
+        // The editor subscribes to this view model; once its window closes it must stop following it.
+        using var editor = new RecordEditorViewModel(this);
+        ShowRecordEditor(editor);
+
+        // The grid follows the editor, so closing on page 7 does not drop the user back on page 1.
+        // By id, not by instance: a reload while the editor was open replaced every row.
+        if (editor.CurrentDocumentId is { } documentId)
+        {
+            SelectedRow = Rows.FirstOrDefault(r => r.DocumentId == documentId) ?? SelectedRow;
+        }
+    }
+
+    /// <summary>
+    /// Shows the record editor and returns when it closes. Replaceable so the editor's effect on the
+    /// grid can be tested without a window.
+    /// </summary>
+    public Action<RecordEditorViewModel> ShowRecordEditor { get; set; } = Dialogs.RecordEditorWindow.ShowModal;
 
     /// <summary>
     /// Reviews suspected duplicates in this group. Deletion goes through the Trash, so a wrong
@@ -794,6 +822,24 @@ public sealed partial class PendingFieldEditor(FieldDefinition field) : Observab
 
     [ObservableProperty]
     private string? _value;
+
+    /// <summary>
+    /// What a ComboBox binds. A Selector coerces its selection to null when its items do not contain
+    /// the bound value, and a two-way binding writes that null back — wiping a stored value nobody
+    /// touched, and for a batch field wiping it from every row of the group at once. Only a real
+    /// choice is written.
+    /// </summary>
+    public string? ListValue
+    {
+        get => Value;
+        set
+        {
+            if (value is not null)
+            {
+                Value = value;
+            }
+        }
+    }
 
     /// <summary>
     /// The same value as a date, for the picker. Kept as the canonical ISO-8601 string underneath

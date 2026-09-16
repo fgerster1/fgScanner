@@ -35,6 +35,16 @@ public partial class GroupsView : UserControl
             }
         };
         Unloaded += (_, _) => SavePanelSizes();
+        AddHandler(TextLengthGuard.RefusedEvent, new EventHandler<LengthRefusedEventArgs>(OnLengthRefused));
+    }
+
+    /// <summary>A refused paste says why on the group's status line, where the operator is already looking.</summary>
+    private void OnLengthRefused(object? sender, LengthRefusedEventArgs e)
+    {
+        if (_detail is not null)
+        {
+            _detail.StatusText = e.Message;
+        }
     }
 
     /// <summary>
@@ -346,72 +356,7 @@ public partial class GroupsView : UserControl
         }
     }
 
-    /// <summary>Fixed columns + one editable column per schema field (dynamic — schema differs per profile).</summary>
-    private void RebuildColumns()
-    {
-        EntryGrid.Columns.Clear();
-        EntryGrid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "#",
-            Binding = new Binding(nameof(DocumentRow.Sequence)),
-            IsReadOnly = true,
-            Width = 36,
-        });
-        EntryGrid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "Image",
-            Binding = new Binding(nameof(DocumentRow.ImageName)),
-            IsReadOnly = true,
-            Width = 130,
-        });
-        EntryGrid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "OCRed",
-            Binding = new Binding(nameof(DocumentRow.OcrStatus)),
-            IsReadOnly = true,
-            Width = 60,
-        });
-        EntryGrid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "AI",
-            Binding = new Binding(nameof(DocumentRow.AiStatus)),
-            IsReadOnly = true,
-            Width = 60,
-        });
-
-        foreach (var field in _detail?.Fields ?? [])
-        {
-            var binding = new Binding($"Values[{field.Name}]")
-            {
-                Mode = BindingMode.TwoWay,
-                UpdateSourceTrigger = UpdateSourceTrigger.LostFocus,
-                ValidatesOnNotifyDataErrors = true,
-            };
-            var isBatch = field.Scope == FieldScope.Batch;
-            if (field.Type == FieldType.List)
-            {
-                var column = new DataGridComboBoxColumn
-                {
-                    Header = field.Name + (field.Required ? " *" : ""),
-                    SelectedItemBinding = binding,
-                    ItemsSource = IndexingService.ParseChoices(field.ListChoicesJson),
-                    Width = new DataGridLength(1, DataGridLengthUnitType.Star),
-                    IsReadOnly = isBatch,
-                };
-                EntryGrid.Columns.Add(column);
-            }
-            else
-            {
-                EntryGrid.Columns.Add(new DataGridTextColumn
-                {
-                    Header = field.Name + (field.Required ? " *" : ""),
-                    Binding = binding,
-                    Width = new DataGridLength(1, DataGridLengthUnitType.Star),
-                    IsReadOnly = isBatch,
-                });
-            }
-        }
-    }
+    private void RebuildColumns() => EntryGridColumns.Build(EntryGrid, _detail?.Fields ?? []);
 }
 
 /// <summary>Visible when a bound count/length is greater than zero.</summary>

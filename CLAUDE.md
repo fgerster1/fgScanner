@@ -98,6 +98,10 @@ the JimsStuff portal (`JimsStuff/pipeline/import_fgscanner.py`) parses committed
   that control while a sheet is genuinely in hand, which a test pins directly.
 - `Feature.PreserveOriginals` stays ON for evidence groups (ADR-0003); the `originals\`
   subfolder and its checksums are part of the folder's evidentiary integrity.
+- **A field's length and memo flag are layout and validation settings, never part of the export
+  contract.** `FieldDefinition.MaxLength`/`Memo` shape how a value is typed on screen; no writer
+  emits them, and memo is a flag on Text rather than a `FieldType` because `FieldType` casts
+  positionally to `IndexFieldType` and its name is written into `manifest.json` (ADR-0009).
 - FG Scanner deliberately has **no Bates support** and none should be added to the capture
   path — identifiers live in the portal's register and display layer; stamped pixels can never
   be reorganized, and re-stamping is evidence alteration.
