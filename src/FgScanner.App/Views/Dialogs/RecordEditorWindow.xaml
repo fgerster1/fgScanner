@@ -10,7 +10,7 @@
     <Window.InputBindings>
         <KeyBinding Modifiers="Ctrl" Key="PageDown" Command="{Binding NextPageCommand}" />
         <KeyBinding Modifiers="Ctrl" Key="PageUp" Command="{Binding PreviousPageCommand}" />
-        <KeyBinding Key="Delete" Command="{Binding DeleteSelectedCommand}" />
+        <KeyBinding Key="Delete" Command="{Binding DeletePageCommand}" />
         <KeyBinding Modifiers="Ctrl" Key="Z" Command="{Binding UndoCommand}" />
         <KeyBinding Modifiers="Ctrl" Key="Y" Command="{Binding RedoCommand}" />
     </Window.InputBindings>
@@ -87,8 +87,25 @@
     </Window.Resources>
 
     <DockPanel Margin="12" KeyboardNavigation.TabNavigation="Local">
+        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8" KeyboardNavigation.TabIndex="3">
+            <Button Content="◀ Previous" Command="{Binding PreviousPageCommand}" Padding="10,4" Margin="0,0,4,0"
+                    ToolTip="Ctrl+PageUp" />
+            <TextBlock Text="{Binding PagePosition}" VerticalAlignment="Center" MinWidth="110"
+                       TextAlignment="Center" FontWeight="SemiBold" Margin="0,0,4,0" />
+            <Button Content="Next ▶" Command="{Binding NextPageCommand}" Padding="10,4" Margin="0,0,16,0"
+                    ToolTip="Ctrl+PageDown" />
+
+            <Button Content="↶ Undo" Command="{Binding UndoCommand}" Padding="8,4" Margin="0,0,4,0" ToolTip="Ctrl+Z" />
+            <Button Content="↷ Redo" Command="{Binding RedoCommand}" Padding="8,4" Margin="0,0,16,0" ToolTip="Ctrl+Y" />
+
+            <Button Content="Add missed page…" Command="{Binding AddMissedPageCommand}" Padding="10,4" Margin="0,0,4,0" />
+            <Button Content="Import PDF/images…" Command="{Binding ImportFilesCommand}" Padding="10,4" Margin="0,0,16,0" />
+            <Button Content="Delete page (to Trash)" Command="{Binding DeletePageCommand}" Padding="10,4"
+                    ToolTip="Delete — the page is restorable from the Trash for 30 days" />
+        </WrapPanel>
+
         <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
-            <Button Content="Close" IsCancel="True" Padding="14,4" DockPanel.Dock="Right" TabIndex="3" />
+            <Button Content="Close" IsCancel="True" Padding="14,4" DockPanel.Dock="Right" TabIndex="4" />
             <TextBlock Text="{Binding StatusText}" Opacity="0.8" VerticalAlignment="Center"
                        TextTrimming="CharacterEllipsis" />
         </DockPanel>

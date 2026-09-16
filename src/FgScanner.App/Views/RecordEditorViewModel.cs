@@ -77,6 +77,14 @@ public sealed partial class RecordEditorViewModel : ObservableObject, IDisposabl
         set => _detail.SelectedRow = value;
     }
 
+    /// <summary>The page the editor is on, by id, so the Groups grid can find it again on close.</summary>
+    public Guid? CurrentDocumentId => _documentId;
+
+    /// <summary>"Page 3 of 40" — as text, not colour, so it reads in every theme and to a screen reader.</summary>
+    public string PagePosition => CurrentIndex < 0
+        ? ""
+        : string.Create(CultureInfo.InvariantCulture, $"Page {CurrentIndex + 1} of {Rows.Count}");
+
     public bool IsEmpty => Rows.Count == 0;
 
     public string EmptyText => IsEmpty ? NoPagesText : "";
@@ -92,6 +100,42 @@ public sealed partial class RecordEditorViewModel : ObservableObject, IDisposabl
     public IAsyncRelayCommand RedoCommand => _detail.RedoCommand;
 
     private int CurrentIndex => _detail.SelectedRow is { } row ? Rows.IndexOf(row) : -1;
+
+    /// <summary>
+    /// Deletes through the group's own command, so the page takes the existing route to the Trash and
+    /// a committed group is re-exported. The editor then lands on the page that took its place; the
+    /// row it was on no longer exists, and an editor left pointing at nothing is a dead end.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanDeletePage))]
+    private async Task DeletePageAsync()
+    {
+        if (_detail.SelectedRow is not { } row)
+        {
+            return;
+        }
+
+        var index = CurrentIndex;
+        var removed = row.DocumentId;
+        await _detail.DeleteSelectedCommand.ExecuteAsync(null);
+
+        // Still there means the delete failed and said so on the status line; the selection stands.
+        if (Rows.Any(r => r.DocumentId == removed))
+        {
+            return;
+        }
+
+        if (Rows.Count == 0)
+        {
+            SelectedRow = null;
+            _documentId = null;
+            OnPropertyChanged(nameof(PagePosition));
+            return;
+        }
+
+        SelectedRow = Rows[Math.Clamp(index, 0, Rows.Count - 1)];
+    }
+
+    private bool CanDeletePage() => _detail.SelectedRow is not null;
 
     [RelayCommand(CanExecute = nameof(CanGoToNextPage))]
     private void NextPage()
@@ -168,8 +212,10 @@ public sealed partial class RecordEditorViewModel : ObservableObject, IDisposabl
         }
 
         OnPropertyChanged(nameof(SelectedRow));
+        OnPropertyChanged(nameof(PagePosition));
         NextPageCommand.NotifyCanExecuteChanged();
         PreviousPageCommand.NotifyCanExecuteChanged();
+        DeletePageCommand.NotifyCanExecuteChanged();
     }
 
     private void OnDetailPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -199,8 +245,10 @@ public sealed partial class RecordEditorViewModel : ObservableObject, IDisposabl
 
         OnPropertyChanged(nameof(IsEmpty));
         OnPropertyChanged(nameof(EmptyText));
+        OnPropertyChanged(nameof(PagePosition));
         NextPageCommand.NotifyCanExecuteChanged();
         PreviousPageCommand.NotifyCanExecuteChanged();
+        DeletePageCommand.NotifyCanExecuteChanged();
     }
 }
 

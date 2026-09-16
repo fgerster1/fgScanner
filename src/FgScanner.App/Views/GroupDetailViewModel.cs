@@ -351,6 +351,13 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         // The editor subscribes to this view model; once its window closes it must stop following it.
         using var editor = new RecordEditorViewModel(this);
         ShowRecordEditor(editor);
+
+        // The grid follows the editor, so closing on page 7 does not drop the user back on page 1.
+        // By id, not by instance: a reload while the editor was open replaced every row.
+        if (editor.CurrentDocumentId is { } documentId)
+        {
+            SelectedRow = Rows.FirstOrDefault(r => r.DocumentId == documentId) ?? SelectedRow;
+        }
     }
 
     /// <summary>

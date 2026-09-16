@@ -397,6 +397,132 @@ public sealed class RecordEditorViewModelTests : IDisposable
         Assert.Same(vm.Rows[0], vm.SelectedRow);
     }
 
+    /// <summary>
+    /// Deleting from the editor is the group's own delete: the page goes to the Trash, restorable.
+    /// The editor then lands on the page that took its place, because the operator's next move is
+    /// almost always to look at it.
+    /// </summary>
+    [Fact]
+    public async Task Delete_sends_the_page_to_trash_and_moves_to_the_next_page()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var group = await CreateGroupAsync("Del1", new FieldDefinition { Name = "Vendor", Type = FieldType.Text });
+        await AdoptPageAsync(group, "scan_00001.png");
+        var deleted = await AdoptPageAsync(group, "scan_00002.png");
+        var following = await AdoptPageAsync(group, "scan_00003.png");
+        var vm = await LoadAsync(group);
+        vm.SelectedRow = vm.Rows[1];
+        using var editor = new RecordEditorViewModel(vm);
+
+        await editor.DeletePageCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, vm.Rows.Count);
+        Assert.DoesNotContain(vm.Rows, r => r.DocumentId == deleted);
+        Assert.Equal(following, editor.SelectedRow!.DocumentId);
+        Assert.Same(vm.Rows[1], editor.SelectedRow);
+        await using var db = new FgScannerDbContext(DbBootstrapper.BuildOptions(_dbPath));
+        Assert.Equal(1, await db.TrashItems.CountAsync(ct));
+    }
+
+    [Fact]
+    public async Task Deleting_the_last_page_leaves_the_editor_on_the_empty_state()
+    {
+        var group = await CreateGroupAsync("Del2", new FieldDefinition { Name = "Vendor", Type = FieldType.Text });
+        await AdoptPageAsync(group, "scan_00001.png");
+        var vm = await LoadAsync(group);
+        using var editor = new RecordEditorViewModel(vm);
+
+        await editor.DeletePageCommand.ExecuteAsync(null);
+
+        Assert.True(editor.IsEmpty);
+        Assert.Equal("No pages in this group yet", editor.EmptyText);
+        Assert.Null(editor.SelectedRow);
+        Assert.False(editor.DeletePageCommand.CanExecute(null));
+    }
+
+    /// <summary>
+    /// "Add missed page" inserts ahead of the current page, so every row after it shifts. The editor
+    /// must follow its page, not the position it used to sit at.
+    /// </summary>
+    [Fact]
+    public async Task Adding_a_page_ahead_keeps_the_editor_on_the_same_page()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var group = await CreateGroupAsync("Add1", new FieldDefinition { Name = "Vendor", Type = FieldType.Text });
+        await AdoptPageAsync(group, "scan_00001.png");
+        var staying = await AdoptPageAsync(group, "scan_00002.png");
+        var vm = await LoadAsync(group);
+        vm.SelectedRow = vm.Rows[1];
+        using var editor = new RecordEditorViewModel(vm);
+        var inserted = Path.Combine(_root, "missed.png");
+        await File.WriteAllBytesAsync(inserted, System.Text.Encoding.UTF8.GetBytes("missed"), ct);
+
+        await _indexingService.InsertMissedPageAsync(group.Id, inserted, 1, ct);
+        await vm.ReloadRowsAsync();
+
+        Assert.Equal(3, vm.Rows.Count);
+        Assert.Equal(staying, editor.SelectedRow!.DocumentId);
+        Assert.Same(vm.Rows.Single(r => r.DocumentId == staying), editor.SelectedRow);
+    }
+
+    /// <summary>
+    /// Closing the editor on page 3 must not drop the Groups grid back on page 1 — the same promise
+    /// the page viewer makes. The selection is re-resolved by id because a reload while the editor
+    /// was open replaces the row instances.
+    /// </summary>
+    [Fact]
+    public async Task On_close_groups_selects_the_page_the_editor_was_on()
+    {
+        var group = await CreateGroupAsync("Close1", new FieldDefinition { Name = "Vendor", Type = FieldType.Text });
+        await AdoptPageAsync(group, "scan_00001.png");
+        await AdoptPageAsync(group, "scan_00002.png");
+        var landed = await AdoptPageAsync(group, "scan_00003.png");
+        var vm = await LoadAsync(group);
+        vm.SelectedRow = vm.Rows[0];
+        vm.ShowRecordEditor = editor =>
+        {
+            editor.SelectedRow = vm.Rows[2];
+
+            // The grid clears its selection while the rows are replaced; the editor's page is not
+            // forgotten just because nothing is selected for a moment.
+            vm.SelectedRow = null;
+        };
+
+        vm.OpenRecordEditorCommand.Execute(null);
+
+        Assert.Equal(landed, vm.SelectedRow!.DocumentId);
+        Assert.Same(vm.Rows[2], vm.SelectedRow);
+    }
+
+    [Fact]
+    public async Task The_page_position_reads_as_a_place_in_the_group()
+    {
+        var group = await CreateGroupAsync("Pos1", new FieldDefinition { Name = "Vendor", Type = FieldType.Text });
+        await AdoptPageAsync(group, "scan_00001.png");
+        await AdoptPageAsync(group, "scan_00002.png");
+        await AdoptPageAsync(group, "scan_00003.png");
+        var vm = await LoadAsync(group);
+        vm.SelectedRow = vm.Rows[1];
+        using var editor = new RecordEditorViewModel(vm);
+
+        Assert.Equal("Page 2 of 3", editor.PagePosition);
+
+        editor.NextPageCommand.Execute(null);
+
+        Assert.Equal("Page 3 of 3", editor.PagePosition);
+    }
+
+    [Fact]
+    public async Task An_empty_group_has_no_page_position()
+    {
+        var group = await CreateGroupAsync("Pos2", new FieldDefinition { Name = "Vendor", Type = FieldType.Text });
+        var vm = await LoadAsync(group);
+
+        using var editor = new RecordEditorViewModel(vm);
+
+        Assert.Equal("", editor.PagePosition);
+    }
+
     [Fact]
     public async Task Open_record_editor_hands_the_window_an_editor_over_the_same_rows()
     {
