@@ -5,12 +5,12 @@
         Title="{Binding Group.Name, StringFormat='Record editor — {0}'}"
         Width="1280" Height="900" MinWidth="900" MinHeight="600"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
-        SourceInitialized="OnSourceInitialized" Loaded="OnLoaded" Closing="OnClosing">
+        views:DialogFit.KeepOnScreen="True"
+        Loaded="OnLoaded" Closing="OnClosing" PreviewKeyDown="OnPreviewKeyDown">
     <!-- A modal window does not receive the main window's shortcuts, so it declares its own (§05 N8). -->
     <Window.InputBindings>
         <KeyBinding Modifiers="Ctrl" Key="PageDown" Command="{Binding NextPageCommand}" />
         <KeyBinding Modifiers="Ctrl" Key="PageUp" Command="{Binding PreviousPageCommand}" />
-        <KeyBinding Key="Delete" Command="{Binding DeletePageCommand}" />
         <KeyBinding Modifiers="Ctrl" Key="Z" Command="{Binding UndoCommand}" />
         <KeyBinding Modifiers="Ctrl" Key="Y" Command="{Binding RedoCommand}" />
     </Window.InputBindings>
@@ -69,7 +69,7 @@
                 </Grid>
 
                 <ComboBox Grid.Row="0" Grid.Column="1"
-                          ItemsSource="{Binding Choices}" SelectedItem="{Binding Value}" IsEditable="False"
+                          ItemsSource="{Binding Choices}" SelectedItem="{Binding ListValue}" IsEditable="False"
                           IsEnabled="{Binding IsEditable}"
                           AutomationProperties.LabeledBy="{Binding ElementName=FieldLabel}"
                           Visibility="{Binding IsList, Converter={x:Static views:BoolToVisibilityConverter.Instance}}" />
@@ -110,7 +110,7 @@
                        TextTrimming="CharacterEllipsis" />
         </DockPanel>
 
-        <Grid>
+        <Grid x:Name="PaneGrid">
             <Grid.RowDefinitions>
                 <RowDefinition x:Name="TopRow" Height="440" MinHeight="200" />
                 <RowDefinition Height="6" />

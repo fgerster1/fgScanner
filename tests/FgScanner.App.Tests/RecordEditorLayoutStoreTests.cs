@@ -193,6 +193,38 @@ public sealed class RecordEditorLayoutStoreTests : IDisposable
         Assert.Equal(new MemoSize(250, 3), layout.Memo["Title"]);
     }
 
+    /// <summary>
+    /// A divider released while another save is still in flight: both write the shared "last layout"
+    /// key, and on its first ever use both see it missing and try to add it. The loser used to take
+    /// the whole save down, so the size the operator had just dragged was silently not remembered.
+    /// </summary>
+    [Fact]
+    public async Task Two_saves_at_once_both_land()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+
+        await Task.WhenAll(
+            _store.SaveAsync(first, new RecordEditorLayout(520, 410, NoMemo), ct),
+            _store.SaveAsync(second, new RecordEditorLayout(640, 300, NoMemo), ct));
+
+        Assert.Equal(520, (await _store.LoadAsync(first, 1600, 1000, ct)).FormWidth);
+        Assert.Equal(640, (await _store.LoadAsync(second, 1600, 1000, ct)).FormWidth);
+        Assert.DoesNotContain(_log.Events, e => e.Level >= LogEventLevel.Warning);
+    }
+
+    /// <summary>
+    /// The box on screen has a minimum width of its own. Restoring anything narrower renders at that
+    /// minimum and the next save writes the wider number back, so a stored size would drift on its own.
+    /// </summary>
+    [Fact]
+    public void A_memo_box_is_never_narrower_than_the_box_on_screen()
+    {
+        // 120 is the memo TextBox's MinWidth in RecordEditorWindow.xaml; the two must agree.
+        Assert.Equal(120, RecordEditorLayoutStore.ClampMemo(new MemoSize(10, 6), paneWidth: 400).Width);
+    }
+
     [Fact]
     public void A_memo_box_is_never_wider_than_its_pane()
     {

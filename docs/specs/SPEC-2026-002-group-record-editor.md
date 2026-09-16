@@ -375,7 +375,12 @@ The app's WPF Fluent theme governs (§05 N9).
   *Proven by:* `tests/FgScanner.App.Tests/RecordEditorViewModelTests.cs` → "over-length stored value is flagged, never trimmed"
 - **AC-7** — The paste guard refuses an over-long paste and leaves the text unchanged; typing
   stops at the limit.
-  *Proven by:* `tests/FgScanner.App.Tests/TextLengthGuardTests.cs`
+  *Proven by:* `tests/FgScanner.App.Tests/TextLengthGuardTests.cs` for the decision itself, plus the
+  manual row. **Corrected 2026-09-16 (code review):** those tests cover only the pure decision
+  function. The WPF wiring that acts on it — attaching to `PreviewTextInput` and
+  `DataObject.Pasting`, cancelling the paste, raising `RefusedEvent`, and copying the limit onto a
+  grid cell's editing box — has no automated test, because this repo has no UI-automation harness.
+  See §22.
 - **AC-8** — "Build the Evidence profile" keeps operator lengths and memo on matching fields, and
   mints no version when intact.
   *Proven by:* `tests/FgScanner.Data.Tests/EvidenceProfileSeedTests.cs` → "repair keeps operator lengths"
@@ -486,7 +491,7 @@ drag. Not a performance question; revisit only if a profile ever exceeds `MaxFie
 | R2 | "Build the Evidence profile" silently wipes lengths and mints a version | Repair rebuilds fields purely from code | `ProfileService.cs:82-97` | Carry length and memo forward by name; AC-8 |
 | R3 | JimsStuff importer receives a new type or key | A `Memo` type or exported length would change manifest fields | `Writers.cs:242-248`, `import_fgscanner.py:264` | Memo is a flag; nothing exported; AC-10 snapshot |
 | R4 | Pasted evidence text silently truncated | `TextBox.MaxLength` cuts paste without telling anyone | WPF behaviour | Never use `MaxLength`; `TextLengthGuard`; AC-7 |
-| R5 | Groups grid columns change (batch read-only, required *, list combos) | `RebuildColumns` moves into a shared builder | `GroupsView.xaml.cs:275-339` | Move without behaviour change first, existing `BatchFieldColumnsTests` green, then add |
+| R5 | Groups grid columns change (batch read-only, required *, list combos) | `RebuildColumns` moves into a shared builder | `GroupsView.xaml.cs:275-339` | Move without behaviour change first, existing `BatchFieldUiTests` green, then add (this spec first wrote `BatchFieldColumnsTests`, a file that does not exist — corrected 2026-09-16) |
 | R6 | Editor edits a stale row after a reload | Reloads replace `DocumentRow` instances | `GroupDetailViewModel.cs:332-335` pattern | Re-select by `DocumentId`; edge case table |
 | R7 | Older stations refuse newer `.fgprofile` files | Import accepts only 1 and 2 | `ProfileService.cs:365-369` | Write v3 only when used (§05 N7); AC-9 |
 | R8 | Line breaks break CSV consumers or the importer | Memo newlines flow into every export | `Writers.cs`, `import_fgscanner.py:264` | §05 Q3 default (a): no line breaks stored |
@@ -577,5 +582,61 @@ See [SPEC-2026-002-group-record-editor-PROMPTS.md](./SPEC-2026-002-group-record-
 | **Review round answered** | ☑ date: 2026-09-13 · Round A: https://claude.ai/code/artifact/b2c902c4-c72e-4530-816f-fdc3512cddc4 (db doc `review/SPEC-2026-002-rA`) |
 | **Franz approved** | ☑ date: 2026-09-13 (Round A, verdict approve) |
 | **Manual checks walked** | ☑ date: 2026-09-16 · Franz, dev machine, on the build at `3f907f9`. The Prompt 4 block (form, dividers, memo grip, sizes remembered per group, Ctrl+PageUp/PageDown, over-long paste refused, form edit reaching the grid, Delete inside a text field editing text rather than deleting the page, tab order, zoom) and the Prompt 5 block (delete to Trash with `index.json` updated, landing on the next page, import keeping the page, selection on close, empty state) — all passed, nothing failed. AC-15 and AC-16 evidenced. |
+| **Code review** | ☑ date: 2026-09-16 · Two cold reviewers over `git diff main...HEAD`: one for defects, one for compliance with this spec. Every correctness finding fixed with a failing test first where one could be written; the rest recorded below. 692 tests green in Release, 0 warnings, format clean. |
 | **Built** | ☐ date: |
 | **Verified in production** | ☐ date: |
+
+### Fixed by the review (2026-09-16)
+
+- **A list value could be deleted merely by opening a screen.** A `ComboBox` coerces its selection to
+  null when its items do not contain the bound value — a choice since removed from the profile, or
+  one differing only in case, which `FieldValidator` accepts and a `Selector` does not — and the
+  two-way binding wrote that null back to the database, re-exporting a committed group without it.
+  Both the editor's form and the Groups page's Batch and Index value panels bound this way; the
+  Groups panels had the bug before this spec. Fixed by `ListValue` on `FormField` and
+  `PendingFieldEditor`, which never writes a null, with tests in `RecordEditorViewModelTests` and
+  `BatchFieldUiTests`.
+- **Delete from a focused ComboBox deleted the page.** A `TextBox` consumes the key, which is why the
+  manual check passed; a non-editable `ComboBox` does not, so tabbing to a list field and pressing
+  Delete to clear it sent the page to the Trash. The window now ignores Delete while focus is in the
+  form or in any text box, including a grid cell's editor.
+- **Overlapping layout saves** could both add the shared "last layout" key and lose the size just
+  dragged; saves are now chained.
+- **A divider dragged before the stored layout arrived** was snapped back by the late restore.
+- **The top pane was clamped against the window's height** rather than the room the divider actually
+  controls, so a restored pane could squeeze the page list below its minimum.
+- **A stored memo width below the box's own minimum** drifted wider on every save; the store's
+  minimum now matches the box.
+- **Untouched memo boxes had a size saved for them**, so they reopened shorter than they first
+  appeared; only boxes the operator dragged are saved now.
+- **A non-Text field could carry a length into validation** (`ToIndexFieldDef`), making a date fail
+  against a limit meant for text. The Text-only rule is now applied where the definition is converted.
+- **Window sizing** now uses the same `DialogFit` helper as every other window here, which also pulls
+  a window back inside the screen after it renders — the hand-rolled version did not.
+- **A memo box's size could stop being saved** if its form row was rebuilt; the box is now removed by
+  identity, not by field name.
+
+### Accepted without change
+
+- **The WPF half of AC-7 has no automated test.** Covering `TextLengthGuard`'s event wiring, the
+  refusal message reaching a status line, and `EntryGridColumns` handing the limit to a cell's
+  editing box needs a UI-automation harness (FlaUI is in the stack but no harness exists). Today it
+  rests on the pure decision function plus the manual row. Worth its own spec; recorded so nobody
+  reads AC-7 as fully covered.
+- **The editor selects the first page when nothing is selected**, which means a window that fails to
+  open leaves the Groups grid on page 1. The editor is meaningless without a page, and the jump is
+  visible and harmless; moving it into the window would split "which page" across two places.
+- **The Groups grid's list columns keep the same null-coercion hazard.** `DataGridComboBoxColumn`
+  binds `Values[<field>]` directly, with no property to guard, so a cell put into edit mode on a
+  value that is not one of today's choices can still write a null. It predates this spec and needs
+  the column rewritten around a guarded binding — a separate spec, alongside SPEC-2026-003's
+  pre-existing scan/save concurrency findings.
+- **`TextBox.MaxLength` is used once**, at `SettingsView.xaml:139`, on the one-character CSV
+  delimiter box. It predates this spec and is not a field value, so the rule behind R4 holds; the
+  blanket claim "never set anywhere" does not.
+
+### Still open
+
+- **AC-15 is only partly evidenced.** The manual record does not say whether the editor was walked on
+  a group under a non-Evidence profile, or at the smallest supported screen (1280×1024), both of
+  which the criterion names. To confirm with Franz rather than assume.

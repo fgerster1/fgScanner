@@ -330,6 +330,25 @@ public sealed class FormField : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// What a ComboBox binds. A Selector coerces its selection to null whenever its items do not
+    /// contain the bound value — a choice since removed from the profile, or one differing only in
+    /// case, which the validator accepts and the Selector does not — and a two-way binding writes
+    /// that null straight back. Opening the editor would then delete a value nobody touched, and
+    /// re-export a committed group without it. Only a real choice is written.
+    /// </summary>
+    public string? ListValue
+    {
+        get => Value;
+        set
+        {
+            if (value is not null)
+            {
+                Value = value;
+            }
+        }
+    }
+
     /// <summary>The value as a date for the picker, stored as ISO-8601 like PendingFieldEditor.DateValue.</summary>
     public DateTime? DateValue
     {

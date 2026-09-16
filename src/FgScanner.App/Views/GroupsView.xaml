@@ -137,7 +137,7 @@
                                                             <Setter.Value>
                                                                 <DataTemplate>
                                                                     <ComboBox ItemsSource="{Binding Choices}"
-                                                                              SelectedItem="{Binding Value}" IsEditable="False" />
+                                                                              SelectedItem="{Binding ListValue}" IsEditable="False" />
                                                                 </DataTemplate>
                                                             </Setter.Value>
                                                         </Setter>
@@ -189,7 +189,7 @@
                                                             <Setter.Value>
                                                                 <DataTemplate>
                                                                     <ComboBox ItemsSource="{Binding Choices}"
-                                                                              SelectedItem="{Binding Value}" IsEditable="False" />
+                                                                              SelectedItem="{Binding ListValue}" IsEditable="False" />
                                                                 </DataTemplate>
                                                             </Setter.Value>
                                                         </Setter>

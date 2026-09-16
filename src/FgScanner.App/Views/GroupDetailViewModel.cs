@@ -824,6 +824,24 @@ public sealed partial class PendingFieldEditor(FieldDefinition field) : Observab
     private string? _value;
 
     /// <summary>
+    /// What a ComboBox binds. A Selector coerces its selection to null when its items do not contain
+    /// the bound value, and a two-way binding writes that null back — wiping a stored value nobody
+    /// touched, and for a batch field wiping it from every row of the group at once. Only a real
+    /// choice is written.
+    /// </summary>
+    public string? ListValue
+    {
+        get => Value;
+        set
+        {
+            if (value is not null)
+            {
+                Value = value;
+            }
+        }
+    }
+
+    /// <summary>
     /// The same value as a date, for the picker. Kept as the canonical ISO-8601 string underneath
     /// (CLAUDE.md), so what the picker writes and what a user types by hand are indistinguishable
     /// downstream — and a value applied to every row in a batch cannot be a locale-shaped surprise.

@@ -494,6 +494,53 @@ public sealed class RecordEditorViewModelTests : IDisposable
         Assert.Same(vm.Rows[2], vm.SelectedRow);
     }
 
+    /// <summary>
+    /// A ComboBox whose items do not contain the bound value coerces its selection to null, and a
+    /// two-way binding writes that null back. Merely opening the editor on a page whose list value
+    /// is not one of today's choices would delete the value — on a committed group, re-exporting
+    /// index.json without it. Nothing may write a value away that nobody chose.
+    /// </summary>
+    [Fact]
+    public async Task A_list_value_the_box_cannot_show_is_never_written_away()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var group = await CreateGroupAsync(
+            "List1",
+            new FieldDefinition { Name = "DocType", Type = FieldType.List, ListChoicesJson = """["Letter","Invoice"]""" });
+        var documentId = await AdoptPageAsync(group, "scan_00001.png");
+        await _indexingService.SetFieldValuesAsync(
+            documentId, new Dictionary<string, string?> { ["DocType"] = "Court filing" }, ct);
+        var vm = await LoadAsync(group);
+        using var editor = new RecordEditorViewModel(vm);
+        var field = editor.RowFormFields.Single();
+        var before = _writes.Json.Count;
+
+        field.ListValue = null;
+
+        await Task.Delay(200, ct);
+        Assert.Equal("Court filing", field.ListValue);
+        Assert.Equal("Court filing", vm.Rows[0].Values["DocType"]);
+        Assert.Equal(before, _writes.Json.Count);
+    }
+
+    [Fact]
+    public async Task Choosing_from_the_list_still_writes_the_value()
+    {
+        var group = await CreateGroupAsync(
+            "List2",
+            new FieldDefinition { Name = "DocType", Type = FieldType.List, ListChoicesJson = """["Letter","Invoice"]""" });
+        await AdoptPageAsync(group, "scan_00001.png");
+        var vm = await LoadAsync(group);
+        using var editor = new RecordEditorViewModel(vm);
+        var field = editor.RowFormFields.Single();
+        var before = _writes.Json.Count;
+
+        field.ListValue = "Invoice";
+
+        await WaitUntilAsync(() => _writes.Json.Count > before);
+        Assert.Equal("Invoice", vm.Rows[0].Values["DocType"]);
+    }
+
     [Fact]
     public async Task The_page_position_reads_as_a_place_in_the_group()
     {

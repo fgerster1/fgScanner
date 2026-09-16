@@ -39,6 +39,22 @@ public sealed class FieldLengthTests : IDisposable
     }
 
     /// <summary>
+    /// Length is a Text setting. SaveSchemaAsync clears it on the other types, but a definition can
+    /// be built without passing through it, and the validator would then count a date's characters
+    /// against a limit meant for text. One rule, applied where the definition is converted.
+    /// </summary>
+    [Fact]
+    public void A_non_text_field_carries_no_length_into_validation()
+    {
+        var due = new FieldDefinition { Name = "Due", Type = FieldType.Date, MaxLength = 5, Memo = true };
+
+        var definition = due.ToIndexFieldDef();
+
+        Assert.Null(definition.MaxLength);
+        Assert.Null(FgScanner.Core.Index.FieldValidator.Validate(definition, "2026-09-16", null));
+    }
+
+    /// <summary>
     /// A length changes what validates, so groups must not pick one up behind the operator's back; and
     /// pressing Save twice must not leave every group a version behind for nothing.
     /// </summary>

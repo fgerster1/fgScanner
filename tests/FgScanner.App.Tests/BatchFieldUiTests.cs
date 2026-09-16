@@ -54,6 +54,29 @@ public class BatchFieldUiTests
         Assert.False(values.HasErrors);
     }
 
+    /// <summary>
+    /// The panels bind a list field with SelectedItem, and a ComboBox coerces its selection to null
+    /// when its items do not contain the bound value — writing that null back over a stored value
+    /// nobody touched. A batch value is the whole group's, so it would go from every row at once.
+    /// </summary>
+    [Fact]
+    public void A_list_value_the_box_cannot_show_is_never_written_away()
+    {
+        var editor = new PendingFieldEditor(
+            new FieldDefinition { Name = "DocType", Type = FieldType.List, ListChoicesJson = """["Letter"]""" })
+        {
+            Value = "Court filing",
+        };
+
+        editor.ListValue = null;
+
+        Assert.Equal("Court filing", editor.Value);
+
+        editor.ListValue = "Letter";
+
+        Assert.Equal("Letter", editor.Value);
+    }
+
     [Fact]
     public void A_missing_row_value_still_flags_the_row()
     {

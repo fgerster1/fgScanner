@@ -159,8 +159,18 @@ public class FieldDefinition
     /// The one place a stored field becomes what validation and export see. Six callers used to build
     /// it by hand, and they drifted: four dropped Scope, and each would have had to learn MaxLength.
     /// </summary>
+    /// <remarks>
+    /// The Text-only rule for <see cref="MaxLength"/> is applied here rather than trusted to have
+    /// been applied on the way in: a definition built in code can carry a stray length, and the
+    /// validator would then count a date's characters against a limit meant for text.
+    /// </remarks>
     public FgScanner.Core.Index.IndexFieldDef ToIndexFieldDef() =>
-        new(Name, (FgScanner.Core.Index.IndexFieldType)Type, Required, Scope, MaxLength);
+        new(
+            Name,
+            (FgScanner.Core.Index.IndexFieldType)Type,
+            Required,
+            Scope,
+            Type == FieldType.Text ? MaxLength : null);
 }
 
 /// <summary>A batch tied to a directory; the directory name is the group name (PLAN §5.1).</summary>

@@ -25,13 +25,18 @@ public sealed class RecordEditorLayoutStore(AppSettingsService settings, Serilog
     /// <summary>The smallest a pane is restored at, so a divider dragged nearly shut can still be found and grabbed.</summary>
     public const double MinPane = 200;
 
-    public const double MinMemoWidth = 80;
+    /// <summary>Mirror the memo TextBox's MinWidth in RecordEditorWindow.xaml: restoring anything narrower renders at that minimum and saves the wider number back, so a stored size would drift on its own.</summary>
+    public const double MinMemoWidth = 120;
 
     public const double MinMemoLines = 2;
 
     public const double MaxMemoLines = 20;
 
     private readonly Serilog.ILogger _log = log ?? Serilog.Log.Logger;
+
+    private readonly object _saveLock = new();
+
+    private Task _lastSave = Task.CompletedTask;
 
     public static string KeyFor(Guid groupId) => $"RecordEditor.Layout.{groupId}";
 
@@ -56,6 +61,26 @@ public sealed class RecordEditorLayoutStore(AppSettingsService settings, Serilog
             TopHeight = layout.TopHeight,
             Memo = layout.Memo.ToDictionary(m => m.Key, m => (MemoJson?)new MemoJson { Width = m.Value.Width, Height = m.Value.Height }),
         });
+        // One save at a time. A divider released while a memo drag is still saving has both writing
+        // the shared "last layout" key; on its first ever use both find it missing, both add it, and
+        // the loser fails on the duplicate — losing the size the operator had just dragged. Chained
+        // rather than gated by a SemaphoreSlim, which the window would have to dispose, and closing
+        // disposes it while the save it just started is still in flight.
+        Task queued;
+        lock (_saveLock)
+        {
+            _lastSave = WriteAfterAsync(_lastSave, groupId, json, cancellationToken);
+            queued = _lastSave;
+        }
+
+        await queued;
+    }
+
+    /// <summary>The previous save's failure belongs to its own caller; this one still has to land.</summary>
+    private async Task WriteAfterAsync(Task previous, Guid groupId, string json, CancellationToken cancellationToken)
+    {
+        await previous.ContinueWith(
+            static _ => { }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         await settings.SetAsync(KeyFor(groupId), json, cancellationToken);
         await settings.SetAsync(LastKey, json, cancellationToken);
     }

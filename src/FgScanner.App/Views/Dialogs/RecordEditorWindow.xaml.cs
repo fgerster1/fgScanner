@@ -26,7 +26,13 @@ public partial class RecordEditorWindow : Window
     /// <summary>The memo boxes now on screen, by field name, so their sizes can be restored and saved.</summary>
     private readonly Dictionary<string, TextBox> _memoBoxes = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Memo boxes the operator actually dragged. A box left alone keeps whatever size was stored for it, rather than having this window's incidental measurement saved over it.</summary>
+    private readonly HashSet<string> _resizedMemos = new(StringComparer.OrdinalIgnoreCase);
+
     private RecordEditorLayout _layout = new(0, 0, new Dictionary<string, MemoSize>());
+
+    /// <summary>Set once the operator has moved something, so a restore arriving late cannot undo it.</summary>
+    private bool _layoutTouched;
 
     public RecordEditorWindow(RecordEditorViewModel editor)
     {
@@ -50,18 +56,30 @@ public partial class RecordEditorWindow : Window
     private void OnLengthRefused(object? sender, LengthRefusedEventArgs e) => _editor.StatusText = e.Message;
 
     /// <summary>
-    /// Fits the design size to the screen this window opened on. 1280x900 is taller than a 1366x768
-    /// laptop can show above its taskbar, and a record editor whose grid is under the taskbar is
-    /// missing the half that says which page is being edited.
+    /// Delete removes the page — except where the key belongs to the text being typed. A TextBox
+    /// consumes it itself, but a ComboBox does not: tabbing to a list field and pressing Delete to
+    /// clear the choice would otherwise send the page to the Trash with no confirmation.
     /// </summary>
-    private void OnSourceInitialized(object? sender, EventArgs e)
+    private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        var bounds = WindowSizing.FitToWorkArea(Width, Height, MonitorWorkArea.For(this));
-        Left = bounds.Left;
-        Top = bounds.Top;
-        Width = bounds.Width;
-        Height = bounds.Height;
+        if (e.Key != Key.Delete || EditingText() || FocusIsInTheForm())
+        {
+            return;
+        }
+
+        if (_editor.DeletePageCommand.CanExecute(null))
+        {
+            _editor.DeletePageCommand.Execute(null);
+        }
+
+        e.Handled = true;
     }
+
+    private static bool EditingText() =>
+        Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase;
+
+    private bool FocusIsInTheForm() =>
+        Keyboard.FocusedElement is System.Windows.Media.Visual focused && FormScroller.IsAncestorOf(focused);
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
@@ -81,11 +99,15 @@ public partial class RecordEditorWindow : Window
     {
         try
         {
-            _layout = await _editor.Layout.LoadAsync(_editor.Group.Id, TopGrid.ActualWidth, ActualHeight);
+            // The panes' own room, not the window's: the window also carries the toolbar, the status
+            // line and the margins, so clamping against it would restore a top pane taller than its
+            // row can be and squeeze the page list below the minimum the store believes it kept.
+            _layout = await _editor.Layout.LoadAsync(_editor.Group.Id, TopGrid.ActualWidth, PaneGrid.ActualHeight);
 
             // A pane not yet measured reports zero room, and half of nothing would open the form at
-            // its minimum. The sizes on screen stay as they are until there is a real width to fit.
-            if (_layout.FormWidth > 0 && _layout.TopHeight > 0)
+            // its minimum. A divider dragged while this read was in flight wins: restoring over it
+            // would undo a drag the operator has already watched take effect.
+            if (_layout.FormWidth > 0 && _layout.TopHeight > 0 && !_layoutTouched)
             {
                 FormColumn.Width = new GridLength(_layout.FormWidth);
                 TopRow.Height = new GridLength(_layout.TopHeight);
@@ -106,16 +128,23 @@ public partial class RecordEditorWindow : Window
     /// Saved on release and on close rather than on close alone: a size that survives only if the
     /// window is closed the expected way is not remembered in any sense the user would recognise.
     /// </summary>
-    private void OnSplitterDragCompleted(object sender, DragCompletedEventArgs e) => _ = SaveLayoutAsync();
+    private void OnSplitterDragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        _layoutTouched = true;
+        _ = SaveLayoutAsync();
+    }
 
     private async Task SaveLayoutAsync()
     {
         try
         {
             var memo = new Dictionary<string, MemoSize>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (name, box) in _memoBoxes)
+            foreach (var name in _resizedMemos)
             {
-                memo[name] = new MemoSize(box.ActualWidth, Lines(box, box.ActualHeight));
+                if (_memoBoxes.TryGetValue(name, out var box))
+                {
+                    memo[name] = new MemoSize(box.ActualWidth, Lines(box, box.ActualHeight));
+                }
             }
 
             // Sizes left over from a memo field that has since been renamed or removed are kept: the
@@ -148,7 +177,11 @@ public partial class RecordEditorWindow : Window
 
     private void OnMemoBoxUnloaded(object sender, RoutedEventArgs e)
     {
-        if (sender is TextBox { DataContext: FormField field })
+        // By identity: rebuilding the form can load the replacement box before this fires for the old
+        // one, and removing by name alone would evict the live box and stop saving that field's size.
+        if (sender is TextBox { DataContext: FormField field } box
+            && _memoBoxes.TryGetValue(field.Name, out var current)
+            && ReferenceEquals(current, box))
         {
             _memoBoxes.Remove(field.Name);
         }
@@ -156,7 +189,9 @@ public partial class RecordEditorWindow : Window
 
     private void ApplyMemoSize(TextBox box, string name)
     {
-        if (!_layout.Memo.TryGetValue(name, out var stored))
+        // An unmeasured pane would clamp every box to nothing, and a box the operator has just
+        // dragged is theirs — a restore arriving afterwards must not snap it back.
+        if (PaneWidth() <= 0 || _resizedMemos.Contains(name) || !_layout.Memo.TryGetValue(name, out var stored))
         {
             return;
         }
@@ -180,9 +215,17 @@ public partial class RecordEditorWindow : Window
         var size = RecordEditorLayoutStore.ClampMemo(wanted, PaneWidth());
         box.Width = size.Width;
         box.Height = Pixels(box, size.Height);
+        if (box.DataContext is FormField field)
+        {
+            _resizedMemos.Add(field.Name);
+        }
     }
 
-    private void OnMemoResizeCompleted(object sender, DragCompletedEventArgs e) => _ = SaveLayoutAsync();
+    private void OnMemoResizeCompleted(object sender, DragCompletedEventArgs e)
+    {
+        _layoutTouched = true;
+        _ = SaveLayoutAsync();
+    }
 
     /// <summary>
     /// No line breaks are stored (§05 Q3), so Enter has nothing to do in a memo box. It moves to the
