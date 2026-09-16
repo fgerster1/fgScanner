@@ -348,8 +348,7 @@ Run with `FgScanner.exe --fake-scanner`. Set Source to Feeder so one Scan gives 
 
 > **Passed 2026-09-16 on the dev PC** (Franz, "nothing failed"), on an Evidence group, on the build
 > at `3f907f9` — that is, **before** the code-review fixes. The rows marked *(review)* were added by
-> the code review afterwards and have not been walked. The two rows marked *(not walked)* are
-> conditions AC-15 names that the record does not confirm. Nothing here has been walked on the station.
+> the code review afterwards and have not been walked. Nothing here has been walked on the station.
 
 **Settings — length and memo**
 - [ ] Settings → custom fields: the label reads "up to 16", and there are **Length** and **Memo** columns
@@ -385,6 +384,6 @@ Run with `FgScanner.exe --fake-scanner`. Set Source to Feeder so one Scan gives 
 - [ ] Close: the Groups grid is on that same page
 - [ ] On a scratch group, delete every page: the editor stays open, says "No pages in this group yet", and Delete greys out
 
-**Still to walk**
-- [ ] *(not walked)* The open, resize and reopen checks on a group under a **non-Evidence** profile that has a memo field (AC-15)
-- [ ] *(not walked)* The same at **1280 × 1024**, the smallest supported screen (AC-15)
+**Also walked 2026-09-16** (Franz, confirmed after the code review)
+- [x] The open, resize and reopen checks on a group under a **non-Evidence** profile that has a memo field (AC-15)
+- [x] The same at **1280 × 1024**, the smallest supported screen (AC-15)

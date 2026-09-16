@@ -566,9 +566,9 @@ See [SPEC-2026-002-group-record-editor-PROMPTS.md](./SPEC-2026-002-group-record-
 
 ## 21 · Definition of done
 
-- [x] All acceptance criteria met — AC-1..AC-14, AC-16..AC-18 with tests; **AC-7 partly** (the
-      decision function is tested, its WPF wiring is not — §22) and **AC-15 partly** (walked, but the
-      record does not confirm a non-Evidence group or 1280×1024 — §22)
+- [x] All acceptance criteria met — AC-1..AC-6 and AC-8..AC-18 by tests or the manual block (AC-15
+      confirmed on a non-Evidence profile and at 1280×1024, 2026-09-16); **AC-7 partly** — its
+      decision function is tested, its WPF wiring is not (§22)
 - [x] Failing tests written first, now passing — watched fail at each prompt, including the six
       review-fix tests on 2026-09-16
 - [x] Full suite green — 692 tests, Release, 0 warnings, `dotnet format` clean
@@ -587,7 +587,7 @@ See [SPEC-2026-002-group-record-editor-PROMPTS.md](./SPEC-2026-002-group-record-
 |---|---|
 | **Review round answered** | ☑ date: 2026-09-13 · Round A: https://claude.ai/code/artifact/b2c902c4-c72e-4530-816f-fdc3512cddc4 (db doc `review/SPEC-2026-002-rA`) |
 | **Franz approved** | ☑ date: 2026-09-13 (Round A, verdict approve) |
-| **Manual checks walked** | ☑ date: 2026-09-16 · Franz, dev machine, on the build at `3f907f9`. The Prompt 4 block (form, dividers, memo grip, sizes remembered per group, Ctrl+PageUp/PageDown, over-long paste refused, form edit reaching the grid, Delete inside a text field editing text rather than deleting the page, tab order, zoom) and the Prompt 5 block (delete to Trash with `index.json` updated, landing on the next page, import keeping the page, selection on close, empty state) — all passed, nothing failed. AC-15 and AC-16 evidenced. |
+| **Manual checks walked** | ☑ date: 2026-09-16 · Franz, dev machine, on the build at `3f907f9`. The Prompt 4 block (form, dividers, memo grip, sizes remembered per group, Ctrl+PageUp/PageDown, over-long paste refused, form edit reaching the grid, Delete inside a text field editing text rather than deleting the page, tab order, zoom) and the Prompt 5 block (delete to Trash with `index.json` updated, landing on the next page, import keeping the page, selection on close, empty state) — all passed, nothing failed. Confirmed 2026-09-16: the editor was also walked on a group under a non-Evidence profile and at 1280×1024. AC-15 and AC-16 evidenced. |
 | **Code review** | ☑ date: 2026-09-16 · Two cold reviewers over `git diff main...HEAD`: one for defects, one for compliance with this spec. Every correctness finding fixed with a failing test first where one could be written; the rest recorded below. 692 tests green in Release, 0 warnings, format clean. |
 | **Built** | ☐ date: |
 | **Verified in production** | ☐ date: |
@@ -641,8 +641,8 @@ See [SPEC-2026-002-group-record-editor-PROMPTS.md](./SPEC-2026-002-group-record-
   delimiter box. It predates this spec and is not a field value, so the rule behind R4 holds; the
   blanket claim "never set anywhere" does not.
 
-### Still open
+### Confirmed after the review
 
-- **AC-15 is only partly evidenced.** The manual record does not say whether the editor was walked on
-  a group under a non-Evidence profile, or at the smallest supported screen (1280×1024), both of
-  which the criterion names. To confirm with Franz rather than assume.
+- **AC-15 is fully evidenced.** Asked rather than assumed: Franz confirmed on 2026-09-16 that he
+  walked the editor on a group under a **non-Evidence profile** and at **1280×1024**, the smallest
+  supported screen — the two conditions the criterion names and the earlier record did not mention.
