@@ -81,6 +81,21 @@ public sealed class SchemaNoticeTests : IDisposable
         return vm;
     }
 
+    private async Task AddPagesAsync(Group group, int count)
+    {
+        var staging = Directory.CreateDirectory(Path.Combine(_root, $"staging-{Guid.NewGuid():N}")).FullName;
+        var files = new List<string>();
+        for (byte i = 1; i <= count; i++)
+        {
+            var file = Path.Combine(staging, $"scan_0000{i}.png");
+            // Distinct bytes per page: adoption skips anything whose checksum it already holds.
+            await File.WriteAllBytesAsync(file, [i, i, i], Ct);
+            files.Add(file);
+        }
+
+        await _groupService.AdoptPagesAsync(group.Id, files, _ => false, Ct);
+    }
+
     /// <summary>Reproduces the real sequence: create the group, then define the fields.</summary>
     private async Task<(Profile Profile, Group Group)> GroupCreatedBeforeItsFieldsAsync()
     {
@@ -135,14 +150,20 @@ public sealed class SchemaNoticeTests : IDisposable
     public async Task A_refresh_leaves_the_rows_alone()
     {
         var (profile, group) = await GroupCreatedBeforeItsFieldsAsync();
+        await AddPagesAsync(group, 3);
         var vm = await ViewModelFor(group);
-        var rowsBefore = vm.Rows.Count;
+
+        // An empty group would make this assertion 0 == 0, which holds however wrong the code is.
+        Assert.Equal(3, vm.Rows.Count);
+        var rowsBefore = vm.Rows.ToList();
 
         await _profileService.SaveSchemaAsync(
             profile.Id, [new() { Name = "Came From", Type = FieldType.Text }], Ct);
         await vm.RefreshSchemaAsync();
 
-        Assert.Equal(rowsBefore, vm.Rows.Count);
+        Assert.Equal(3, vm.Rows.Count);
+        // Identity, not just count: reloading would replace the row objects the grid is bound to.
+        Assert.True(rowsBefore.SequenceEqual(vm.Rows));
     }
 
     /// <summary>

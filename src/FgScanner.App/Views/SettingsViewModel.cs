@@ -43,8 +43,28 @@ public sealed partial class SettingsViewModel : ObservableObject
         _ = LoadShortcutsAsync();
         _ = LoadUpdatePreferenceAsync();
         _ = LoadFeatureSettingsAsync();
-        _ = LoadRetentionAsync();
-        _ = LoadThemeAsync();
+        Ready = LoadStoredValuesAsync();
+    }
+
+    /// <summary>
+    /// Completes once the settings loaded from storage have landed. Save awaits it, so a save made
+    /// before the screen finished loading cannot write a default over a stored value.
+    /// </summary>
+    public Task Ready { get; } = Task.CompletedTask;
+
+    private async Task LoadStoredValuesAsync()
+    {
+        try
+        {
+            await LoadRetentionAsync();
+            await LoadThemeAsync();
+        }
+        catch (Exception ex)
+        {
+            // Unobserved, these left the boxes showing defaults that a later save would then
+            // write over what is actually stored.
+            Log.Error(ex, "Loading stored settings");
+        }
     }
 
     public ObservableCollection<Profile> Profiles { get; } = [];
@@ -473,7 +493,17 @@ public sealed partial class SettingsViewModel : ObservableObject
         // handlers would be started and never awaited.
         foreach (var handler in SettingsChanged.GetInvocationList().Cast<Func<SettingsChange, Task>>())
         {
-            await handler(change);
+            try
+            {
+                await handler(change);
+            }
+            catch (Exception ex)
+            {
+                // One subscriber failing must not abandon the others, and must not turn a save
+                // that committed every write into "Save failed" — the operator would redo a save
+                // that already happened.
+                Log.Error(ex, "Announcing settings change {Change}", change);
+            }
         }
     }
 
@@ -719,10 +749,17 @@ public sealed partial class SettingsViewModel : ObservableObject
             return;
         }
 
+        // The constructor's loads are started, not awaited. Saving before the retention and theme
+        // have landed would write the hard defaults over what is stored — which is the very bug
+        // this spec exists to fix, reappearing as a race.
+        await Ready;
+
         try
         {
+            var versionBefore = (await _profileService.GetLatestSchemaAsync(SelectedProfile.Id)).Version;
             var schema = await _profileService.SaveSchemaAsync(
                 SelectedProfile.Id, [.. Fields.Select(f => f.ToDefinition())]);
+            var schemaChanged = schema.Version != versionBefore;
             await _profileService.UpdateExportSettingsAsync(
                 SelectedProfile.Id, ExportCsv, ExportXlsx, ExportXml, ExportJson, CsvDelimiter);
             await _profileService.UpdateOcrEnabledAsync(SelectedProfile.Id, OcrEnabled);
@@ -779,12 +816,22 @@ public sealed partial class SettingsViewModel : ObservableObject
             var purgedNote = purged == 0
                 ? ""
                 : $" Trash purge removed {purged} item(s) under the new retention.";
-            StatusText = behind.Count == 0
-                ? $"Saved as field layout v{schema.Version}.{purgedNote}"
+            StatusText = (behind.Count == 0
+                ? $"Saved as field layout v{schema.Version}."
                 : $"Saved as field layout v{schema.Version}. New groups use it; "
                     + $"{behind.Count} existing group(s) stay on their own — open one in Groups and "
-                    + "choose \"Use latest field layout\" to move it.";
-            await AnnounceAsync(SettingsChange.Profiles | SettingsChange.Schema | SettingsChange.Flags);
+                    + "choose \"Use latest field layout\" to move it.") + purgedNote;
+            // Only claim the schema moved when a version was actually minted. SaveSchemaAsync
+            // short-circuits on an identical layout, and announcing Schema anyway would rebuild
+            // the open group's field editors — discarding a grid cell mid-edit — on every save,
+            // including one that only changed the theme.
+            var change = SettingsChange.Profiles | SettingsChange.Flags;
+            if (schemaChanged)
+            {
+                change |= SettingsChange.Schema;
+            }
+
+            await AnnounceAsync(change);
         }
         catch (Exception ex)
         {

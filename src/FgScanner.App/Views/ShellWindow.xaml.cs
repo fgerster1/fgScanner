@@ -238,8 +238,15 @@ public partial class ShellWindow : Window
 
     private string? _shownSection;
 
-    private void ShowSection(string section)
+    private void ShowSection(string? section)
     {
+        // A bound Selector can push null here while its items are being rebuilt. That is not a
+        // navigation request, and looking it up by key would throw from a PropertyChanged handler.
+        if (string.IsNullOrEmpty(section))
+        {
+            return;
+        }
+
         if (_sections.TryGetValue(section, out var view))
         {
             if (_shownSection is not null)

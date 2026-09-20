@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using FgScanner.Data;
+using Serilog;
 
 namespace FgScanner.App.Views;
 
@@ -70,6 +71,8 @@ public sealed partial class ShellViewModel : ObservableObject
         if (ScanViewModel.CaptureInHand)
         {
             _deferred |= change;
+            Log.Information(
+                "Settings change {Change} deferred — a capture is in hand", change);
             return;
         }
 
@@ -84,11 +87,34 @@ public sealed partial class ShellViewModel : ObservableObject
         }
 
         var change = _deferred;
-        _deferred = SettingsChange.None;
-        await ApplyAsync(change);
+        Log.Information("Applying settings change {Change} deferred while paper was in hand", change);
+        if (await ApplyAsync(change))
+        {
+            // Only once it has actually landed. Clearing first would lose the change for good if
+            // the reload threw — and the reason it threw is usually temporary.
+            _deferred = SettingsChange.None;
+        }
     }
 
-    private async Task ApplyAsync(SettingsChange change)
+    /// <summary>Returns false when the reload failed; the caller keeps the change pending.</summary>
+    private async Task<bool> ApplyAsync(SettingsChange change)
+    {
+        try
+        {
+            await ApplyCoreAsync(change);
+            Log.Information("Settings change {Change} applied", change);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // A settings save must not take the app down, and the reload runs at the end of a
+            // scan — the worst possible moment to crash, with paper just off the scanner.
+            Log.Error(ex, "Applying settings change {Change}", change);
+            return false;
+        }
+    }
+
+    private async Task ApplyCoreAsync(SettingsChange change)
     {
         if (change.HasFlag(SettingsChange.Profiles) || change.HasFlag(SettingsChange.Schema))
         {
@@ -128,10 +154,28 @@ public sealed partial class ShellViewModel : ObservableObject
             return;
         }
 
-        Sections.Clear();
-        foreach (var section in wanted)
+        // Add and remove the entries that actually differ, rather than clearing the list. The
+        // navigation ListBox binds SelectedItem two-way, so Clear() makes WPF push null back into
+        // SelectedSection before the refill — which navigates to nothing and, because the section
+        // lookup is by key, throws from inside a PropertyChanged handler.
+        for (var i = Sections.Count - 1; i >= 0; i--)
         {
-            Sections.Add(section);
+            if (!wanted.Contains(Sections[i]))
+            {
+                Sections.RemoveAt(i);
+            }
+        }
+
+        for (var i = 0; i < wanted.Length; i++)
+        {
+            if (i >= Sections.Count)
+            {
+                Sections.Add(wanted[i]);
+            }
+            else if (Sections[i] != wanted[i])
+            {
+                Sections.Insert(i, wanted[i]);
+            }
         }
 
         // Hiding the section on screen would leave the shell pointing at one the list no longer

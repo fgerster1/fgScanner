@@ -62,8 +62,26 @@ public sealed partial class GroupsViewModel : ObservableObject
     [ObservableProperty]
     private bool _onlyCurrentProfile;
 
+    /// <summary>The id behind <see cref="SelectedProfile"/>, to tell a real change from a reload.</summary>
+    private Guid? _selectedProfileId;
+
+    /// <summary>True while the list is being rebuilt, so its transient states are not reacted to.</summary>
+    private bool _reloadingProfiles;
+
     partial void OnSelectedProfileChanged(Profile? value)
     {
+        // Every reload returns fresh entities from a new DbContext, so the selection always
+        // changes by REFERENCE even when the operator is still on the same profile. Reacting to
+        // that re-queried the groups, replaced every Group instance, and rebuilt the open group's
+        // detail pane — taking the values typed for the next scan with it. Only an actual change
+        // of profile counts.
+        var movedToAnotherProfile = value?.Id != _selectedProfileId;
+        _selectedProfileId = value?.Id;
+        if (_reloadingProfiles || !movedToAnotherProfile)
+        {
+            return;
+        }
+
         if (OnlyCurrentProfile)
         {
             _ = RefreshAsync();
@@ -91,13 +109,27 @@ public sealed partial class GroupsViewModel : ObservableObject
     public async Task ReloadProfilesAsync()
     {
         var selectedId = SelectedProfile?.Id;
-        Profiles.Clear();
-        foreach (var profile in await _profileService.ListAsync())
-        {
-            Profiles.Add(profile);
-        }
+        var loaded = await _profileService.ListAsync();
 
-        SelectedProfile = Profiles.FirstOrDefault(p => p.Id == selectedId) ?? Profiles.FirstOrDefault();
+        // Clearing an ItemsSource makes a bound Selector push null back into SelectedProfile
+        // before the list is refilled. That null is not a choice anybody made, so the rebuild is
+        // fenced off and the selection is restored by id afterwards.
+        _reloadingProfiles = true;
+        try
+        {
+            Profiles.Clear();
+            foreach (var profile in loaded)
+            {
+                Profiles.Add(profile);
+            }
+
+            SelectedProfile = Profiles.FirstOrDefault(p => p.Id == selectedId) ?? Profiles.FirstOrDefault();
+        }
+        finally
+        {
+            _reloadingProfiles = false;
+            _selectedProfileId = SelectedProfile?.Id;
+        }
     }
 
     partial void OnSelectedGroupChanged(Group? value)

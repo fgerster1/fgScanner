@@ -209,6 +209,72 @@ public sealed class SettingsPropagationTests : IDisposable
     }
 
     /// <summary>
+    /// With "Only this profile's groups" ticked, reloading the profile list used to take the open
+    /// group down with it: every Profile comes back as a new instance, so the selection changed by
+    /// reference, which re-ran the group query, which replaced every Group instance, which rebuilt
+    /// the detail pane — losing typed values, the undo history and the row selection.
+    /// </summary>
+    [Fact]
+    public async Task A_profile_change_does_not_disturb_the_open_group_when_filtering_by_profile()
+    {
+        var (groups, settings, _) = await CreateWiredShellAsync();
+        var profile = await _profileService.CreateAsync("Invoices", TestContext.Current.CancellationToken);
+        await _profileService.SaveSchemaAsync(
+            profile.Id,
+            [new FieldDefinition { Name = "Vendor", Type = FieldType.Text, Order = 0 }],
+            TestContext.Current.CancellationToken);
+        var schema = await _profileService.GetLatestSchemaAsync(
+            profile.Id, TestContext.Current.CancellationToken);
+        var group = await _groupService.CreateGroupAsync(
+            _root, "Batch1", (profile.Id, schema.Version), TestContext.Current.CancellationToken);
+
+        await groups.ReloadProfilesAsync();
+        groups.SelectedProfile = groups.Profiles.Single(p => p.Id == profile.Id);
+        groups.OnlyCurrentProfile = true;
+        await groups.LoadDetailAsync(group);
+        var detail = groups.Detail!;
+        detail.PendingFields.Single(f => f.Field.Name == "Vendor").Value = "Summit Racing";
+
+        settings.NewProfileName = "Another profile";
+        await settings.CreateProfileCommand.ExecuteAsync(null);
+
+        Assert.Same(detail, groups.Detail);
+        Assert.Equal("Summit Racing", groups.Detail!.PendingFields.Single(f => f.Field.Name == "Vendor").Value);
+    }
+
+    /// <summary>
+    /// Saving Settings without touching the fields mints no new schema version, so nothing about
+    /// the open group's layout has changed. Rebuilding its editors anyway discards a grid cell
+    /// being edited, and it happens on every save — changing only the theme, only a shortcut.
+    /// </summary>
+    [Fact]
+    public async Task A_save_that_changes_no_field_does_not_rebuild_the_open_group()
+    {
+        var (groups, settings, _) = await CreateWiredShellAsync();
+        settings.NewProfileName = "Invoices";
+        await settings.CreateProfileCommand.ExecuteAsync(null);
+
+        // Save once so the stored layout matches what the screen is holding; the SECOND save is
+        // the no-op under test. Changing the fields behind the screen's back would make the next
+        // save a real change, which is not what this pins.
+        await settings.SaveCommand.ExecuteAsync(null);
+
+        var profile = groups.Profiles.Single(p => p.Name == "Invoices");
+        var schema = await _profileService.GetLatestSchemaAsync(
+            profile.Id, TestContext.Current.CancellationToken);
+        var group = await _groupService.CreateGroupAsync(
+            _root, "Batch2", (profile.Id, schema.Version), TestContext.Current.CancellationToken);
+        await groups.LoadDetailAsync(group);
+
+        var rebuilds = 0;
+        groups.Detail!.SchemaLoaded += () => rebuilds++;
+
+        await settings.SaveCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, rebuilds);
+    }
+
+    /// <summary>
     /// Rebuilding the Scan page's state mid-sheet would strand the as-found capture with no clean
     /// partner — a whole-group refusal at import, discovered long after the box is re-shelved
     /// (CLAUDE.md). A capture in hand therefore wins, and the change lands when the sheet does.

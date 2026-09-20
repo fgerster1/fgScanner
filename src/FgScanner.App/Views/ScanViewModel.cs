@@ -647,6 +647,11 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             _savesRunning--;
             DeleteSelectedPagesCommand.NotifyCanExecuteChanged();
         }
+
+        // An annotated sheet ends HERE, not at the end of a scan: the clean capture is taken with
+        // the ordinary Scan key and staged, so the sequence is still in hand when ScanAsync
+        // finishes. Without this, a settings change deferred during the sheet was never applied.
+        await SettledAsync();
     }
 
     // ---- Patch-T separator sheets (PLAN prompt 10) ----
