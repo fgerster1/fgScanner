@@ -95,8 +95,20 @@ public sealed partial class ShellViewModel : ObservableObject
             // ReloadProfilesAsync re-reads the Profile entities themselves, not just their names:
             // creating a group reads BaseDirectory off the instance this list holds, and the one
             // loaded at startup came from a context disposed long ago.
+            //
+            // The GROUP list is deliberately not refreshed here. Reloading it replaces every Group
+            // instance, which changes SelectedGroup by reference and rebuilds the whole detail pane
+            // — throwing away the values the operator has typed for the next scan. A profile rename
+            // showing late in the group list is cosmetic; losing typed values is not.
             await GroupsViewModel.ReloadProfilesAsync();
-            await GroupsViewModel.RefreshCommand.ExecuteAsync(null);
+        }
+
+        // The open group keeps its own pinned field layout, but it must be told that the profile
+        // moved on — the "Use latest field layout" button lives inside the notice banner, so
+        // without this the control that applies the change is hidden exactly when it is needed.
+        if (change.HasFlag(SettingsChange.Schema) && GroupsViewModel.Detail is { } detail)
+        {
+            await detail.RefreshSchemaAsync();
         }
 
         if (change.HasFlag(SettingsChange.Flags))

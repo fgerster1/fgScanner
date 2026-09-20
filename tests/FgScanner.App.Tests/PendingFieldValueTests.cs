@@ -92,6 +92,63 @@ public sealed class PendingFieldValueTests : IDisposable
         return vm;
     }
 
+    /// <summary>
+    /// The usual case: a profile's fields change, the open group stays on its own pinned layout,
+    /// and the editors are rebuilt anyway. Rebuilding is what would throw away values the operator
+    /// typed seconds ago for the next scan — and they would not be told.
+    /// </summary>
+    [Fact]
+    public async Task Typed_values_survive_a_refresh_when_the_group_keeps_its_layout()
+    {
+        var vm = await CreateLoadedViewModelAsync();
+        vm.PendingFields.Single(f => f.Field.Name == "Vendor").Value = "Summit Racing";
+        vm.PendingFields.Single(f => f.Field.Name == "InvoiceNo").Value = "INV-88";
+
+        await _profileService.SaveSchemaAsync(
+            vm.Group.ProfileId!.Value,
+            [
+                new FieldDefinition { Name = "Vendor", Type = FieldType.Text, Order = 0 },
+                new FieldDefinition { Name = "InvoiceNo", Type = FieldType.Text, Order = 1 },
+                new FieldDefinition { Name = "PoNumber", Type = FieldType.Text, Order = 2 },
+            ],
+            TestContext.Current.CancellationToken);
+
+        await vm.RefreshSchemaAsync();
+
+        Assert.Equal("Summit Racing", vm.PendingFields.Single(f => f.Field.Name == "Vendor").Value);
+        Assert.Equal("INV-88", vm.PendingFields.Single(f => f.Field.Name == "InvoiceNo").Value);
+        Assert.Equal("Summit Racing", _activeGroup.PendingValues!["Vendor"]);
+    }
+
+    /// <summary>
+    /// When the group does move to the new layout, a value whose field no longer exists has
+    /// nowhere to go. It is dropped — but said out loud, because a value vanishing in silence is
+    /// what makes an operator stop trusting the pre-scan boxes.
+    /// </summary>
+    [Fact]
+    public async Task A_value_whose_field_is_gone_is_dropped_and_counted()
+    {
+        var vm = await CreateLoadedViewModelAsync();
+        vm.PendingFields.Single(f => f.Field.Name == "Vendor").Value = "Summit Racing";
+        vm.PendingFields.Single(f => f.Field.Name == "InvoiceNo").Value = "INV-88";
+
+        await _profileService.SaveSchemaAsync(
+            vm.Group.ProfileId!.Value,
+            [new FieldDefinition { Name = "Vendor", Type = FieldType.Text, Order = 0 }],
+            TestContext.Current.CancellationToken);
+        var latest = await _profileService.GetLatestSchemaAsync(
+            vm.Group.ProfileId!.Value, TestContext.Current.CancellationToken);
+        await _groupService.UpgradeSchemaVersionAsync(
+            vm.Group.Id, latest.Version, TestContext.Current.CancellationToken);
+        vm.Group.SchemaVersion = latest.Version;
+
+        await vm.RefreshSchemaAsync();
+
+        Assert.Equal("Summit Racing", vm.PendingFields.Single(f => f.Field.Name == "Vendor").Value);
+        Assert.DoesNotContain(vm.PendingFields, f => f.Field.Name == "InvoiceNo");
+        Assert.Contains("1", vm.StatusText, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Typing_a_pre_scan_field_value_reaches_the_active_group_store()
     {

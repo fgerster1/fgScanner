@@ -179,6 +179,36 @@ public sealed class SettingsPropagationTests : IDisposable
     }
 
     /// <summary>
+    /// Reloading the GROUP list replaces every Group instance, which changes the selection by
+    /// reference and rebuilds the detail pane from scratch — taking the values typed for the next
+    /// scan with it. A profile change must not cost the operator their typing.
+    /// </summary>
+    [Fact]
+    public async Task A_profile_change_does_not_disturb_the_group_already_open()
+    {
+        var (groups, settings, _) = await CreateWiredShellAsync();
+        var profile = await _profileService.CreateAsync("Invoices", TestContext.Current.CancellationToken);
+        await _profileService.SaveSchemaAsync(
+            profile.Id,
+            [new FieldDefinition { Name = "Vendor", Type = FieldType.Text, Order = 0 }],
+            TestContext.Current.CancellationToken);
+        var schema = await _profileService.GetLatestSchemaAsync(
+            profile.Id, TestContext.Current.CancellationToken);
+        var group = await _groupService.CreateGroupAsync(
+            _root, "Batch1", (profile.Id, schema.Version), TestContext.Current.CancellationToken);
+
+        await groups.LoadDetailAsync(group);
+        var detail = groups.Detail!;
+        detail.PendingFields.Single(f => f.Field.Name == "Vendor").Value = "Summit Racing";
+
+        settings.NewProfileName = "Another profile";
+        await settings.CreateProfileCommand.ExecuteAsync(null);
+
+        Assert.Same(detail, groups.Detail);
+        Assert.Equal("Summit Racing", groups.Detail!.PendingFields.Single(f => f.Field.Name == "Vendor").Value);
+    }
+
+    /// <summary>
     /// Rebuilding the Scan page's state mid-sheet would strand the as-found capture with no clean
     /// partner — a whole-group refusal at import, discovered long after the box is re-shelved
     /// (CLAUDE.md). A capture in hand therefore wins, and the change lands when the sheet does.

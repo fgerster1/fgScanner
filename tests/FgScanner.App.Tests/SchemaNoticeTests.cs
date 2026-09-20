@@ -97,6 +97,74 @@ public sealed class SchemaNoticeTests : IDisposable
         return (profile, group);
     }
 
+    /// <summary>
+    /// The notice was only ever computed in LoadAsync, which runs on group selection. An operator
+    /// who edited the fields with the group already open saw no banner — and the "Use latest field
+    /// layout" button lives INSIDE that banner, so the control that would apply the change was
+    /// hidden exactly when it was needed.
+    /// </summary>
+    [Fact]
+    public async Task An_edit_made_while_the_group_is_open_raises_the_notice()
+    {
+        var profile = await _profileService.CreateAsync("JimsStuff", Ct);
+        await _profileService.SaveSchemaAsync(
+            profile.Id, [new() { Name = "Came From", Type = FieldType.Text }], Ct);
+        var schema = await _profileService.GetLatestSchemaAsync(profile.Id, Ct);
+        var group = await _groupService.CreateGroupAsync(_root, "open-group", (profile.Id, schema.Version), Ct);
+        var vm = await ViewModelFor(group);
+        Assert.Equal("", vm.SchemaNotice);
+
+        await _profileService.SaveSchemaAsync(
+            profile.Id,
+            [
+                new() { Name = "Came From", Type = FieldType.Text },
+                new() { Name = "Recieved", Type = FieldType.Date },
+            ],
+            Ct);
+
+        await vm.RefreshSchemaAsync();
+
+        Assert.NotEqual("", vm.SchemaNotice);
+    }
+
+    /// <summary>
+    /// A refresh reloads field DEFINITIONS. It must not touch the rows: reloading them would
+    /// discard an edit in progress, and nothing about a profile change alters a page.
+    /// </summary>
+    [Fact]
+    public async Task A_refresh_leaves_the_rows_alone()
+    {
+        var (profile, group) = await GroupCreatedBeforeItsFieldsAsync();
+        var vm = await ViewModelFor(group);
+        var rowsBefore = vm.Rows.Count;
+
+        await _profileService.SaveSchemaAsync(
+            profile.Id, [new() { Name = "Came From", Type = FieldType.Text }], Ct);
+        await vm.RefreshSchemaAsync();
+
+        Assert.Equal(rowsBefore, vm.Rows.Count);
+    }
+
+    /// <summary>
+    /// NoteState is owned by the annotated-capture sequence and must never be sticky: pending
+    /// values persist across scans, so a sticky one would stamp "as-found" onto every plain sheet
+    /// that followed (CLAUDE.md). A refresh rebuilds the field editors, so it is a path that could
+    /// quietly change a flag.
+    /// </summary>
+    [Fact]
+    public async Task A_refresh_leaves_NoteState_unsticky()
+    {
+        var profile = await _profileService.EnsureEvidenceProfileAsync(Ct);
+        var schema = await _profileService.GetLatestSchemaAsync(profile.Id, Ct);
+        var group = await _groupService.CreateGroupAsync(_root, "evidence", (profile.Id, schema.Version), Ct);
+        var vm = await ViewModelFor(group);
+
+        await vm.RefreshSchemaAsync();
+
+        var noteState = vm.Fields.Single(f => f.Name == "NoteState");
+        Assert.False(noteState.Sticky);
+    }
+
     [Fact]
     public async Task A_group_behind_its_profile_says_so_and_reports_how_many_fields_it_is_missing()
     {

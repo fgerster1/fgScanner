@@ -107,7 +107,11 @@ public sealed partial class GroupsViewModel : ObservableObject
         _ = LoadDetailAsync(value);
     }
 
-    private async Task LoadDetailAsync(Group? group)
+    /// <summary>
+    /// Builds the detail pane for a group. Public so the shell and its tests can open a group
+    /// and await it; selection alone starts it without a handle on when it finished.
+    /// </summary>
+    public async Task LoadDetailAsync(Group? group)
     {
         if (group is null)
         {

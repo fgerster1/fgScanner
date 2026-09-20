@@ -93,7 +93,37 @@ public sealed partial class GroupDetailViewModel : ObservableObject
 
     public event Action? SchemaLoaded;
 
-    public async Task LoadAsync()
+    /// <summary>
+    /// Re-reads the field definitions and the schema notice for a group that is already open,
+    /// after the profile was edited in Settings (SPEC-2026-004 §04 row 9).
+    ///
+    /// It deliberately does NOT reload the rows: nothing about a profile change alters a page,
+    /// and reloading would discard an edit in progress. Values the operator has typed for the
+    /// next scan are carried across by field name, because rebuilding the editors is otherwise
+    /// indistinguishable — to the operator — from the app quietly throwing their typing away.
+    /// </summary>
+    public async Task RefreshSchemaAsync()
+    {
+        var typedRow = PendingFields.ToDictionary(p => p.Field.Name, p => p.Value, StringComparer.Ordinal);
+        var typedBatch = BatchFields.ToDictionary(p => p.Field.Name, p => p.Value, StringComparer.Ordinal);
+
+        await LoadSchemaAsync();
+        BuildFieldEditors(typedRow, typedBatch);
+
+        var dropped = typedRow.Count(v =>
+            !string.IsNullOrEmpty(v.Value) && PendingFields.All(p => p.Field.Name != v.Key));
+        if (dropped > 0)
+        {
+            StatusText = dropped == 1
+                ? "Field layout reloaded — 1 typed value was dropped; its field no longer exists."
+                : $"Field layout reloaded — {dropped} typed values were dropped; their fields no longer exist.";
+        }
+
+        SchemaLoaded?.Invoke();
+        PushPendingValues();
+    }
+
+    private async Task LoadSchemaAsync()
     {
         Fields = [];
         SchemaNotice = "";
@@ -112,7 +142,19 @@ public sealed partial class GroupDetailViewModel : ObservableObject
                         + $"\"{Group.Profile?.Name ?? "the profile"}\" is on v{latest.Version}.";
             }
         }
+    }
 
+    /// <summary>
+    /// Rebuilds the pre-scan and batch editors from <see cref="Fields"/>. Passing the values the
+    /// previous editors held carries them over by name; passing null is a fresh load.
+    ///
+    /// Batch defaults are NOT re-expanded here. They are expanded once, when the group is created,
+    /// so that $(user) and $(today) record who was at the scanner and when — re-running the token
+    /// expander would rewrite that as whoever opened the group later.
+    /// </summary>
+    private void BuildFieldEditors(
+        Dictionary<string, string?>? typedRow, Dictionary<string, string?>? typedBatch)
+    {
         foreach (var stale in PendingFields)
         {
             stale.PropertyChanged -= OnPendingFieldChanged;
@@ -122,6 +164,11 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         foreach (var field in Fields.Where(f => f.Scope != FieldScope.Batch))
         {
             var editor = new PendingFieldEditor(field);
+            if (typedRow?.TryGetValue(field.Name, out var carried) == true)
+            {
+                editor.Value = carried;
+            }
+
             editor.PropertyChanged += OnPendingFieldChanged;
             PendingFields.Add(editor);
         }
@@ -135,10 +182,19 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         var batchBag = JsonSerializer.Deserialize<Dictionary<string, string?>>(Group.BatchFieldsJson) ?? [];
         foreach (var field in Fields.Where(f => f.Scope == FieldScope.Batch))
         {
-            var editor = new PendingFieldEditor(field) { Value = batchBag.GetValueOrDefault(field.Name) };
+            var value = typedBatch is not null && typedBatch.TryGetValue(field.Name, out var carried)
+                ? carried
+                : batchBag.GetValueOrDefault(field.Name);
+            var editor = new PendingFieldEditor(field) { Value = value };
             editor.PropertyChanged += OnBatchFieldChanged;
             BatchFields.Add(editor);
         }
+    }
+
+    public async Task LoadAsync()
+    {
+        await LoadSchemaAsync();
+        BuildFieldEditors(null, null);
 
         await ReloadRowsAsync();
         SchemaLoaded?.Invoke();
