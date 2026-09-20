@@ -368,7 +368,14 @@ current behaviour so existing tests are untouched.
 **11.3 — Verification suite**
 
 - `dotnet build -c Release`, `dotnet test -c Release` (≥ 692), `dotnet format --verify-no-changes`.
-- Manual, and this one genuinely needs the scanner Franz is testing:
+- **Two scanners, and they are not interchangeable.** The dev station carries an
+  HP ENVY 7640 (TWAIN); Jim's station has a different, faster machine. Duplex support is a
+  per-device property, so a row proven here is proven for *this* scanner only. Every
+  manual row must record which scanner ran it, as the August rows already do
+  ("Pantum M6550NW"). Whichever of hardware duplex and two-pass cannot be exercised on the
+  dev scanner stays open until it is run on Jim's station, and the spec is not Done until
+  both are recorded.
+- Manual, and this one genuinely needs a scanner:
   - hardware duplex on a duplex-capable device, 3 sheets, checked for order and rotation;
   - two-pass on a feeder-only device, 10 double-sided sheets, checked page by page;
   - a deliberate mismatch (remove a sheet before the back pass) to see the message;

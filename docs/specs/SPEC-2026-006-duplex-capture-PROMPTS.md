@@ -222,6 +222,11 @@ Spec: SPEC-2026-006 §11.3    Depends on: Prompt 6 (green)
 Build the installer, install it, and work through these with real paper. Record each in
 docs/manual-tests.md as it is done — do not tick anything not actually performed.
 
+NAME THE SCANNER ON EVERY ROW. The dev station has an HP ENVY 7640; Jim's station has a
+different machine. Duplex support is per-device, so a row passed on one proves nothing
+about the other. Anything the dev scanner cannot exercise stays OPEN and is repeated on
+Jim's station before this spec is Done.
+
 1. Hardware duplex on a duplex-capable scanner: 3 double-sided sheets. Check order AND
    rotation; if the backs are upside down, tick the flip checkbox and repeat.
 2. Duplex selected on a scanner that cannot do it: confirm it is disabled with a readable
