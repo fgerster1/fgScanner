@@ -187,6 +187,20 @@ public sealed class TrashService(
         return expired.Count;
     }
 
+    /// <summary>
+    /// The configured retention, or the default when nothing is stored. Settings needs this to
+    /// show what is actually in force: a box that always displayed the default overwrote a
+    /// customised value on every save.
+    /// </summary>
+    public async Task<int> GetRetentionDaysAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var setting = await db.Settings.FindAsync([RetentionSettingKey], cancellationToken).ConfigureAwait(false);
+        return setting is not null && int.TryParse(setting.Value, out var configured) && configured > 0
+            ? configured
+            : DefaultRetentionDays;
+    }
+
     public async Task SetRetentionDaysAsync(int days, CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);

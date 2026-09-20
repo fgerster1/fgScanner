@@ -43,6 +43,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         _ = LoadShortcutsAsync();
         _ = LoadUpdatePreferenceAsync();
         _ = LoadFeatureSettingsAsync();
+        _ = LoadRetentionAsync();
+        _ = LoadThemeAsync();
     }
 
     public ObservableCollection<Profile> Profiles { get; } = [];
@@ -74,6 +76,27 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private int _retentionDays = TrashService.DefaultRetentionDays;
+
+    /// <summary>"system" | "light" | "dark".</summary>
+    [ObservableProperty]
+    private string _theme = "system";
+
+    /// <summary>Instance property so XAML can bind it.</summary>
+#pragma warning disable CA1822
+    public IReadOnlyList<string> Themes => FgScanner.App.Services.ThemeSetting.Choices;
+#pragma warning restore CA1822
+
+    /// <summary>What was stored when the screen opened, so a save can tell a change from a no-op.</summary>
+    private int _retentionAsLoaded = TrashService.DefaultRetentionDays;
+
+    public async Task LoadRetentionAsync()
+    {
+        _retentionAsLoaded = await _trashService.GetRetentionDaysAsync();
+        RetentionDays = _retentionAsLoaded;
+    }
+
+    public async Task LoadThemeAsync() =>
+        Theme = await _appSettings.GetAsync(FgScanner.App.Services.ThemeSetting.Key, "system");
 
     [ObservableProperty]
     private string _statusText = "";
@@ -717,7 +740,25 @@ public sealed partial class SettingsViewModel : ObservableObject
             await _appSettings.SetAsync(FeatureFlags.PreserveOriginals, FeaturePreserveOriginals ? "true" : "false");
             await _appSettings.SetAsync(CommitHookRunner.CommandKey, HookCommandLine.Trim());
             await _appSettings.SetAsync(CommitHookRunner.WebhookUrlKey, HookWebhookUrl.Trim());
-            await _trashService.SetRetentionDaysAsync(Math.Max(1, RetentionDays));
+            var retention = Math.Max(1, RetentionDays);
+            await _trashService.SetRetentionDaysAsync(retention);
+
+            // The model used to be written only when a new API key was pasted, so changing it
+            // alone persisted nothing and the box silently reverted on the next launch.
+            await _appSettings.SetAsync(AiWorker.ModelSettingKey, AiModel.Trim());
+
+            await _appSettings.SetAsync(FgScanner.App.Services.ThemeSetting.Key, Theme);
+            FgScanner.App.Services.ThemeSetting.Apply(Theme);
+
+            // Shortening the retention only matters once the purge runs, and that used to happen
+            // at startup alone — so a change made now took effect at some unrelated launch later.
+            var purged = 0;
+            if (retention != _retentionAsLoaded)
+            {
+                purged = await _trashService.PurgeExpiredAsync();
+                _retentionAsLoaded = retention;
+            }
+
             await _appSettings.SetAsync(
                 AppSettingsService.OcrLanguagesKey,
                 string.IsNullOrWhiteSpace(OcrLanguages) ? "eng" : OcrLanguages.Trim());
@@ -735,8 +776,11 @@ public sealed partial class SettingsViewModel : ObservableObject
             // Naming the way out matters: this used to state the consequence and stop, leaving the
             // user to conclude their fields simply did not work on the group they were looking at.
             var behind = await _groupService.GroupsOnOlderSchemaAsync(SelectedProfile!.Id);
+            var purgedNote = purged == 0
+                ? ""
+                : $" Trash purge removed {purged} item(s) under the new retention.";
             StatusText = behind.Count == 0
-                ? $"Saved as field layout v{schema.Version}."
+                ? $"Saved as field layout v{schema.Version}.{purgedNote}"
                 : $"Saved as field layout v{schema.Version}. New groups use it; "
                     + $"{behind.Count} existing group(s) stay on their own — open one in Groups and "
                     + "choose \"Use latest field layout\" to move it.";

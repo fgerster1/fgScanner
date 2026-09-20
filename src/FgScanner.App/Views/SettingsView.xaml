@@ -212,6 +212,13 @@
 
             <CheckBox Content="Check for updates at startup" IsChecked="{Binding CheckForUpdates}" Margin="0,0,0,12" />
 
+            <TextBlock Text="Appearance" FontWeight="SemiBold" Margin="0,0,0,4" />
+            <WrapPanel Margin="0,0,0,12">
+                <TextBlock Text="Theme" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <ComboBox Width="120" ItemsSource="{Binding Themes}" SelectedItem="{Binding Theme}" />
+                <TextBlock Text="Applies when you save." VerticalAlignment="Center" Opacity="0.7" Margin="8,0,0,0" />
+            </WrapPanel>
+
             <TextBlock Text="Trash" FontWeight="SemiBold" Margin="0,0,0,4" />
             <WrapPanel Margin="0,0,0,12">
                 <TextBlock Text="Keep deleted pages for" VerticalAlignment="Center" Margin="0,0,6,0" />
