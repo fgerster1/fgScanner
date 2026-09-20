@@ -418,7 +418,7 @@ public sealed partial class SettingsViewModel : ObservableObject
                 await System.IO.File.ReadAllTextAsync(dialog.FileName));
             await ReloadAsync();
             SelectedProfile = Profiles.FirstOrDefault(p => p.Id == profile.Id);
-            ProfilesChanged?.Invoke();
+            await AnnounceAsync(SettingsChange.Profiles);
             StatusText = $"Profile \"{profile.Name}\" imported.";
         }
         catch (Exception ex)
@@ -428,8 +428,31 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
 
-    /// <summary>Notifies other views (Groups) that profiles changed.</summary>
-    public event Action? ProfilesChanged;
+    /// <summary>
+    /// Announces what a settings change moved, so the other sections pick it up without the
+    /// operator restarting the program (SPEC-2026-004).
+    ///
+    /// It returns a Task and the raiser awaits it: the section view models reload from the
+    /// database, and a caller that reports "saved" before those reloads finish is telling the
+    /// operator the change has landed when it has not. Awaiting also makes the propagation
+    /// testable without sleeping.
+    /// </summary>
+    public event Func<SettingsChange, Task>? SettingsChanged;
+
+    private async Task AnnounceAsync(SettingsChange change)
+    {
+        if (SettingsChanged is null)
+        {
+            return;
+        }
+
+        // Invoke() on a multicast Func returns only the LAST handler's task, so the earlier
+        // handlers would be started and never awaited.
+        foreach (var handler in SettingsChanged.GetInvocationList().Cast<Func<SettingsChange, Task>>())
+        {
+            await handler(change);
+        }
+    }
 
     private async Task ReloadAsync()
     {
@@ -490,7 +513,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             NewProfileName = "";
             await ReloadAsync();
             SelectedProfile = Profiles.First(p => p.Id == profile.Id);
-            ProfilesChanged?.Invoke();
+            await AnnounceAsync(SettingsChange.Profiles);
         }
         catch (Exception ex)
         {
@@ -515,7 +538,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             var profile = await _profileService.EnsureEvidenceProfileAsync();
             await ReloadAsync();
             SelectedProfile = Profiles.First(p => p.Id == profile.Id);
-            ProfilesChanged?.Invoke();
+            await AnnounceAsync(SettingsChange.Profiles);
             StatusText = $"\"{ProfileService.EvidenceProfileName}\" profile is ready — "
                        + $"{FgScanner.Core.Evidence.EvidenceProfile.Fields.Count} fields.";
         }
@@ -566,7 +589,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             await ReloadAsync();
             SelectedProfile = Profiles.FirstOrDefault(p => p.Id == profileId);
             OnPropertyChanged(nameof(BaseDirectory));
-            ProfilesChanged?.Invoke();
+            await AnnounceAsync(SettingsChange.Profiles);
             StatusText = folder.Length == 0
                 ? "New groups will ask where to go."
                 : $"New groups will be created under {folder}.";
@@ -602,7 +625,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             await _profileService.DeleteAsync(profile.Id);
             await ReloadAsync();
             SelectedProfile = Profiles.FirstOrDefault();
-            ProfilesChanged?.Invoke();
+            await AnnounceAsync(SettingsChange.Profiles);
             StatusText = $"Deleted profile \"{profile.Name}\".";
         }
         catch (Exception ex)
@@ -635,7 +658,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             NewProfileName = "";
             await ReloadAsync();
             SelectedProfile = Profiles.FirstOrDefault(p => p.Id == renamedId);
-            ProfilesChanged?.Invoke();
+            await AnnounceAsync(SettingsChange.Profiles);
             StatusText = $"Renamed \"{previous}\" to \"{SelectedProfile?.Name}\".";
         }
         catch (Exception ex)
@@ -717,7 +740,7 @@ public sealed partial class SettingsViewModel : ObservableObject
                 : $"Saved as field layout v{schema.Version}. New groups use it; "
                     + $"{behind.Count} existing group(s) stay on their own — open one in Groups and "
                     + "choose \"Use latest field layout\" to move it.";
-            ProfilesChanged?.Invoke();
+            await AnnounceAsync(SettingsChange.Profiles | SettingsChange.Schema | SettingsChange.Flags);
         }
         catch (Exception ex)
         {

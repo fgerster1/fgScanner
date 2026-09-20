@@ -27,6 +27,13 @@ public sealed partial class ShellViewModel : ObservableObject
             ? ["Scan", "Groups", "Search", "Trash", "Settings"]
             : ["Scan", "Groups", "Trash", "Settings"];
 
+        // A settings change has to reach the section that uses it while the program is running:
+        // the section view models are singletons built once at startup, so anything they read in
+        // their constructor is frozen until the next launch (SPEC-2026-004). The subscription
+        // lives here, beside the other cross-section wiring, so it can be exercised without a
+        // window — the code-behind cannot be tested.
+        SettingsViewModel.SettingsChanged += OnSettingsChangedAsync;
+
         // "Scan into this group" is a round trip: it borrows the real Scan screen and gives the
         // user back to Groups when the pages have landed. The navigation policy lives here rather
         // than in the window's code-behind so it can be exercised without a UI.
@@ -49,6 +56,18 @@ public sealed partial class ShellViewModel : ObservableObject
             ClearPendingReturn();
             SelectedSection = "Groups";
         };
+    }
+
+    private async Task OnSettingsChangedAsync(SettingsChange change)
+    {
+        if (change.HasFlag(SettingsChange.Profiles))
+        {
+            // ReloadProfilesAsync re-reads the Profile entities themselves, not just their names:
+            // creating a group reads BaseDirectory off the instance this list holds, and the one
+            // loaded at startup came from a context disposed long ago.
+            await GroupsViewModel.ReloadProfilesAsync();
+            await GroupsViewModel.RefreshCommand.ExecuteAsync(null);
+        }
     }
 
     private bool _returningToGroups;
