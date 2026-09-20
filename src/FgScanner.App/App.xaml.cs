@@ -185,7 +185,7 @@ public partial class App : Application
         _host.Services.GetRequiredService<AiWorker>().Start();
 
         var appSettings = _host.Services.GetRequiredService<AppSettingsService>();
-        ApplyTheme(appSettings.GetAsync("Ui.Theme", "system").GetAwaiter().GetResult());
+        ApplyTheme(appSettings.GetAsync(Services.ThemeSetting.Key, "system").GetAwaiter().GetResult());
 
         // Files passed by "Open with FG Scanner" import into the group the user selects.
         var openFiles = e.Args
@@ -224,13 +224,7 @@ public partial class App : Application
         });
     }
 
-    private static void ApplyTheme(string theme) =>
-        Current.ThemeMode = theme switch
-        {
-            "light" => ThemeMode.Light,
-            "dark" => ThemeMode.Dark,
-            _ => ThemeMode.System,
-        };
+    private static void ApplyTheme(string theme) => Services.ThemeSetting.Apply(theme);
 
     /// <summary>First launch only (PLAN prompt 9): language, theme, first profile, optional AI setup.</summary>
     private void RunFirstRunWizard(AppSettingsService appSettings)
@@ -243,7 +237,7 @@ public partial class App : Application
         var dialog = new Views.Dialogs.FirstRunDialog(!AiOptOutPolicy.IsOptedOut) { Owner = MainWindow };
         dialog.ShowDialog();
         ApplyTheme(dialog.Theme);
-        appSettings.SetAsync("Ui.Theme", dialog.Theme).GetAwaiter().GetResult();
+        appSettings.SetAsync(Services.ThemeSetting.Key, dialog.Theme).GetAwaiter().GetResult();
         appSettings.SetAsync("FirstRun.Done", "true").GetAwaiter().GetResult();
         if (dialog.NewProfileName is { } profileName)
         {

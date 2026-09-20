@@ -81,6 +81,21 @@ public sealed class SchemaNoticeTests : IDisposable
         return vm;
     }
 
+    private async Task AddPagesAsync(Group group, int count)
+    {
+        var staging = Directory.CreateDirectory(Path.Combine(_root, $"staging-{Guid.NewGuid():N}")).FullName;
+        var files = new List<string>();
+        for (byte i = 1; i <= count; i++)
+        {
+            var file = Path.Combine(staging, $"scan_0000{i}.png");
+            // Distinct bytes per page: adoption skips anything whose checksum it already holds.
+            await File.WriteAllBytesAsync(file, [i, i, i], Ct);
+            files.Add(file);
+        }
+
+        await _groupService.AdoptPagesAsync(group.Id, files, _ => false, Ct);
+    }
+
     /// <summary>Reproduces the real sequence: create the group, then define the fields.</summary>
     private async Task<(Profile Profile, Group Group)> GroupCreatedBeforeItsFieldsAsync()
     {
@@ -95,6 +110,80 @@ public sealed class SchemaNoticeTests : IDisposable
             ],
             Ct);
         return (profile, group);
+    }
+
+    /// <summary>
+    /// The notice was only ever computed in LoadAsync, which runs on group selection. An operator
+    /// who edited the fields with the group already open saw no banner — and the "Use latest field
+    /// layout" button lives INSIDE that banner, so the control that would apply the change was
+    /// hidden exactly when it was needed.
+    /// </summary>
+    [Fact]
+    public async Task An_edit_made_while_the_group_is_open_raises_the_notice()
+    {
+        var profile = await _profileService.CreateAsync("JimsStuff", Ct);
+        await _profileService.SaveSchemaAsync(
+            profile.Id, [new() { Name = "Came From", Type = FieldType.Text }], Ct);
+        var schema = await _profileService.GetLatestSchemaAsync(profile.Id, Ct);
+        var group = await _groupService.CreateGroupAsync(_root, "open-group", (profile.Id, schema.Version), Ct);
+        var vm = await ViewModelFor(group);
+        Assert.Equal("", vm.SchemaNotice);
+
+        await _profileService.SaveSchemaAsync(
+            profile.Id,
+            [
+                new() { Name = "Came From", Type = FieldType.Text },
+                new() { Name = "Recieved", Type = FieldType.Date },
+            ],
+            Ct);
+
+        await vm.RefreshSchemaAsync();
+
+        Assert.NotEqual("", vm.SchemaNotice);
+    }
+
+    /// <summary>
+    /// A refresh reloads field DEFINITIONS. It must not touch the rows: reloading them would
+    /// discard an edit in progress, and nothing about a profile change alters a page.
+    /// </summary>
+    [Fact]
+    public async Task A_refresh_leaves_the_rows_alone()
+    {
+        var (profile, group) = await GroupCreatedBeforeItsFieldsAsync();
+        await AddPagesAsync(group, 3);
+        var vm = await ViewModelFor(group);
+
+        // An empty group would make this assertion 0 == 0, which holds however wrong the code is.
+        Assert.Equal(3, vm.Rows.Count);
+        var rowsBefore = vm.Rows.ToList();
+
+        await _profileService.SaveSchemaAsync(
+            profile.Id, [new() { Name = "Came From", Type = FieldType.Text }], Ct);
+        await vm.RefreshSchemaAsync();
+
+        Assert.Equal(3, vm.Rows.Count);
+        // Identity, not just count: reloading would replace the row objects the grid is bound to.
+        Assert.True(rowsBefore.SequenceEqual(vm.Rows));
+    }
+
+    /// <summary>
+    /// NoteState is owned by the annotated-capture sequence and must never be sticky: pending
+    /// values persist across scans, so a sticky one would stamp "as-found" onto every plain sheet
+    /// that followed (CLAUDE.md). A refresh rebuilds the field editors, so it is a path that could
+    /// quietly change a flag.
+    /// </summary>
+    [Fact]
+    public async Task A_refresh_leaves_NoteState_unsticky()
+    {
+        var profile = await _profileService.EnsureEvidenceProfileAsync(Ct);
+        var schema = await _profileService.GetLatestSchemaAsync(profile.Id, Ct);
+        var group = await _groupService.CreateGroupAsync(_root, "evidence", (profile.Id, schema.Version), Ct);
+        var vm = await ViewModelFor(group);
+
+        await vm.RefreshSchemaAsync();
+
+        var noteState = vm.Fields.Single(f => f.Name == "NoteState");
+        Assert.False(noteState.Sticky);
     }
 
     [Fact]

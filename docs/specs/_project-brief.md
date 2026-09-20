@@ -1,8 +1,8 @@
 # Project brief — FG Scanner (FgmakerScanner)
 
 > Cached reconnaissance for the fg-programming-specs skill.
-> Written from commit `605ce9d` on 2026-09-13. Refresh when stale — see the skill's
-> references/project-brief.md.
+> Written from commit `605ce9d` on 2026-09-13; refreshed 2026-09-20 (SPEC-2026-004 Prompt 6).
+> Refresh when stale — see the skill's references/project-brief.md.
 > **This file never covers regression risk.** That is read fresh per spec.
 
 ## Stack
@@ -11,7 +11,7 @@
 - NAPS2.Sdk 1.3.0 (LGPL), EF Core 10 + SQLite, Tesseract 5.5 shell-out, PDFsharp, Google.GenAI,
   CsvHelper + ClosedXML, Serilog. Inno Setup 7 installer.
 - Central package management (`Directory.Packages.props`); version only in `Directory.Build.props`
-  `<Version>` (0.4.0).
+  `<Version>` (**0.5.0**, released 2026-09-16).
 - Non-negotiables live in `CLAUDE.md` (licensing guards, evidence contract, test rules). Read it;
   this brief does not restate it.
 
@@ -23,14 +23,20 @@
 - `src/FgScanner.Data` — EF entities (`Entities.cs`), services (`ProfileService`, `GroupService`,
   `IndexingService`, `TrashService`, `AppSettingsService`), migrations.
 - `src/FgScanner.Ocr`, `src/FgScanner.Ai`, `src/FgScanner.Cli`.
-- Docs: `docs/PLAN.md`, `docs/FEATURE-PARITY.md`, `docs/manual-tests.md`, `docs/adr/` (0001–0005;
-  0006–0008 reserved by the Quick Scan plan), `docs/superpowers/plans|research/`, `docs/specs/`.
+- Docs: `docs/PLAN.md`, `docs/FEATURE-PARITY.md`, `docs/manual-tests.md`, `docs/adr/` (0001–0005,
+  0009–0010; 0006–0008 reserved by the Quick Scan plan), `docs/superpowers/plans|research/`,
+  `docs/specs/`.
 - Conventions: comments explain why; WPF-free logic classes beside views for anything numeric
   (`ZoomController`, `PageNavigator`); UI strings inline English (ADR-0001).
 
 ## Testing
 - xunit.v3 in MTP mode (opt-in in `global.json`), NSubstitute, AwesomeAssertions, Verify.
-- `dotnet test -c Release` — baseline **516 passed** (measured in Debug on 2026-09-13).
+- `dotnet test -c Release` — baseline **714 passed** (2026-09-20, on `phase-23-settings-live`;
+  692 on the 0.5.0 release).
+- **Every test runs headless** — no WPF `Application`, no bound control. Anything that depends on
+  what WPF writes *back* into a view model (a `Selector` nulling its selection when its items are
+  cleared) is invisible to the suite and needs a manual pass. Two such defects shipped and were
+  caught only by a cold review; see ADR-0010.
 - **Quirk:** if FG Scanner is running from `src\FgScanner.App\bin\Release`, the Release build fails
   with MSB3027 file locks. Close the app, or run Debug.
 - No UI automation (FlaUI is listed in CLAUDE.md but not referenced). App tests exercise view
@@ -38,7 +44,7 @@
 
 ## Data
 - SQLite via EF Core; migrations in `src/FgScanner.Data/Migrations/` (latest
-  `20260828162943_AddFieldScopeAndGroupBatchFields`). Startup migrates automatically after writing
+  `20260914210756_AddFieldLengthAndMemo`). Startup migrates automatically after writing
   `fgscanner.db.bak-<version>`.
 - Custom values are JSON in TEXT columns (`Document.CustomFieldsJson`, `Group.BatchFieldsJson`).
 - Key-value app settings in the `Settings` table via `AppSettingsService`.

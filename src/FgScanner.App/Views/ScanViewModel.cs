@@ -331,6 +331,8 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             _scanCts.Dispose();
             _scanCts = null;
         }
+
+        await SettledAsync();
     }
 
     /// <summary>Batch scanning (PLAN §5.8): several passes with a prompt or delay between them,
@@ -399,6 +401,8 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             _scanCts.Dispose();
             _scanCts = null;
         }
+
+        await SettledAsync();
     }
 
     /// <summary>
@@ -409,6 +413,33 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 
     /// <summary>Whether a sheet with notes is part-scanned right now.</summary>
     public bool AnnotatedActive => Annotated.IsActive;
+
+    /// <summary>
+    /// Paper is mid-flight: a scan is running, or a sheet with notes is part-captured. Reloading
+    /// this page's state now would strand an as-found capture with no clean partner, which is a
+    /// whole-group refusal at import (CLAUDE.md), so callers wait for <see cref="CaptureSettled"/>.
+    /// </summary>
+    public bool CaptureInHand => IsScanning || AnnotatedActive;
+
+    /// <summary>
+    /// Raised once nothing is in hand any more — a scan finished, or a sheet was completed or
+    /// abandoned. It returns a Task and is awaited so a deferred reload is part of the operation
+    /// that released the page, rather than a race against it.
+    /// </summary>
+    public event Func<Task>? CaptureSettled;
+
+    private async Task SettledAsync()
+    {
+        if (CaptureSettled is null || CaptureInHand)
+        {
+            return;
+        }
+
+        foreach (var handler in CaptureSettled.GetInvocationList().Cast<Func<Task>>())
+        {
+            await handler();
+        }
+    }
 
     /// <summary>
     /// What the operator does next, or empty when no sheet is in hand.
@@ -508,6 +539,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             : $"Annotated sheet abandoned — {discarded.Count} captures moved to the trash.";
         _activeGroup.NotifyGroupContentChanged();
         AnnouncedAnnotatedState();
+        await SettledAsync();
     }
 
     /// <summary>
@@ -615,6 +647,11 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             _savesRunning--;
             DeleteSelectedPagesCommand.NotifyCanExecuteChanged();
         }
+
+        // An annotated sheet ends HERE, not at the end of a scan: the clean capture is taken with
+        // the ordinary Scan key and staged, so the sequence is still in hand when ScanAsync
+        // finishes. Without this, a settings change deferred during the sheet was never applied.
+        await SettledAsync();
     }
 
     // ---- Patch-T separator sheets (PLAN prompt 10) ----
@@ -622,7 +659,12 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _separatorSheetVisible;
 
-    private async Task LoadFeatureFlagsAsync()
+    /// <summary>
+    /// Re-reads the flags that decide which controls exist. Called again when Settings announces
+    /// a change, so turning Patch-T on does not leave the operator without the button that prints
+    /// the separator sheet the feature needs.
+    /// </summary>
+    public async Task LoadFeatureFlagsAsync()
     {
         try
         {

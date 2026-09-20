@@ -43,6 +43,28 @@ public sealed partial class SettingsViewModel : ObservableObject
         _ = LoadShortcutsAsync();
         _ = LoadUpdatePreferenceAsync();
         _ = LoadFeatureSettingsAsync();
+        Ready = LoadStoredValuesAsync();
+    }
+
+    /// <summary>
+    /// Completes once the settings loaded from storage have landed. Save awaits it, so a save made
+    /// before the screen finished loading cannot write a default over a stored value.
+    /// </summary>
+    public Task Ready { get; } = Task.CompletedTask;
+
+    private async Task LoadStoredValuesAsync()
+    {
+        try
+        {
+            await LoadRetentionAsync();
+            await LoadThemeAsync();
+        }
+        catch (Exception ex)
+        {
+            // Unobserved, these left the boxes showing defaults that a later save would then
+            // write over what is actually stored.
+            Log.Error(ex, "Loading stored settings");
+        }
     }
 
     public ObservableCollection<Profile> Profiles { get; } = [];
@@ -75,6 +97,27 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private int _retentionDays = TrashService.DefaultRetentionDays;
 
+    /// <summary>"system" | "light" | "dark".</summary>
+    [ObservableProperty]
+    private string _theme = "system";
+
+    /// <summary>Instance property so XAML can bind it.</summary>
+#pragma warning disable CA1822
+    public IReadOnlyList<string> Themes => FgScanner.App.Services.ThemeSetting.Choices;
+#pragma warning restore CA1822
+
+    /// <summary>What was stored when the screen opened, so a save can tell a change from a no-op.</summary>
+    private int _retentionAsLoaded = TrashService.DefaultRetentionDays;
+
+    public async Task LoadRetentionAsync()
+    {
+        _retentionAsLoaded = await _trashService.GetRetentionDaysAsync();
+        RetentionDays = _retentionAsLoaded;
+    }
+
+    public async Task LoadThemeAsync() =>
+        Theme = await _appSettings.GetAsync(FgScanner.App.Services.ThemeSetting.Key, "system");
+
     [ObservableProperty]
     private string _statusText = "";
 
@@ -100,7 +143,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _featureBlankPolicy;
 
-    /// <summary>Applies on next launch — the section list is built at startup.</summary>
+    /// <summary>Shows or hides the Search section; applied on save, no relaunch (SPEC-2026-004).</summary>
     [ObservableProperty]
     private bool _featureSearch = true;
 
@@ -418,7 +461,7 @@ public sealed partial class SettingsViewModel : ObservableObject
                 await System.IO.File.ReadAllTextAsync(dialog.FileName));
             await ReloadAsync();
             SelectedProfile = Profiles.FirstOrDefault(p => p.Id == profile.Id);
-            ProfilesChanged?.Invoke();
+            await AnnounceAsync(SettingsChange.Profiles);
             StatusText = $"Profile \"{profile.Name}\" imported.";
         }
         catch (Exception ex)
@@ -428,8 +471,41 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
 
-    /// <summary>Notifies other views (Groups) that profiles changed.</summary>
-    public event Action? ProfilesChanged;
+    /// <summary>
+    /// Announces what a settings change moved, so the other sections pick it up without the
+    /// operator restarting the program (SPEC-2026-004).
+    ///
+    /// It returns a Task and the raiser awaits it: the section view models reload from the
+    /// database, and a caller that reports "saved" before those reloads finish is telling the
+    /// operator the change has landed when it has not. Awaiting also makes the propagation
+    /// testable without sleeping.
+    /// </summary>
+    public event Func<SettingsChange, Task>? SettingsChanged;
+
+    private async Task AnnounceAsync(SettingsChange change)
+    {
+        if (SettingsChanged is null)
+        {
+            return;
+        }
+
+        // Invoke() on a multicast Func returns only the LAST handler's task, so the earlier
+        // handlers would be started and never awaited.
+        foreach (var handler in SettingsChanged.GetInvocationList().Cast<Func<SettingsChange, Task>>())
+        {
+            try
+            {
+                await handler(change);
+            }
+            catch (Exception ex)
+            {
+                // One subscriber failing must not abandon the others, and must not turn a save
+                // that committed every write into "Save failed" — the operator would redo a save
+                // that already happened.
+                Log.Error(ex, "Announcing settings change {Change}", change);
+            }
+        }
+    }
 
     private async Task ReloadAsync()
     {
@@ -490,7 +566,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             NewProfileName = "";
             await ReloadAsync();
             SelectedProfile = Profiles.First(p => p.Id == profile.Id);
-            ProfilesChanged?.Invoke();
+            await AnnounceAsync(SettingsChange.Profiles);
         }
         catch (Exception ex)
         {
@@ -515,7 +591,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             var profile = await _profileService.EnsureEvidenceProfileAsync();
             await ReloadAsync();
             SelectedProfile = Profiles.First(p => p.Id == profile.Id);
-            ProfilesChanged?.Invoke();
+            await AnnounceAsync(SettingsChange.Profiles);
             StatusText = $"\"{ProfileService.EvidenceProfileName}\" profile is ready — "
                        + $"{FgScanner.Core.Evidence.EvidenceProfile.Fields.Count} fields.";
         }
@@ -566,7 +642,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             await ReloadAsync();
             SelectedProfile = Profiles.FirstOrDefault(p => p.Id == profileId);
             OnPropertyChanged(nameof(BaseDirectory));
-            ProfilesChanged?.Invoke();
+            await AnnounceAsync(SettingsChange.Profiles);
             StatusText = folder.Length == 0
                 ? "New groups will ask where to go."
                 : $"New groups will be created under {folder}.";
@@ -602,7 +678,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             await _profileService.DeleteAsync(profile.Id);
             await ReloadAsync();
             SelectedProfile = Profiles.FirstOrDefault();
-            ProfilesChanged?.Invoke();
+            await AnnounceAsync(SettingsChange.Profiles);
             StatusText = $"Deleted profile \"{profile.Name}\".";
         }
         catch (Exception ex)
@@ -635,7 +711,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             NewProfileName = "";
             await ReloadAsync();
             SelectedProfile = Profiles.FirstOrDefault(p => p.Id == renamedId);
-            ProfilesChanged?.Invoke();
+            await AnnounceAsync(SettingsChange.Profiles);
             StatusText = $"Renamed \"{previous}\" to \"{SelectedProfile?.Name}\".";
         }
         catch (Exception ex)
@@ -673,10 +749,17 @@ public sealed partial class SettingsViewModel : ObservableObject
             return;
         }
 
+        // The constructor's loads are started, not awaited. Saving before the retention and theme
+        // have landed would write the hard defaults over what is stored — which is the very bug
+        // this spec exists to fix, reappearing as a race.
+        await Ready;
+
         try
         {
+            var versionBefore = (await _profileService.GetLatestSchemaAsync(SelectedProfile.Id)).Version;
             var schema = await _profileService.SaveSchemaAsync(
                 SelectedProfile.Id, [.. Fields.Select(f => f.ToDefinition())]);
+            var schemaChanged = schema.Version != versionBefore;
             await _profileService.UpdateExportSettingsAsync(
                 SelectedProfile.Id, ExportCsv, ExportXlsx, ExportXml, ExportJson, CsvDelimiter);
             await _profileService.UpdateOcrEnabledAsync(SelectedProfile.Id, OcrEnabled);
@@ -694,7 +777,25 @@ public sealed partial class SettingsViewModel : ObservableObject
             await _appSettings.SetAsync(FeatureFlags.PreserveOriginals, FeaturePreserveOriginals ? "true" : "false");
             await _appSettings.SetAsync(CommitHookRunner.CommandKey, HookCommandLine.Trim());
             await _appSettings.SetAsync(CommitHookRunner.WebhookUrlKey, HookWebhookUrl.Trim());
-            await _trashService.SetRetentionDaysAsync(Math.Max(1, RetentionDays));
+            var retention = Math.Max(1, RetentionDays);
+            await _trashService.SetRetentionDaysAsync(retention);
+
+            // The model used to be written only when a new API key was pasted, so changing it
+            // alone persisted nothing and the box silently reverted on the next launch.
+            await _appSettings.SetAsync(AiWorker.ModelSettingKey, AiModel.Trim());
+
+            await _appSettings.SetAsync(FgScanner.App.Services.ThemeSetting.Key, Theme);
+            FgScanner.App.Services.ThemeSetting.Apply(Theme);
+
+            // Shortening the retention only matters once the purge runs, and that used to happen
+            // at startup alone — so a change made now took effect at some unrelated launch later.
+            var purged = 0;
+            if (retention != _retentionAsLoaded)
+            {
+                purged = await _trashService.PurgeExpiredAsync();
+                _retentionAsLoaded = retention;
+            }
+
             await _appSettings.SetAsync(
                 AppSettingsService.OcrLanguagesKey,
                 string.IsNullOrWhiteSpace(OcrLanguages) ? "eng" : OcrLanguages.Trim());
@@ -712,12 +813,25 @@ public sealed partial class SettingsViewModel : ObservableObject
             // Naming the way out matters: this used to state the consequence and stop, leaving the
             // user to conclude their fields simply did not work on the group they were looking at.
             var behind = await _groupService.GroupsOnOlderSchemaAsync(SelectedProfile!.Id);
-            StatusText = behind.Count == 0
+            var purgedNote = purged == 0
+                ? ""
+                : $" Trash purge removed {purged} item(s) under the new retention.";
+            StatusText = (behind.Count == 0
                 ? $"Saved as field layout v{schema.Version}."
                 : $"Saved as field layout v{schema.Version}. New groups use it; "
                     + $"{behind.Count} existing group(s) stay on their own — open one in Groups and "
-                    + "choose \"Use latest field layout\" to move it.";
-            ProfilesChanged?.Invoke();
+                    + "choose \"Use latest field layout\" to move it.") + purgedNote;
+            // Only claim the schema moved when a version was actually minted. SaveSchemaAsync
+            // short-circuits on an identical layout, and announcing Schema anyway would rebuild
+            // the open group's field editors — discarding a grid cell mid-edit — on every save,
+            // including one that only changed the theme.
+            var change = SettingsChange.Profiles | SettingsChange.Flags;
+            if (schemaChanged)
+            {
+                change |= SettingsChange.Schema;
+            }
+
+            await AnnounceAsync(change);
         }
         catch (Exception ex)
         {

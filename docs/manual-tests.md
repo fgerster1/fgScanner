@@ -387,3 +387,35 @@ Run with `FgScanner.exe --fake-scanner`. Set Source to Feeder so one Scan gives 
 **Also walked 2026-09-16** (Franz, confirmed after the code review)
 - [x] The open, resize and reopen checks on a group under a **non-Evidence** profile that has a memo field (AC-15)
 - [x] The same at **1280 × 1024**, the smallest supported screen (AC-15)
+
+## Settings take effect without a restart (SPEC-2026-004)
+
+Twelve settings used to need the program closed and reopened; two were worse than that. Every row
+below is checked **without relaunching**. Walk them after an upgrade on each station — the last
+two rows in particular are window chrome that no automated test can reach.
+
+**Walked 2026-09-20** (Franz, dev station, against the copy of Jim's data at `D:\Evidence-Scans`)
+
+- [x] Trash retention shows the **stored** value (365 on Jim's data), not 30
+- [x] Theme combo exists under Appearance, and changing it applies on save without a relaunch
+- [x] Full-text search section appears and disappears as the checkbox is toggled and saved
+- [x] A profile built in Settings is in the Groups profile list straight away
+- [x] Editing a profile's fields raises the "Use latest field layout" banner on the group already open
+- [x] Values typed for the next scan survive a settings save
+
+Still open — these need a second pass, and the starred ones were never exercised by hand:
+
+- [ ] Rename a profile: the new name shows in Groups
+- [ ] Delete a profile: it stops being selectable in Groups
+- [ ] Import a `.fgprofile`: it appears in Groups
+- [ ] Set a base folder in Settings, then create a group: it lands in the new folder without asking
+- [ ] Patch-T off and on: the "Separator sheet…" button follows, without a relaunch
+- [ ] *(regression)* Save Settings with **"Only this profile's groups"** ticked and a group open with
+      typed values — the values must survive. This is the configuration that broke twice.
+- [ ] *(regression)* Toggle the search section while **standing in Settings** — the app must not
+      navigate away or crash. WPF writes the cleared selection back; no headless test sees it.
+- [ ] *(regression)* Change the retention, save, and read the status line — it must report how many
+      trash items the purge removed
+- [ ] Save Settings **during a feeder run**, and again **with an annotated sheet in hand**: the change
+      is held, and lands when the run finishes or the sheet is completed or abandoned
+- [ ] Kill the app during a deferred change: nothing is left half-applied on the next launch

@@ -37,6 +37,23 @@ optionally Required (blocks commit), Sticky (carries to the next page), or
 defaulted (tokens: `$(today)`, `$(group)`, `$(counter)`, `$(user)`). Saving
 field changes creates a new schema version; existing groups keep theirs.
 
+**Settings apply when you save them — you do not need to restart.** A profile
+you create, rename, delete or import is in the Groups list straight away, and a
+base folder you set is used by the next group you create. If you change a
+profile's fields while a group is open, that group keeps its own layout and
+shows a banner offering **"Use latest field layout"**; values you have typed for
+the next scan survive, except for a field that no longer exists — the status
+line says how many were dropped. A change made while a scan is running, or while
+a sheet with notes is part-captured, waits until the scan finishes or the sheet
+is completed or abandoned, so a half-captured sheet is never disturbed.
+
+**Appearance.** Settings → Appearance picks the theme — system, light or dark —
+and it applies when you save.
+
+**Trash.** "Keep deleted pages for N days" shows what is actually stored. Change
+it and save, and the purge runs there and then, reporting how many items it
+removed.
+
 **Length and memo (Text fields).** A Text field can carry a **Length** — 1 to
 100 characters — and can be marked **Memo**, which gives it a larger box you
 can resize and raises its limit to 2000. Leave Length blank for no limit. Both

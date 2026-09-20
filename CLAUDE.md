@@ -51,6 +51,8 @@ FgScanner.Cli  (headless fgscanner.exe; Core/Scanning/Data/Ocr/Ai — never App/
 - Hardware access only through `IScanService`. All index/file writes atomic (temp + `File.Replace`). Dates ISO-8601; numbers invariant culture.
 - UI is English-only; user-visible strings are written inline, no .resx (docs/adr/0001).
 - Shortcuts are bound on the main window, so they fire whichever section is showing. `ShortcutRouter` decides which section each one acts on — a new shortcut must say which section it belongs to, and a page key must never reach a section that is not on screen (SPEC-2026-003).
+- **A setting is read where it is used, and a change is announced through `SettingsChanged`** (ADR-0010). The section view models are singletons, so a setting captured in a constructor is frozen until the next launch — that is how twelve settings came to need a restart. A reload is deferred while `ScanViewModel.CaptureInHand`: rebuilding the Scan page mid-sheet strands an as-found capture with no clean partner.
+- **Never clear an `ObservableCollection` that is bound to a `Selector.SelectedItem`** — add and remove the entries that differ. WPF writes the nulled selection back into the view model, which crashed navigation and silently rebuilt an open group. No headless test can see this; check it on the real window.
 
 **Tests:**
 - Business logic must run without a scanner (FakeScanService). OCR tests run real Tesseract (deterministic — never mock the engine). AI tests use MockHttp — never live keys, never network in CI. CSV/PDF assertions via Verify snapshots (scrub PDF /CreationDate /ModDate /ID).

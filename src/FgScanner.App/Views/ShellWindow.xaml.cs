@@ -238,8 +238,15 @@ public partial class ShellWindow : Window
 
     private string? _shownSection;
 
-    private void ShowSection(string section)
+    private void ShowSection(string? section)
     {
+        // A bound Selector can push null here while its items are being rebuilt. That is not a
+        // navigation request, and looking it up by key would throw from a PropertyChanged handler.
+        if (string.IsNullOrEmpty(section))
+        {
+            return;
+        }
+
         if (_sections.TryGetValue(section, out var view))
         {
             if (_shownSection is not null)
@@ -264,6 +271,19 @@ public partial class ShellWindow : Window
             if (section == "Search" && view is SearchView { DataContext: SearchViewModel search })
             {
                 _ = search.RefreshScopesAsync();
+            }
+
+            // Belt and braces beside the change notification: entering a section re-reads what it
+            // shows, so a path the notification misses still cannot leave stale state on screen.
+            if (section == "Groups" && view is GroupsView { DataContext: GroupsViewModel groups })
+            {
+                _ = groups.ReloadProfilesAsync();
+            }
+
+            if (section == "Scan" && view is ScanView { DataContext: ScanViewModel scan }
+                && !scan.CaptureInHand)
+            {
+                _ = scan.LoadFeatureFlagsAsync();
             }
         }
     }

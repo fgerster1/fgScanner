@@ -1,0 +1,298 @@
+using System.IO;
+using FgScanner.App.Services;
+using FgScanner.App.Views;
+using FgScanner.Data;
+using FgScanner.Scanning;
+using Microsoft.EntityFrameworkCore;
+using Xunit;
+
+namespace FgScanner.App.Tests;
+
+/// <summary>
+/// A settings change has to reach the screen that uses it without the operator restarting
+/// the program (SPEC-2026-004). Every test here mutates through <see cref="SettingsViewModel"/>
+/// and then asserts on the SAME <see cref="GroupsViewModel"/> instance that existed before —
+/// rebuilding the view model would prove nothing, because the section view models are
+/// singletons that live for the whole session.
+/// </summary>
+public sealed class SettingsPropagationTests : IDisposable
+{
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "fgscanner-tests", Guid.NewGuid().ToString("N"));
+    private readonly ScanSessionService _sessionService;
+    private readonly GroupService _groupService;
+    private readonly ProfileService _profileService;
+    private readonly IndexingService _indexingService;
+    private readonly TrashService _trashService;
+    private readonly ActiveGroupStore _activeGroup = new();
+    private readonly string _dbPath;
+
+    public SettingsPropagationTests()
+    {
+        Directory.CreateDirectory(_root);
+        _dbPath = Path.Combine(_root, "test.db");
+        using (var db = new FgScannerDbContext(DbBootstrapper.BuildOptions(_dbPath)))
+        {
+            db.Database.Migrate();
+        }
+
+        _sessionService = new ScanSessionService(Path.Combine(_root, "recovery"));
+        var factory = new TestFactory(_dbPath);
+        _groupService = new GroupService(factory);
+        _profileService = new ProfileService(factory);
+        _indexingService = new IndexingService(factory, _profileService, new FgScanner.Core.Index.IndexExporter());
+        _trashService = new TrashService(factory, Path.Combine(_root, "trash"));
+    }
+
+    public void Dispose()
+    {
+        _sessionService.Dispose();
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        try
+        {
+            Directory.Delete(_root, recursive: true);
+        }
+        catch (IOException)
+        {
+        }
+    }
+
+    private sealed class TestFactory(string dbPath) : IDbContextFactory<FgScannerDbContext>
+    {
+        public FgScannerDbContext CreateDbContext() => new(DbBootstrapper.BuildOptions(dbPath));
+    }
+
+    private RetroProcessService CreateRetroService() => new(
+        new TestFactory(_dbPath), _groupService, _trashService);
+
+    private CaptureTriageService CreateTriageService() => new(
+        new TestFactory(_dbPath), new AppSettingsService(new TestFactory(_dbPath)));
+
+    private PageEditingToolset CreateToolset() => new(
+        new FgScanner.Scanning.Editing.ImageEditor(),
+        new FgScanner.Scanning.Export.PdfExportService(),
+        new FgScanner.Scanning.Export.ImageExportService(),
+        new FgScanner.Scanning.Import.FileImportService(),
+        new ReorderService(new TestFactory(_dbPath)),
+        new OcrQueueService(new TestFactory(_dbPath)),
+        new AiQueueService(new TestFactory(_dbPath)),
+        CreateRetroService(),
+        new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false),
+        new AppSettingsService(new TestFactory(_dbPath)),
+        CreateTriageService(),
+        new DuplicateFinder(new TestFactory(_dbPath)));
+
+    /// <summary>
+    /// The shell is what wires Settings to the other sections, the same way it already wires the
+    /// "scan into this group" round trip — so the wiring can be exercised without a window.
+    /// </summary>
+    private async Task<(GroupsViewModel Groups, SettingsViewModel Settings, ScanViewModel Scan)> CreateWiredShellAsync()
+    {
+        var appSettings = new AppSettingsService(new TestFactory(_dbPath));
+        var groups = new GroupsViewModel(
+            _groupService, _profileService, _indexingService, _trashService, _activeGroup,
+            CreateToolset(), CreateRetroService());
+        var settings = new SettingsViewModel(
+            _profileService, _trashService, appSettings,
+            new FgScanner.Ocr.LanguageManager(Path.Combine(_root, "tessdata")),
+            new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false),
+            _groupService);
+        var scan = new ScanViewModel(
+            new FakeScanService(), _sessionService, _groupService, _indexingService, _activeGroup,
+            new ProfileOcrTrigger(_profileService, new OcrQueueService(new TestFactory(_dbPath))),
+            CreateToolset(), _trashService);
+
+        _ = new ShellViewModel(
+            scan,
+            groups,
+            new SearchViewModel(new SearchService(new TestFactory(_dbPath)), _groupService),
+            new TrashViewModel(_trashService, _activeGroup),
+            settings,
+            appSettings);
+
+        // The constructors kick off their own loads; settle them so the "before" state is known
+        // and the assertions are about the change under test, not about startup timing.
+        await _profileService.EnsureDefaultAsync();
+        await groups.ReloadProfilesAsync();
+        return (groups, settings, scan);
+    }
+
+    [Fact]
+    public async Task A_new_profile_reaches_the_Groups_list_without_rebuilding_the_view_model()
+    {
+        var (groups, settings, _) = await CreateWiredShellAsync();
+        Assert.DoesNotContain(groups.Profiles, p => p.Name == "Cases");
+
+        settings.NewProfileName = "Cases";
+        await settings.CreateProfileCommand.ExecuteAsync(null);
+
+        Assert.Contains(groups.Profiles, p => p.Name == "Cases");
+    }
+
+    [Fact]
+    public async Task A_renamed_profile_shows_its_new_name_in_the_Groups_list()
+    {
+        var (groups, settings, _) = await CreateWiredShellAsync();
+        settings.NewProfileName = "Cases";
+        await settings.CreateProfileCommand.ExecuteAsync(null);
+
+        settings.NewProfileName = "Case files";
+        await settings.RenameProfileCommand.ExecuteAsync(null);
+
+        Assert.Contains(groups.Profiles, p => p.Name == "Case files");
+        Assert.DoesNotContain(groups.Profiles, p => p.Name == "Cases");
+    }
+
+    [Fact]
+    public async Task The_Evidence_profile_is_selectable_in_Groups_as_soon_as_it_is_built()
+    {
+        var (groups, settings, _) = await CreateWiredShellAsync();
+
+        await settings.CreateEvidenceProfileCommand.ExecuteAsync(null);
+
+        Assert.Contains(groups.Profiles, p => p.Name == ProfileService.EvidenceProfileName);
+    }
+
+    /// <summary>
+    /// Creating a group reads BaseDirectory off the Profile entity the Groups list is holding
+    /// (GroupsViewModel.CreateGroupAsync). That entity came from a context disposed at startup, so
+    /// a base folder changed in Settings was invisible until the next launch.
+    /// </summary>
+    [Fact]
+    public async Task A_base_folder_changed_in_Settings_reaches_the_Groups_view_model()
+    {
+        var (groups, settings, _) = await CreateWiredShellAsync();
+        settings.NewProfileName = "Cases";
+        await settings.CreateProfileCommand.ExecuteAsync(null);
+
+        var profileId = groups.Profiles.Single(p => p.Name == "Cases").Id;
+        var folder = Path.Combine(_root, "case-work");
+        await _profileService.UpdateBaseDirectoryAsync(
+            profileId, folder, TestContext.Current.CancellationToken);
+        await groups.ReloadProfilesAsync();
+        Assert.Equal(folder, groups.Profiles.Single(p => p.Id == profileId).BaseDirectory);
+
+        groups.SelectedProfile = groups.Profiles.Single(p => p.Id == profileId);
+        settings.SelectedProfile = settings.Profiles.Single(p => p.Id == profileId);
+        await settings.ClearBaseDirectoryCommand.ExecuteAsync(null);
+
+        Assert.Equal("", groups.Profiles.Single(p => p.Id == profileId).BaseDirectory);
+    }
+
+    /// <summary>
+    /// Reloading the GROUP list replaces every Group instance, which changes the selection by
+    /// reference and rebuilds the detail pane from scratch — taking the values typed for the next
+    /// scan with it. A profile change must not cost the operator their typing.
+    /// </summary>
+    [Fact]
+    public async Task A_profile_change_does_not_disturb_the_group_already_open()
+    {
+        var (groups, settings, _) = await CreateWiredShellAsync();
+        var profile = await _profileService.CreateAsync("Invoices", TestContext.Current.CancellationToken);
+        await _profileService.SaveSchemaAsync(
+            profile.Id,
+            [new FieldDefinition { Name = "Vendor", Type = FieldType.Text, Order = 0 }],
+            TestContext.Current.CancellationToken);
+        var schema = await _profileService.GetLatestSchemaAsync(
+            profile.Id, TestContext.Current.CancellationToken);
+        var group = await _groupService.CreateGroupAsync(
+            _root, "Batch1", (profile.Id, schema.Version), TestContext.Current.CancellationToken);
+
+        await groups.LoadDetailAsync(group);
+        var detail = groups.Detail!;
+        detail.PendingFields.Single(f => f.Field.Name == "Vendor").Value = "Summit Racing";
+
+        settings.NewProfileName = "Another profile";
+        await settings.CreateProfileCommand.ExecuteAsync(null);
+
+        Assert.Same(detail, groups.Detail);
+        Assert.Equal("Summit Racing", groups.Detail!.PendingFields.Single(f => f.Field.Name == "Vendor").Value);
+    }
+
+    /// <summary>
+    /// With "Only this profile's groups" ticked, reloading the profile list used to take the open
+    /// group down with it: every Profile comes back as a new instance, so the selection changed by
+    /// reference, which re-ran the group query, which replaced every Group instance, which rebuilt
+    /// the detail pane — losing typed values, the undo history and the row selection.
+    /// </summary>
+    [Fact]
+    public async Task A_profile_change_does_not_disturb_the_open_group_when_filtering_by_profile()
+    {
+        var (groups, settings, _) = await CreateWiredShellAsync();
+        var profile = await _profileService.CreateAsync("Invoices", TestContext.Current.CancellationToken);
+        await _profileService.SaveSchemaAsync(
+            profile.Id,
+            [new FieldDefinition { Name = "Vendor", Type = FieldType.Text, Order = 0 }],
+            TestContext.Current.CancellationToken);
+        var schema = await _profileService.GetLatestSchemaAsync(
+            profile.Id, TestContext.Current.CancellationToken);
+        var group = await _groupService.CreateGroupAsync(
+            _root, "Batch1", (profile.Id, schema.Version), TestContext.Current.CancellationToken);
+
+        await groups.ReloadProfilesAsync();
+        groups.SelectedProfile = groups.Profiles.Single(p => p.Id == profile.Id);
+        groups.OnlyCurrentProfile = true;
+        await groups.LoadDetailAsync(group);
+        var detail = groups.Detail!;
+        detail.PendingFields.Single(f => f.Field.Name == "Vendor").Value = "Summit Racing";
+
+        settings.NewProfileName = "Another profile";
+        await settings.CreateProfileCommand.ExecuteAsync(null);
+
+        Assert.Same(detail, groups.Detail);
+        Assert.Equal("Summit Racing", groups.Detail!.PendingFields.Single(f => f.Field.Name == "Vendor").Value);
+    }
+
+    /// <summary>
+    /// Saving Settings without touching the fields mints no new schema version, so nothing about
+    /// the open group's layout has changed. Rebuilding its editors anyway discards a grid cell
+    /// being edited, and it happens on every save — changing only the theme, only a shortcut.
+    /// </summary>
+    [Fact]
+    public async Task A_save_that_changes_no_field_does_not_rebuild_the_open_group()
+    {
+        var (groups, settings, _) = await CreateWiredShellAsync();
+        settings.NewProfileName = "Invoices";
+        await settings.CreateProfileCommand.ExecuteAsync(null);
+
+        // Save once so the stored layout matches what the screen is holding; the SECOND save is
+        // the no-op under test. Changing the fields behind the screen's back would make the next
+        // save a real change, which is not what this pins.
+        await settings.SaveCommand.ExecuteAsync(null);
+
+        var profile = groups.Profiles.Single(p => p.Name == "Invoices");
+        var schema = await _profileService.GetLatestSchemaAsync(
+            profile.Id, TestContext.Current.CancellationToken);
+        var group = await _groupService.CreateGroupAsync(
+            _root, "Batch2", (profile.Id, schema.Version), TestContext.Current.CancellationToken);
+        await groups.LoadDetailAsync(group);
+
+        var rebuilds = 0;
+        groups.Detail!.SchemaLoaded += () => rebuilds++;
+
+        await settings.SaveCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, rebuilds);
+    }
+
+    /// <summary>
+    /// Rebuilding the Scan page's state mid-sheet would strand the as-found capture with no clean
+    /// partner — a whole-group refusal at import, discovered long after the box is re-shelved
+    /// (CLAUDE.md). A capture in hand therefore wins, and the change lands when the sheet does.
+    /// </summary>
+    [Fact]
+    public async Task A_settings_change_during_an_annotated_sheet_waits_for_the_sheet()
+    {
+        var (groups, settings, scan) = await CreateWiredShellAsync();
+        scan.Annotated.Start();
+        Assert.True(scan.AnnotatedActive);
+
+        settings.NewProfileName = "Cases";
+        await settings.CreateProfileCommand.ExecuteAsync(null);
+
+        Assert.DoesNotContain(groups.Profiles, p => p.Name == "Cases");
+
+        await scan.CancelAnnotatedCommand.ExecuteAsync(null);
+
+        Assert.Contains(groups.Profiles, p => p.Name == "Cases");
+    }
+}
