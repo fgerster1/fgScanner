@@ -465,12 +465,12 @@ _Not a System-tier change — no data migration._
 
 ## 21 · Definition of done
 
-- [ ] All acceptance criteria met
-- [ ] Failing tests written first, now passing
-- [ ] Full suite green (`dotnet test -c Release`, ≥ 692)
-- [ ] `/code-review max` run, findings resolved or accepted in writing
-- [ ] Security review — _not applicable, no web surface_
-- [ ] Documentation updated per §18
+- [x] All acceptance criteria met — AC-1..AC-12; AC-3 and AC-9 have the caveats noted below
+- [x] Failing tests written first, now passing — with the exceptions recorded below
+- [x] Full suite green (`dotnet test -c Release`, **714 passed**, baseline was 692)
+- [x] Cold code review run, findings resolved or accepted in writing (see §22)
+- [x] Security review — _not applicable, no web surface_
+- [x] Documentation updated per §18
 - [ ] Installed from the built installer and verified on the copy of Jim's data
 - [ ] Rollback tested or explicitly waived by Franz
 
@@ -480,5 +480,55 @@ _Not a System-tier change — no data migration._
 |---|---|
 | **Review round answered** | ☑ 2026-09-20 — [Round A, part 1 of 3](https://claude.ai/artifact/CCZuGgTi2dm7YK4wqDDbdx) · db doc `review/SPEC-2026-004-005-rA-p1` |
 | **Franz approved** | ☑ 2026-09-20 (verdict `approve`, all items option (a)) |
-| **Built** | ☐ date: |
-| **Verified in production** | ☐ date: |
+| **Built** | ☑ 2026-09-20 — branch `phase-23-settings-live`, 6 commits, 714 tests green |
+| **Verified in production** | ☐ — not yet on Jim's station; he stays on the older build until this is installed here first |
+
+### Code review — findings and their resolution
+
+A cold reviewer (no knowledge of how the code came to be written) read the four
+implementation commits against §10, §12 and §16 on 2026-09-20. Its headline: *the suite was green
+for exactly the reason two of the bugs survived* — every test runs headless, and both defects live
+in what WPF writes back into a view model when a bound list is cleared.
+
+**Fixed** (commit "Fix the defects the cold review found"):
+
+1. `ApplySections` cleared the collection bound to the navigation `ListBox`'s `SelectedItem`.
+   WPF pushed null back, which navigated to nothing and threw from inside a `PropertyChanged`
+   handler; and the "fall back to Groups" branch then fired on *any* search-flag toggle, not only
+   when the section on screen disappeared. Now adds/removes only the differing entries, and
+   `ShowSection` ignores a null.
+2. `ReloadProfilesAsync` replaced every `Profile` instance, so the selection changed by reference
+   on every save. With **"Only this profile's groups"** ticked that cascaded into rebuilding the
+   open group's detail pane — losing typed values, undo history and row selection. R2 and R3 were
+   both violated in that configuration, and the Prompt 3 fix had missed it. Only a change of
+   profile id counts now.
+3. A reload that threw escaped `ScanAsync` unhandled — a crash at the end of a scan. `ApplyAsync`
+   catches and logs, and a failed apply keeps the change pending rather than dropping it (§12).
+4. `SaveToGroupAsync` never raised `CaptureSettled`, so a change deferred during an annotated
+   sheet was stranded when the sheet completed normally: the clean capture is staged, not
+   auto-saved, so the scan ends with the sequence still in hand.
+5. `Schema` was announced on every save although `SaveSchemaAsync` short-circuits on an identical
+   layout — rebuilding the open group's editors when only the theme had changed (§12 row 1, A2).
+6. A throwing subscriber reported a committed save as "Save failed" and abandoned later handlers.
+7. The constructor's retention and theme loads could be beaten by a save, writing 30 over a stored
+   365 with no purge — §04 row 10 returning as a race. `Save` now awaits `Ready`.
+8. The purge count reached the status line only when no group was behind its schema (§16 R7).
+9. §14 observability was unimplemented; the deferral, the apply and every failure are now logged.
+
+**Accepted, not fixed:**
+
+- `SchemaNoticeTests.A_refresh_leaves_NoteState_unsticky` would pass against a stub: it asserts a
+  property of the seeded Evidence profile rather than of the refresh. Kept as a regression guard
+  and labelled as one. R5 itself is clean — no refresh path writes a field flag.
+- AC-3's "a new group uses the base folder set since startup" is proven through the
+  `ClearBaseDirectory` path only; setting a folder goes through a `OpenFolderDialog` that a
+  headless test cannot drive. The manual row covers it.
+- AC-2's delete and import cases are not automated — both are behind a `MessageBox` / file dialog.
+  Manual rows cover them.
+- A latent race in two tests (`FeatureSearch`/`FeaturePatchT` set after construction, racing the
+  constructor's fire-and-forget load) is noted rather than fixed; `Ready` covers retention and
+  theme but not the feature flags.
+
+**Verified clean by the review:** no NAPS2.Lib reference, no banned package, no change to the
+evidence export contract (no field name, `index.json` key or `manifest.json` entry touched), and
+R4 (batch defaults never re-expanded through `TokenExpander`) and R5 hold.
