@@ -265,6 +265,19 @@ public partial class ShellWindow : Window
             {
                 _ = search.RefreshScopesAsync();
             }
+
+            // Belt and braces beside the change notification: entering a section re-reads what it
+            // shows, so a path the notification misses still cannot leave stale state on screen.
+            if (section == "Groups" && view is GroupsView { DataContext: GroupsViewModel groups })
+            {
+                _ = groups.ReloadProfilesAsync();
+            }
+
+            if (section == "Scan" && view is ScanView { DataContext: ScanViewModel scan }
+                && !scan.CaptureInHand)
+            {
+                _ = scan.LoadFeatureFlagsAsync();
+            }
         }
     }
 }

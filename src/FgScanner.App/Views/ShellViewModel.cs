@@ -19,13 +19,15 @@ public sealed partial class ShellViewModel : ObservableObject
         TrashViewModel = trashViewModel;
         SettingsViewModel = settingsViewModel;
 
-        // Feature.Search flag (PLAN prompt 10): the section is hidden entirely when off.
-        // Resolved once at startup — toggling it in Settings applies on next launch.
-        var searchEnabled = FeatureFlags
-            .IsEnabledAsync(appSettings, FeatureFlags.Search).GetAwaiter().GetResult();
-        Sections = searchEnabled
-            ? ["Scan", "Groups", "Search", "Trash", "Settings"]
-            : ["Scan", "Groups", "Trash", "Settings"];
+        _appSettings = appSettings;
+
+        // Feature.Search flag (PLAN prompt 10): the section is hidden entirely when off. The list
+        // is rebuilt whenever the flag moves, so the setting no longer waits for a relaunch.
+        ApplySections(FeatureFlags
+            .IsEnabledAsync(appSettings, FeatureFlags.Search).GetAwaiter().GetResult());
+
+        // A capture in hand wins over a settings change; the Scan page says when it is free again.
+        ScanViewModel.CaptureSettled += OnCaptureSettledAsync;
 
         // A settings change has to reach the section that uses it while the program is running:
         // the section view models are singletons built once at startup, so anything they read in
@@ -58,15 +60,73 @@ public sealed partial class ShellViewModel : ObservableObject
         };
     }
 
+    private readonly AppSettingsService _appSettings;
+
+    /// <summary>What a settings change asked for while paper was in hand, applied once it is not.</summary>
+    private SettingsChange _deferred;
+
     private async Task OnSettingsChangedAsync(SettingsChange change)
     {
-        if (change.HasFlag(SettingsChange.Profiles))
+        if (ScanViewModel.CaptureInHand)
+        {
+            _deferred |= change;
+            return;
+        }
+
+        await ApplyAsync(change);
+    }
+
+    private async Task OnCaptureSettledAsync()
+    {
+        if (_deferred == SettingsChange.None)
+        {
+            return;
+        }
+
+        var change = _deferred;
+        _deferred = SettingsChange.None;
+        await ApplyAsync(change);
+    }
+
+    private async Task ApplyAsync(SettingsChange change)
+    {
+        if (change.HasFlag(SettingsChange.Profiles) || change.HasFlag(SettingsChange.Schema))
         {
             // ReloadProfilesAsync re-reads the Profile entities themselves, not just their names:
             // creating a group reads BaseDirectory off the instance this list holds, and the one
             // loaded at startup came from a context disposed long ago.
             await GroupsViewModel.ReloadProfilesAsync();
             await GroupsViewModel.RefreshCommand.ExecuteAsync(null);
+        }
+
+        if (change.HasFlag(SettingsChange.Flags))
+        {
+            await ScanViewModel.LoadFeatureFlagsAsync();
+            ApplySections(await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.Search));
+        }
+    }
+
+    private void ApplySections(bool searchEnabled)
+    {
+        string[] wanted = searchEnabled
+            ? ["Scan", "Groups", "Search", "Trash", "Settings"]
+            : ["Scan", "Groups", "Trash", "Settings"];
+        if (Sections.SequenceEqual(wanted))
+        {
+            return;
+        }
+
+        Sections.Clear();
+        foreach (var section in wanted)
+        {
+            Sections.Add(section);
+        }
+
+        // Hiding the section on screen would leave the shell pointing at one the list no longer
+        // offers, and the content host showing nothing at all.
+        if (!Sections.Contains(SelectedSection))
+        {
+            SelectedSection = "Groups";
         }
     }
 
@@ -88,7 +148,11 @@ public sealed partial class ShellViewModel : ObservableObject
         }
     }
 
-    public IReadOnlyList<string> Sections { get; }
+    /// <summary>
+    /// Observable, because the search section can be turned on or off while the program runs and
+    /// a get-only list could not tell the navigation that it had.
+    /// </summary>
+    public System.Collections.ObjectModel.ObservableCollection<string> Sections { get; } = [];
 
     public ScanViewModel ScanViewModel { get; }
 

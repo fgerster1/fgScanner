@@ -231,7 +231,7 @@
                           IsChecked="{Binding FeaturePatchT}" Margin="0,0,0,4" />
                 <CheckBox Content="Blank-page policy (enables the per-profile blank handling above)"
                           IsChecked="{Binding FeatureBlankPolicy}" Margin="0,0,0,4" />
-                <CheckBox Content="Full-text search section (applies on next launch)"
+                <CheckBox Content="Full-text search section"
                           IsChecked="{Binding FeatureSearch}" Margin="0,0,0,4" />
                 <CheckBox Content="Commit hook (run a command and/or POST a webhook when a group is committed)"
                           IsChecked="{Binding FeatureCommitHook}" Margin="0,0,0,4" />

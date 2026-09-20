@@ -99,6 +99,60 @@ public sealed class ShellTests : IDisposable
         Assert.Equal(["Scan", "Groups", "Trash", "Settings"], shell.Sections);
     }
 
+    private (ShellViewModel Shell, SettingsViewModel Settings) CreateShellWithSettings(
+        AppSettingsService appSettings)
+    {
+        var settings = new SettingsViewModel(
+            _profileService, _trashService, appSettings,
+            new FgScanner.Ocr.LanguageManager(Path.Combine(_root, "tessdata")),
+            new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false),
+            _groupService);
+        var shell = new ShellViewModel(
+            CreateScanViewModel(),
+            new GroupsViewModel(_groupService, _profileService, _indexingService, _trashService, _activeGroup, CreateToolset(), CreateRetroService()),
+            new SearchViewModel(new SearchService(new TestFactory(_dbPath)), _groupService),
+            new TrashViewModel(_trashService, _activeGroup),
+            settings,
+            appSettings);
+        return (shell, settings);
+    }
+
+    /// <summary>
+    /// The section list used to be built once in the constructor, so the label on the setting
+    /// read "(applies on next launch)". It applies now.
+    /// </summary>
+    [Fact]
+    public async Task Turning_the_search_section_off_applies_without_a_restart()
+    {
+        var (shell, settings) = CreateShellWithSettings(new AppSettingsService(new TestFactory(_dbPath)));
+        Assert.Contains("Search", shell.Sections);
+
+        settings.NewProfileName = "Cases";
+        await settings.CreateProfileCommand.ExecuteAsync(null);
+        settings.FeatureSearch = false;
+        await settings.SaveCommand.ExecuteAsync(null);
+
+        Assert.DoesNotContain("Search", shell.Sections);
+    }
+
+    /// <summary>
+    /// Hiding the section the operator is looking at would otherwise leave the shell pointing at
+    /// a section that is no longer in the list, and the content host showing nothing.
+    /// </summary>
+    [Fact]
+    public async Task Hiding_the_section_being_shown_falls_back_to_Groups()
+    {
+        var (shell, settings) = CreateShellWithSettings(new AppSettingsService(new TestFactory(_dbPath)));
+        shell.SelectedSection = "Search";
+
+        settings.NewProfileName = "Cases";
+        await settings.CreateProfileCommand.ExecuteAsync(null);
+        settings.FeatureSearch = false;
+        await settings.SaveCommand.ExecuteAsync(null);
+
+        Assert.Equal("Groups", shell.SelectedSection);
+    }
+
     [Fact]
     public void Shell_starts_on_scan_section()
     {

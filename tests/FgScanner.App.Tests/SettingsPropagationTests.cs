@@ -85,7 +85,7 @@ public sealed class SettingsPropagationTests : IDisposable
     /// The shell is what wires Settings to the other sections, the same way it already wires the
     /// "scan into this group" round trip — so the wiring can be exercised without a window.
     /// </summary>
-    private async Task<(GroupsViewModel Groups, SettingsViewModel Settings)> CreateWiredShellAsync()
+    private async Task<(GroupsViewModel Groups, SettingsViewModel Settings, ScanViewModel Scan)> CreateWiredShellAsync()
     {
         var appSettings = new AppSettingsService(new TestFactory(_dbPath));
         var groups = new GroupsViewModel(
@@ -96,12 +96,13 @@ public sealed class SettingsPropagationTests : IDisposable
             new FgScanner.Ocr.LanguageManager(Path.Combine(_root, "tessdata")),
             new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false),
             _groupService);
+        var scan = new ScanViewModel(
+            new FakeScanService(), _sessionService, _groupService, _indexingService, _activeGroup,
+            new ProfileOcrTrigger(_profileService, new OcrQueueService(new TestFactory(_dbPath))),
+            CreateToolset(), _trashService);
 
         _ = new ShellViewModel(
-            new ScanViewModel(
-                new FakeScanService(), _sessionService, _groupService, _indexingService, _activeGroup,
-                new ProfileOcrTrigger(_profileService, new OcrQueueService(new TestFactory(_dbPath))),
-                CreateToolset(), _trashService),
+            scan,
             groups,
             new SearchViewModel(new SearchService(new TestFactory(_dbPath)), _groupService),
             new TrashViewModel(_trashService, _activeGroup),
@@ -112,13 +113,13 @@ public sealed class SettingsPropagationTests : IDisposable
         // and the assertions are about the change under test, not about startup timing.
         await _profileService.EnsureDefaultAsync();
         await groups.ReloadProfilesAsync();
-        return (groups, settings);
+        return (groups, settings, scan);
     }
 
     [Fact]
     public async Task A_new_profile_reaches_the_Groups_list_without_rebuilding_the_view_model()
     {
-        var (groups, settings) = await CreateWiredShellAsync();
+        var (groups, settings, _) = await CreateWiredShellAsync();
         Assert.DoesNotContain(groups.Profiles, p => p.Name == "Cases");
 
         settings.NewProfileName = "Cases";
@@ -130,7 +131,7 @@ public sealed class SettingsPropagationTests : IDisposable
     [Fact]
     public async Task A_renamed_profile_shows_its_new_name_in_the_Groups_list()
     {
-        var (groups, settings) = await CreateWiredShellAsync();
+        var (groups, settings, _) = await CreateWiredShellAsync();
         settings.NewProfileName = "Cases";
         await settings.CreateProfileCommand.ExecuteAsync(null);
 
@@ -144,7 +145,7 @@ public sealed class SettingsPropagationTests : IDisposable
     [Fact]
     public async Task The_Evidence_profile_is_selectable_in_Groups_as_soon_as_it_is_built()
     {
-        var (groups, settings) = await CreateWiredShellAsync();
+        var (groups, settings, _) = await CreateWiredShellAsync();
 
         await settings.CreateEvidenceProfileCommand.ExecuteAsync(null);
 
@@ -159,7 +160,7 @@ public sealed class SettingsPropagationTests : IDisposable
     [Fact]
     public async Task A_base_folder_changed_in_Settings_reaches_the_Groups_view_model()
     {
-        var (groups, settings) = await CreateWiredShellAsync();
+        var (groups, settings, _) = await CreateWiredShellAsync();
         settings.NewProfileName = "Cases";
         await settings.CreateProfileCommand.ExecuteAsync(null);
 
@@ -175,5 +176,27 @@ public sealed class SettingsPropagationTests : IDisposable
         await settings.ClearBaseDirectoryCommand.ExecuteAsync(null);
 
         Assert.Equal("", groups.Profiles.Single(p => p.Id == profileId).BaseDirectory);
+    }
+
+    /// <summary>
+    /// Rebuilding the Scan page's state mid-sheet would strand the as-found capture with no clean
+    /// partner — a whole-group refusal at import, discovered long after the box is re-shelved
+    /// (CLAUDE.md). A capture in hand therefore wins, and the change lands when the sheet does.
+    /// </summary>
+    [Fact]
+    public async Task A_settings_change_during_an_annotated_sheet_waits_for_the_sheet()
+    {
+        var (groups, settings, scan) = await CreateWiredShellAsync();
+        scan.Annotated.Start();
+        Assert.True(scan.AnnotatedActive);
+
+        settings.NewProfileName = "Cases";
+        await settings.CreateProfileCommand.ExecuteAsync(null);
+
+        Assert.DoesNotContain(groups.Profiles, p => p.Name == "Cases");
+
+        await scan.CancelAnnotatedCommand.ExecuteAsync(null);
+
+        Assert.Contains(groups.Profiles, p => p.Name == "Cases");
     }
 }

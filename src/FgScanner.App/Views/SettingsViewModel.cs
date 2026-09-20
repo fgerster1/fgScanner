@@ -100,7 +100,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _featureBlankPolicy;
 
-    /// <summary>Applies on next launch — the section list is built at startup.</summary>
+    /// <summary>Shows or hides the Search section; applied on save, no relaunch (SPEC-2026-004).</summary>
     [ObservableProperty]
     private bool _featureSearch = true;
 
