@@ -191,8 +191,19 @@ public partial class RecordEditorWindow : Window
     {
         // An unmeasured pane would clamp every box to nothing, and a box the operator has just
         // dragged is theirs — a restore arriving afterwards must not snap it back.
-        if (PaneWidth() <= 0 || _resizedMemos.Contains(name) || !_layout.Memo.TryGetValue(name, out var stored))
+        if (PaneWidth() <= 0 || _resizedMemos.Contains(name))
         {
+            return;
+        }
+
+        // Nothing stored for this field: open at the default rather than at the XAML minimum. The
+        // box already wrapped, but two lines of a 2000-character note is not something anyone can
+        // check, so every field had to be dragged before it could be read (SPEC-2026-005).
+        if (!_layout.Memo.TryGetValue(name, out var stored))
+        {
+            var fallback = RecordEditorLayoutStore.DefaultMemo(PaneWidth());
+            box.Width = fallback.Width;
+            box.Height = Pixels(box, fallback.Height);
             return;
         }
 

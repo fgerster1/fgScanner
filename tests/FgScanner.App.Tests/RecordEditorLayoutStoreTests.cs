@@ -215,6 +215,34 @@ public sealed class RecordEditorLayoutStoreTests : IDisposable
     }
 
     /// <summary>
+    /// The size a memo box opens at when nothing is stored has to survive the clamp it will be
+    /// passed through, or it would open at one size and snap to another when first measured.
+    /// </summary>
+    [Theory]
+    [InlineData(400)]
+    [InlineData(520)]
+    [InlineData(150)]
+    public void The_default_memo_size_is_already_legal(double paneWidth)
+    {
+        var fallback = RecordEditorLayoutStore.DefaultMemo(paneWidth);
+
+        Assert.Equal(fallback, RecordEditorLayoutStore.ClampMemo(fallback, paneWidth));
+        Assert.Equal(RecordEditorLayoutStore.DefaultMemoLines, fallback.Height);
+        Assert.Equal(paneWidth, fallback.Width);
+    }
+
+    /// <summary>
+    /// The default must sit above the floor a dragged box is held to, or a box the operator
+    /// deliberately shrank would come back taller than one they never touched.
+    /// </summary>
+    [Fact]
+    public void The_default_is_taller_than_the_smallest_a_box_may_be_dragged_to()
+    {
+        Assert.True(RecordEditorLayoutStore.DefaultMemoLines > RecordEditorLayoutStore.MinMemoLines);
+        Assert.True(RecordEditorLayoutStore.DefaultMemoLines <= RecordEditorLayoutStore.MaxMemoLines);
+    }
+
+    /// <summary>
     /// The box on screen has a minimum width of its own. Restoring anything narrower renders at that
     /// minimum and the next save writes the wider number back, so a stored size would drift on its own.
     /// </summary>

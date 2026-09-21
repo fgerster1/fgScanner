@@ -32,6 +32,19 @@ public sealed class RecordEditorLayoutStore(AppSettingsService settings, Serilog
 
     public const double MaxMemoLines = 20;
 
+    /// <summary>
+    /// How tall a memo box opens before anybody has dragged one (SPEC-2026-005 §05 Q1a). Four
+    /// lines: enough to read a stored note without resizing, which was the complaint — the box
+    /// wrapped correctly but opened at about two lines, so every field needed dragging first.
+    ///
+    /// Fixed, deliberately NOT derived from the field's character limit: a field's width and its
+    /// length are independent (ADR-0009), and that decision stands.
+    /// </summary>
+    public const double DefaultMemoLines = 4;
+
+    /// <summary>The size a memo box opens at when nothing was stored for it: full pane, four lines.</summary>
+    public static MemoSize DefaultMemo(double paneWidth) => ClampMemo(new MemoSize(paneWidth, DefaultMemoLines), paneWidth);
+
     private readonly Serilog.ILogger _log = log ?? Serilog.Log.Logger;
 
     private readonly object _saveLock = new();
@@ -50,7 +63,24 @@ public sealed class RecordEditorLayoutStore(AppSettingsService settings, Serilog
         }
 
         var stored = json.Length == 0 ? null : Parse(json, groupId);
-        return Clamp(stored ?? Defaults(windowWidth, windowHeight), windowWidth, windowHeight);
+        var clamped = Clamp(stored ?? Defaults(windowWidth, windowHeight), windowWidth, windowHeight);
+
+        // "My memo box keeps resizing itself" is otherwise guesswork: a size saved on a wider pane
+        // is silently fitted to this one, and nothing said so.
+        if (stored is not null)
+        {
+            foreach (var (name, size) in stored.Memo)
+            {
+                if (clamped.Memo.TryGetValue(name, out var fitted) && fitted != size)
+                {
+                    _log.Debug(
+                        "Memo box {Field} restored at {Width}x{Height} lines instead of {StoredWidth}x{StoredHeight}",
+                        name, fitted.Width, fitted.Height, size.Width, size.Height);
+                }
+            }
+        }
+
+        return clamped;
     }
 
     public async Task SaveAsync(Guid groupId, RecordEditorLayout layout, CancellationToken cancellationToken = default)
