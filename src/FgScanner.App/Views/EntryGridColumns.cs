@@ -78,11 +78,7 @@ public static class EntryGridColumns
                     IsReadOnly = isBatch,
                 };
                 TextLengthGuard.SetLimit(column, field.MaxLength);
-                if (field.Memo)
-                {
-                    column.ElementStyle = OneLine();
-                }
-
+                column.ElementStyle = OneLine();
                 grid.Columns.Add(column);
             }
         }
@@ -96,7 +92,13 @@ public static class EntryGridColumns
         }
     }
 
-    /// <summary>A memo reads as one line in the grid, trimmed with an ellipsis; the value itself is untouched.</summary>
+    /// <summary>
+    /// Every text value reads as one line in the grid, trimmed with an ellipsis; the value itself
+    /// is untouched. This used to be the memo flag's job, on the assumption that only a memo holds
+    /// a long value — but the field that overflowed on this station holds 1,398 characters and was
+    /// never marked as one. Without the ellipsis a value stops at the cell edge with nothing
+    /// saying it continues, so a truncated value reads as the whole value.
+    /// </summary>
     private static Style OneLine()
     {
         var style = new Style(typeof(TextBlock), DataGridTextColumn.DefaultElementStyle);

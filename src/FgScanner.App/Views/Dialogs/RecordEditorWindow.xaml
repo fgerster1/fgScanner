@@ -1,4 +1,4 @@
-<Window x:Class="FgScanner.App.Views.Dialogs.RecordEditorWindow"
+﻿<Window x:Class="FgScanner.App.Views.Dialogs.RecordEditorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:FgScanner.App.Views"
@@ -25,7 +25,11 @@
             <Grid Margin="0,0,0,8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" SharedSizeGroup="FormLabel" />
-                    <ColumnDefinition Width="*" />
+                    <!-- The label column is Auto and a field name has no length limit, so a long
+                         one can take the whole pane and leave the input at zero width. The form no
+                         longer scrolls sideways, so there would be no way back to it: MinWidth
+                         makes the label clip instead of the box disappearing. -->
+                    <ColumnDefinition Width="*" MinWidth="120" />
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -35,40 +39,47 @@
                 <TextBlock x:Name="FieldLabel" Grid.Row="0" Grid.Column="0" Text="{Binding Label}"
                            Margin="0,5,8,0" VerticalAlignment="Top" />
 
-                <TextBox Grid.Row="0" Grid.Column="1"
+                <!-- Every text field wraps, memo or not. A one-line box holding a long value can
+                     only be read by scrolling through it a few characters at a time, and on this
+                     station a field that was never marked as a memo still holds 1,398 characters
+                     of evidence. It grows with its text and reflows when the divider moves; the
+                     character limit is unchanged and still decides what may be typed. -->
+                <TextBox Grid.Row="0" Grid.Column="1" KeyDown="OnFieldKeyDown"
                          Text="{Binding Value, UpdateSourceTrigger=LostFocus}"
                          IsEnabled="{Binding IsEditable}"
                          views:TextLengthGuard.Limit="{Binding MaxLength}"
                          AutomationProperties.LabeledBy="{Binding ElementName=FieldLabel}"
+                         AcceptsReturn="False" TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto"
+                         MinLines="1" MaxLines="20"
                          Visibility="{Binding IsPlainText, Converter={x:Static views:BoolToVisibilityConverter.Instance}}" />
 
-                <!-- The memo box is sized by its grip, not by its character limit: width and length
-                     are independent (§05 N4). AcceptsReturn is False — no line breaks are stored
+                <!-- A memo fills the form pane and grows with its text, to 20 lines, then scrolls
+                     (SPEC-2026-005 amendment). It used to be sized by a 12x12 grip in its corner,
+                     beside the pane divider and the scrollbar: three small targets in one square
+                     inch, and the box could never be wider than the pane anyway. The divider is
+                     the width control now. AcceptsReturn is False — no line breaks are stored
                      (§05 Q3) — so Enter moves to the next field instead of doing nothing. -->
-                <Grid Grid.Row="0" Grid.Column="1" HorizontalAlignment="Left"
-                      Visibility="{Binding IsMemo, Converter={x:Static views:BoolToVisibilityConverter.Instance}}">
-                    <TextBox Loaded="OnMemoBoxLoaded" Unloaded="OnMemoBoxUnloaded" KeyDown="OnMemoKeyDown"
-                             Text="{Binding Value, UpdateSourceTrigger=LostFocus}"
-                             IsEnabled="{Binding IsEditable}"
-                             views:TextLengthGuard.Limit="{Binding MaxLength}"
-                             AutomationProperties.LabeledBy="{Binding ElementName=FieldLabel}"
-                             AcceptsReturn="False" TextWrapping="Wrap"
-                             VerticalScrollBarVisibility="Auto"
-                             MinWidth="120" MinHeight="40" Padding="2,1" />
-                    <Thumb HorizontalAlignment="Right" VerticalAlignment="Bottom" Width="12" Height="12"
-                           Margin="0,0,2,2" Cursor="SizeNWSE"
-                           DragDelta="OnMemoResize" DragCompleted="OnMemoResizeCompleted"
-                           ToolTip="Drag to resize this box">
-                        <Thumb.Template>
-                            <!-- Always visible, not on hover (§09): a grip nobody can see is not a handle. -->
-                            <ControlTemplate TargetType="Thumb">
-                                <Border Background="#66808080" CornerRadius="2" />
-                            </ControlTemplate>
-                        </Thumb.Template>
-                    </Thumb>
-                </Grid>
+                <TextBox Grid.Row="0" Grid.Column="1" KeyDown="OnFieldKeyDown"
+                         Text="{Binding Value, UpdateSourceTrigger=LostFocus}"
+                         IsEnabled="{Binding IsEditable}"
+                         views:TextLengthGuard.Limit="{Binding MaxLength}"
+                         AutomationProperties.LabeledBy="{Binding ElementName=FieldLabel}"
+                         AcceptsReturn="False" TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto"
+                         MinLines="3" MaxLines="20"
+                         Visibility="{Binding IsMemo, Converter={x:Static views:BoolToVisibilityConverter.Instance}}" />
 
-                <ComboBox Grid.Row="0" Grid.Column="1"
+                <!-- Sized to its longest choice, not to the form. A list of four short words
+                     stretched the full width of the pane, so the eye travelled past a lot of empty
+                     box to reach the next label. MinWidth keeps a list with no choices from
+                     collapsing to nothing; the form no longer scrolls sideways, so a very long
+                     choice is bounded by the pane rather than pushing a scrollbar back.
+
+                     This reverses a non-goal from SPEC-2026-002 ("no per-field width for non-memo
+                     fields"); Franz approved the reversal on 2026-09-20. Ordinary text boxes still
+                     fill the form width, per ADR-0009. -->
+                <ComboBox Grid.Row="0" Grid.Column="1" HorizontalAlignment="Left" MinWidth="120"
                           ItemsSource="{Binding Choices}" SelectedItem="{Binding ListValue}" IsEditable="False"
                           IsEnabled="{Binding IsEditable}"
                           AutomationProperties.LabeledBy="{Binding ElementName=FieldLabel}"
@@ -124,14 +135,14 @@
                     <ColumnDefinition Width="*" MinWidth="200" />
                 </Grid.ColumnDefinitions>
 
-                <!-- Both scrollbars: 16 fields on the station's screen do not fit, and a memo box
-                     dragged wider than the pane must still be reachable. -->
+                <!-- No sideways scrolling: the form is exactly as wide as its pane, and every text
+                     box wraps inside it. The horizontal bar existed for memo boxes dragged wider
+                     than the pane, and dragging is gone — a bar along the bottom that has to be
+                     used to read a field is a worse answer than text that fits (SPEC-2026-005
+                     amendment). Fields reflow as the divider moves. -->
                 <ScrollViewer x:Name="FormScroller" Grid.Column="0" TabIndex="0"
-                              HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                    <!-- At least as wide as the pane so ordinary boxes fill it, wider only if a memo
-                         box was dragged out; that is what the horizontal bar is for. -->
-                    <StackPanel Grid.IsSharedSizeScope="True" Margin="0,0,8,0"
-                                MinWidth="{Binding ViewportWidth, ElementName=FormScroller}">
+                              HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Grid.IsSharedSizeScope="True" Margin="0,0,8,0">
                         <TextBlock Text="{Binding EmptyText}" Opacity="0.8" Margin="0,4,0,8" TextWrapping="Wrap"
                                    Visibility="{Binding EmptyText, Converter={x:Static views:StringToVisibilityConverter.Instance}}" />
 

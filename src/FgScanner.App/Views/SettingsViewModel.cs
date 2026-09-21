@@ -71,8 +71,6 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public ObservableCollection<FieldRow> Fields { get; } = [];
 
-    public IReadOnlyList<FieldType> FieldTypes { get; } = Enum.GetValues<FieldType>();
-
     [ObservableProperty]
     private Profile? _selectedProfile;
 
@@ -845,19 +843,39 @@ public sealed partial class FieldRow : ObservableObject
     [ObservableProperty]
     private string _name = "";
 
+    /// <summary>
+    /// What the operator picked in the Type list, which offers Memo as a fifth entry. The stored
+    /// type and the memo flag are derived from it — see <see cref="FieldDisplayType"/> for why a
+    /// fifth <see cref="FieldType"/> is not an option.
+    /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsText))]
-    private FieldType _type = FieldType.Text;
+    private FieldDisplayType _displayType = FieldDisplayType.Text;
 
-    /// <summary>Only a Text field takes a length or a memo box; the grid disables both columns otherwise.</summary>
-    public bool IsText => Type == FieldType.Text;
+    /// <summary>Only a text field takes a length; the grid disables that column otherwise.</summary>
+    public bool IsText =>
+        DisplayType is FieldDisplayType.Text or FieldDisplayType.Memo;
 
-    partial void OnTypeChanged(FieldType value)
+    partial void OnDisplayTypeChanged(FieldDisplayType value) => ClampLength();
+
+    /// <summary>
+    /// A length the new type cannot hold is dropped rather than carried. Memo allows 2000 and
+    /// plain text 100, so a memo shortened to Text used to arrive at SaveSchemaAsync with a
+    /// length it refuses — and that refusal is thrown before the rest of the save, taking theme,
+    /// retention, feature flags and the shortcut map down with one field.
+    /// </summary>
+    private void ClampLength()
     {
-        if (value != FieldType.Text)
+        var limit = DisplayType switch
+        {
+            FieldDisplayType.Memo => ProfileService.MaxMemoLength,
+            FieldDisplayType.Text => ProfileService.MaxTextLength,
+            _ => 0,
+        };
+
+        if (Length > limit)
         {
             Length = null;
-            Memo = false;
         }
     }
 
@@ -892,37 +910,41 @@ public sealed partial class FieldRow : ObservableObject
     [ObservableProperty]
     private int? _length;
 
-    [ObservableProperty]
-    private bool _memo;
-
-    public static FieldRow From(FieldDefinition field) => new()
+    public static FieldRow From(FieldDefinition field)
     {
-        Name = field.Name,
-        Type = field.Type,
-        Required = field.Required,
-        Sticky = field.Sticky,
-        Scope = field.Scope,
-        DefaultValue = field.DefaultValue,
-        Choices = field.ListChoicesJson is null
-            ? null
-            : string.Join("; ", IndexingService.ParseChoices(field.ListChoicesJson) ?? []),
-        Length = field.MaxLength,
-        Memo = field.Memo,
-    };
+        var row = new FieldRow
+        {
+            Name = field.Name,
+            DisplayType = FieldDisplayTypes.From(field.Type, field.Memo),
+            Required = field.Required,
+            Sticky = field.Sticky,
+            Scope = field.Scope,
+            DefaultValue = field.DefaultValue,
+            Choices = field.ListChoicesJson is null
+                ? null
+                : string.Join("; ", IndexingService.ParseChoices(field.ListChoicesJson) ?? []),
+            Length = field.MaxLength,
+        };
+
+        // The stored length is applied after the type, so the setter's own guard has already run
+        // and been overwritten by the time the row exists.
+        row.ClampLength();
+        return row;
+    }
 
     public FieldDefinition ToDefinition() => new()
     {
         Name = Name,
-        Type = Type,
+        Type = FieldDisplayTypes.ToStored(DisplayType).Type,
         Required = Required,
         Sticky = Sticky,
         Scope = Scope,
         DefaultValue = string.IsNullOrWhiteSpace(DefaultValue) ? null : DefaultValue,
-        ListChoicesJson = Type == FieldType.List && !string.IsNullOrWhiteSpace(Choices)
+        ListChoicesJson = DisplayType == FieldDisplayType.List && !string.IsNullOrWhiteSpace(Choices)
             ? JsonSerializer.Serialize(Choices.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
             : null,
         MaxLength = Length,
-        Memo = Memo,
+        Memo = FieldDisplayTypes.ToStored(DisplayType).Memo,
     };
 }
 

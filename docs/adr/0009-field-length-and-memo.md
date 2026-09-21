@@ -47,6 +47,35 @@ On screen, a field's **width and its character length are independent** (Franz, 
 ordinary text box fills the form's width whatever its limit, and only a memo box is resized, by
 dragging its grip.
 
+## Amendment, 2026-09-21 (SPEC-2026-005)
+
+**Memo is shown as a type, and is still a flag.** The Settings field grid's Type list offers five
+entries — Text, Memo, Date, Number, List — because that is where an operator looks for it; the
+separate Memo checkbox is gone, two controls for one truth being able to disagree. The mapping
+lives in `FgScanner.App.Views.FieldDisplayType`, a screen-only enum. `FieldType` still has its four
+members, the positional cast is untouched, and `manifest.json` is byte-identical. Neither direction
+of the mapping has a fall-through: absorbing an unknown type would rewrite a stored type's name,
+which is what the export hands the importer. The Decision above stands unchanged — nothing about
+the stored shape moved.
+
+**No grip, and no resizing.** `:25` said "a larger box the operator can resize" and `:46-48` said
+"only a memo box is resized, by dragging its grip". The grip is gone. It was 12x12 pixels in the
+corner the pane divider and the scrollbar already shared, and the box could never be wider than the
+pane anyway, so the target was unreachable in the split the operator actually works in. **Every**
+text field now wraps and grows with its text, to 20 lines, and the form no longer scrolls sideways;
+the pane divider is the width control. What survives of `:46-48` is the rule it was written for:
+width and character length remain independent, and a limit still never sets a box's size.
+
+What `Memo` decides now is narrow — the larger character limit (2000 against 100) and a box that
+opens at three lines rather than one. It no longer decides whether a long value can be read, which
+is why the field that overflowed on this station (1,398 characters, plain Text, never marked as a
+memo) had been unreadable. The default height is fixed and is **not** derived from the character
+limit; a 2000-character limit and an 80-character one open the same size.
+
+**Still open:** *display length* — how wide a box renders, in characters, independent of how much
+may be typed — is a separate setting this ADR does not cover and the app does not have. It needs a
+new column and a migration, and it is deferred to its own spec.
+
 ## Consequences
 
 - Changing a length mints a new field-layout version, like any other field edit. Existing groups keep

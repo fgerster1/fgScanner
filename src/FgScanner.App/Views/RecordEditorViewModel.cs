@@ -286,8 +286,12 @@ public sealed class FormField : ObservableObject, IDisposable
 
     public bool IsText => Field.Type == FieldType.Text;
 
-    /// <summary>A text field that is not a memo: one line, filling the form's width.</summary>
-    public bool IsPlainText => IsText && !Field.Memo;
+    /// <summary>
+    /// A field typed into an ordinary box: text that is not a memo, and a number, which has no
+    /// input of its own. The Evidence profile opens with a required Number (DocNo), and a field
+    /// with no box shows as a label, an empty cell and an error the operator cannot clear.
+    /// </summary>
+    public bool IsPlainText => (IsText && !Field.Memo) || Field.Type == FieldType.Number;
 
     /// <summary>
     /// Length and memo mean something only on Text. ProfileService clears them on other types when

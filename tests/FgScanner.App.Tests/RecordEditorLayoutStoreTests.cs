@@ -12,8 +12,6 @@ namespace FgScanner.App.Tests;
 
 public sealed class RecordEditorLayoutStoreTests : IDisposable
 {
-    private static readonly IReadOnlyDictionary<string, MemoSize> NoMemo = new Dictionary<string, MemoSize>();
-
     private readonly string _root = Path.Combine(Path.GetTempPath(), "fgscanner-tests", Guid.NewGuid().ToString("N"));
     private readonly AppSettingsService _settings;
     private readonly CapturingSink _log = new();
@@ -81,23 +79,44 @@ public sealed class RecordEditorLayoutStoreTests : IDisposable
 
         await _store.SaveAsync(
             groupId,
-            new RecordEditorLayout(500, 400, new Dictionary<string, MemoSize> { ["Notes"] = new(300, 6) }),
+            new RecordEditorLayout(500, 400),
             ct);
 
         var raw = await _settings.GetAsync($"RecordEditor.Layout.{groupId}", "", ct);
         using var json = JsonDocument.Parse(raw);
         Assert.Equal(500, json.RootElement.GetProperty("formWidth").GetDouble());
         Assert.Equal(400, json.RootElement.GetProperty("topHeight").GetDouble());
-        var notes = json.RootElement.GetProperty("memo").GetProperty("Notes");
-        Assert.Equal(300, notes.GetProperty("width").GetDouble());
-        Assert.Equal(6, notes.GetProperty("height").GetDouble());
+    }
+
+    /// <summary>
+    /// Memo boxes were once sized one by one and their sizes stored here. They now fill the form
+    /// pane and grow with their text, so a layout is the two dividers and nothing else — and a
+    /// layout written by an older build, which does carry memo sizes, still has to load.
+    /// </summary>
+    [Fact]
+    public async Task A_saved_layout_carries_pane_sizes_only()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var groupId = Guid.NewGuid();
+        await _settings.SetAsync(
+            $"RecordEditor.Layout.{groupId}",
+            """{"formWidth":480,"topHeight":360,"memo":{"Notes":{"width":300,"height":6}}}""",
+            ct);
+
+        var layout = await _store.LoadAsync(groupId, 1600, 1000, ct);
+
+        Assert.Equal(480, layout.FormWidth);
+        Assert.Equal(360, layout.TopHeight);
+        await _store.SaveAsync(groupId, layout, ct);
+        var written = await _settings.GetAsync($"RecordEditor.Layout.{groupId}", "", ct);
+        Assert.DoesNotContain("memo", written, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public async Task A_group_not_seen_before_starts_from_the_last_layout()
     {
         var ct = TestContext.Current.CancellationToken;
-        await _store.SaveAsync(Guid.NewGuid(), new RecordEditorLayout(520, 410, NoMemo), ct);
+        await _store.SaveAsync(Guid.NewGuid(), new RecordEditorLayout(520, 410), ct);
 
         var layout = await _store.LoadAsync(Guid.NewGuid(), 1600, 1000, ct);
 
@@ -110,8 +129,8 @@ public sealed class RecordEditorLayoutStoreTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         var first = Guid.NewGuid();
-        await _store.SaveAsync(first, new RecordEditorLayout(520, 410, NoMemo), ct);
-        await _store.SaveAsync(Guid.NewGuid(), new RecordEditorLayout(700, 300, NoMemo), ct);
+        await _store.SaveAsync(first, new RecordEditorLayout(520, 410), ct);
+        await _store.SaveAsync(Guid.NewGuid(), new RecordEditorLayout(700, 300), ct);
 
         var layout = await _store.LoadAsync(first, 1600, 1000, ct);
 
@@ -126,7 +145,6 @@ public sealed class RecordEditorLayoutStoreTests : IDisposable
 
         Assert.Equal(600, layout.FormWidth);
         Assert.Equal(400, layout.TopHeight);
-        Assert.Empty(layout.Memo);
     }
 
     /// <summary>The station's screen is smaller than the dev machine's; a layout saved on one must not push a pane off the other.</summary>
@@ -135,7 +153,7 @@ public sealed class RecordEditorLayoutStoreTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         var groupId = Guid.NewGuid();
-        await _store.SaveAsync(groupId, new RecordEditorLayout(2400, 1800, NoMemo), ct);
+        await _store.SaveAsync(groupId, new RecordEditorLayout(2400, 1800), ct);
 
         var layout = await _store.LoadAsync(groupId, 1280, 1024, ct);
 
@@ -148,7 +166,7 @@ public sealed class RecordEditorLayoutStoreTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         var groupId = Guid.NewGuid();
-        await _store.SaveAsync(groupId, new RecordEditorLayout(10, 10, NoMemo), ct);
+        await _store.SaveAsync(groupId, new RecordEditorLayout(10, 10), ct);
 
         var layout = await _store.LoadAsync(groupId, 1280, 1024, ct);
 
@@ -167,31 +185,12 @@ public sealed class RecordEditorLayoutStoreTests : IDisposable
 
         Assert.Equal(600, layout.FormWidth);
         Assert.Equal(400, layout.TopHeight);
-        Assert.Empty(layout.Memo);
         var warning = Assert.Single(_log.Events, e => e.Level == LogEventLevel.Warning);
         var message = warning.RenderMessage(System.Globalization.CultureInfo.InvariantCulture);
         Assert.Contains(groupId.ToString(), message, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("not json", message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task Memo_sizes_are_kept_by_field_name()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var groupId = Guid.NewGuid();
-        await _store.SaveAsync(
-            groupId,
-            new RecordEditorLayout(
-                600,
-                400,
-                new Dictionary<string, MemoSize> { ["Notes"] = new(300, 6), ["Title"] = new(250, 3) }),
-            ct);
-
-        var layout = await _store.LoadAsync(groupId, 1600, 1000, ct);
-
-        Assert.Equal(new MemoSize(300, 6), layout.Memo["Notes"]);
-        Assert.Equal(new MemoSize(250, 3), layout.Memo["Title"]);
-    }
 
     /// <summary>
     /// A divider released while another save is still in flight: both write the shared "last layout"
@@ -206,52 +205,17 @@ public sealed class RecordEditorLayoutStoreTests : IDisposable
         var second = Guid.NewGuid();
 
         await Task.WhenAll(
-            _store.SaveAsync(first, new RecordEditorLayout(520, 410, NoMemo), ct),
-            _store.SaveAsync(second, new RecordEditorLayout(640, 300, NoMemo), ct));
+            _store.SaveAsync(first, new RecordEditorLayout(520, 410), ct),
+            _store.SaveAsync(second, new RecordEditorLayout(640, 300), ct));
 
         Assert.Equal(520, (await _store.LoadAsync(first, 1600, 1000, ct)).FormWidth);
         Assert.Equal(640, (await _store.LoadAsync(second, 1600, 1000, ct)).FormWidth);
         Assert.DoesNotContain(_log.Events, e => e.Level >= LogEventLevel.Warning);
     }
 
-    /// <summary>
-    /// The box on screen has a minimum width of its own. Restoring anything narrower renders at that
-    /// minimum and the next save writes the wider number back, so a stored size would drift on its own.
-    /// </summary>
-    [Fact]
-    public void A_memo_box_is_never_narrower_than_the_box_on_screen()
-    {
-        // 120 is the memo TextBox's MinWidth in RecordEditorWindow.xaml; the two must agree.
-        Assert.Equal(120, RecordEditorLayoutStore.ClampMemo(new MemoSize(10, 6), paneWidth: 400).Width);
-    }
 
-    [Fact]
-    public void A_memo_box_is_never_wider_than_its_pane()
-    {
-        Assert.Equal(400, RecordEditorLayoutStore.ClampMemo(new MemoSize(900, 6), paneWidth: 400).Width);
-    }
 
-    [Theory]
-    [InlineData(1, 2)]
-    [InlineData(6, 6)]
-    [InlineData(25, 20)]
-    public void A_memo_box_is_between_2_and_20_lines_tall(double lines, double expected)
-    {
-        Assert.Equal(expected, RecordEditorLayoutStore.ClampMemo(new MemoSize(300, lines), paneWidth: 400).Height);
-    }
 
-    [Fact]
-    public async Task A_saved_memo_wider_than_the_restored_form_pane_is_clamped_to_it()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var groupId = Guid.NewGuid();
-        await _store.SaveAsync(
-            groupId,
-            new RecordEditorLayout(2400, 600, new Dictionary<string, MemoSize> { ["Notes"] = new(2000, 6) }),
-            ct);
 
-        var layout = await _store.LoadAsync(groupId, 1280, 1024, ct);
 
-        Assert.Equal(layout.FormWidth, layout.Memo["Notes"].Width);
-    }
 }

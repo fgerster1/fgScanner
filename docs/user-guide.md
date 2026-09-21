@@ -55,8 +55,12 @@ it and save, and the purge runs there and then, reporting how many items it
 removed.
 
 **Length and memo (Text fields).** A Text field can carry a **Length** — 1 to
-100 characters — and can be marked **Memo**, which gives it a larger box you
-can resize and raises its limit to 2000. Leave Length blank for no limit. Both
+100 characters. Choose **Memo** in the **Type** list for a long field: it opens
+at three lines instead of one and raises the limit to 2000. Leave Length blank
+for no limit. Every text box wraps and grows with what you type, memo or not,
+so a long value is readable either way; Memo decides how much may be typed and
+how tall the box starts. Switching a Memo back to Text clears a length plain
+text cannot hold — 2000 does not fit in 100. Both settings
 are about typing and checking values on screen: neither is written to the index
 files, and shortening a length never shortens values already stored — they show
 as invalid until someone corrects them. Typing stops at the limit, and a paste
@@ -75,8 +79,9 @@ Deleting a page moves it to **Trash**, restorable for 30 days (configurable).
 
 **Record editor.** "Record editor…" on the toolbar opens the selected page in a window of its own:
 its fields on the left, the page on the right, and the rest of the group in a list below. Drag the
-dividers to give a pane more room, and drag the corner grip of a memo box to make it bigger; the
-sizes come back the next time you open that group. Ctrl+PageDown and Ctrl+PageUp move to the next
+dividers to give a pane more room — that is the width control for the fields, and the boxes reflow
+to match; the sizes come back the next time you open that group. Text boxes wrap and grow as you
+type, to twenty lines, then scroll. Ctrl+PageDown and Ctrl+PageUp move to the next
 and previous page, and the fields, the image and the list stay on the same page. The toolbar also
 has Undo, Redo, Add missed page…, Import PDF/images… and Delete page (to Trash). What you type here
 goes exactly where the grid's cells go — it is the same record, in a bigger window. Closing it

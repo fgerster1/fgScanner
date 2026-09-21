@@ -5,13 +5,13 @@ using FgScanner.Data;
 namespace FgScanner.App.Services;
 
 /// <summary>
-/// Where the record editor's dividers and memo boxes were left. Pane sizes are device-independent
-/// pixels; memo heights are lines of text, so a box keeps its meaning if the font size changes.
+/// Where the record editor's dividers were left, in device-independent pixels.
+///
+/// It used to carry a size per memo box as well. Memo boxes now fill the form pane and grow with
+/// their text, so there is nothing per-box left to remember, and the divider is the width control
+/// (SPEC-2026-005 amendment). A "memo" key in a layout stored by an older build is ignored.
 /// </summary>
-public sealed record RecordEditorLayout(double FormWidth, double TopHeight, IReadOnlyDictionary<string, MemoSize> Memo);
-
-/// <summary>A memo box's width in device-independent pixels and its height in lines.</summary>
-public sealed record MemoSize(double Width, double Height);
+public sealed record RecordEditorLayout(double FormWidth, double TopHeight);
 
 /// <summary>
 /// Remembers the record editor's layout per group, over the Settings table (SPEC-2026-002 §07).
@@ -24,13 +24,6 @@ public sealed class RecordEditorLayoutStore(AppSettingsService settings, Serilog
 
     /// <summary>The smallest a pane is restored at, so a divider dragged nearly shut can still be found and grabbed.</summary>
     public const double MinPane = 200;
-
-    /// <summary>Mirror the memo TextBox's MinWidth in RecordEditorWindow.xaml: restoring anything narrower renders at that minimum and saves the wider number back, so a stored size would drift on its own.</summary>
-    public const double MinMemoWidth = 120;
-
-    public const double MinMemoLines = 2;
-
-    public const double MaxMemoLines = 20;
 
     private readonly Serilog.ILogger _log = log ?? Serilog.Log.Logger;
 
@@ -59,7 +52,6 @@ public sealed class RecordEditorLayoutStore(AppSettingsService settings, Serilog
         {
             FormWidth = layout.FormWidth,
             TopHeight = layout.TopHeight,
-            Memo = layout.Memo.ToDictionary(m => m.Key, m => (MemoJson?)new MemoJson { Width = m.Value.Width, Height = m.Value.Height }),
         });
         // One save at a time. A divider released while a memo drag is still saving has both writing
         // the shared "last layout" key; on its first ever use both find it missing, both add it, and
@@ -92,28 +84,11 @@ public sealed class RecordEditorLayoutStore(AppSettingsService settings, Serilog
     public static RecordEditorLayout Clamp(RecordEditorLayout layout, double windowWidth, double windowHeight)
     {
         var formWidth = ClampPane(layout.FormWidth, windowWidth);
-        var memo = new Dictionary<string, MemoSize>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (name, size) in layout.Memo)
-        {
-            memo[name] = ClampMemo(size, formWidth);
-        }
-
-        return new RecordEditorLayout(formWidth, ClampPane(layout.TopHeight, windowHeight), memo);
-    }
-
-    /// <summary>A memo box may be as wide as the form pane and no wider (§08), and 2–20 lines tall.</summary>
-    public static MemoSize ClampMemo(MemoSize size, double paneWidth)
-    {
-        paneWidth = double.IsFinite(paneWidth) ? Math.Max(0, paneWidth) : 0;
-        var width = double.IsFinite(size.Width)
-            ? Math.Clamp(size.Width, Math.Min(MinMemoWidth, paneWidth), paneWidth)
-            : paneWidth;
-        var height = double.IsFinite(size.Height) ? Math.Clamp(size.Height, MinMemoLines, MaxMemoLines) : MinMemoLines;
-        return new MemoSize(width, height);
+        return new RecordEditorLayout(formWidth, ClampPane(layout.TopHeight, windowHeight));
     }
 
     private static RecordEditorLayout Defaults(double windowWidth, double windowHeight) =>
-        new(windowWidth / 2, windowHeight / 2, new Dictionary<string, MemoSize>());
+        new(windowWidth / 2, windowHeight / 2);
 
     private static double ClampPane(double value, double window)
     {
@@ -131,17 +106,8 @@ public sealed class RecordEditorLayoutStore(AppSettingsService settings, Serilog
         try
         {
             var stored = JsonSerializer.Deserialize<LayoutJson>(json) ?? throw new JsonException("The layout is null.");
-            var memo = new Dictionary<string, MemoSize>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (name, size) in stored.Memo ?? [])
-            {
-                if (size is not null)
-                {
-                    memo[name] = new MemoSize(size.Width ?? double.NaN, size.Height ?? double.NaN);
-                }
-            }
-
             // A missing number is NaN rather than 0, so Clamp gives it the default instead of the minimum.
-            return new RecordEditorLayout(stored.FormWidth ?? double.NaN, stored.TopHeight ?? double.NaN, memo);
+            return new RecordEditorLayout(stored.FormWidth ?? double.NaN, stored.TopHeight ?? double.NaN);
         }
         catch (JsonException ex)
         {
@@ -159,16 +125,5 @@ public sealed class RecordEditorLayoutStore(AppSettingsService settings, Serilog
         [JsonPropertyName("topHeight")]
         public double? TopHeight { get; set; }
 
-        [JsonPropertyName("memo")]
-        public Dictionary<string, MemoJson?>? Memo { get; set; }
-    }
-
-    private sealed class MemoJson
-    {
-        [JsonPropertyName("width")]
-        public double? Width { get; set; }
-
-        [JsonPropertyName("height")]
-        public double? Height { get; set; }
     }
 }

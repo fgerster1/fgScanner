@@ -83,6 +83,11 @@ visible, and a size persisted per group per field. What it lacks is a **default 
 57  MinWidth="120" MinHeight="40" Padding="2,1"
 ```
 
+> **Superseded by the 2026-09-20 and 2026-09-21 amendments.** `ApplyMemoSize`, `ClampMemo`,
+> `MemoSize`, `MinMemoWidth`, `MinMemoLines` and `MaxMemoLines` were all deleted in phase 24;
+> the paragraph below describes the code as it stood on 2026-09-20 and is kept as the starting
+> condition the amendments were reasoning about, not as a description of the repo.
+
 There is no `MinLines`, no `Height`, no `Rows` anywhere in the repo. `ApplyMemoSize`
 (`RecordEditorWindow.xaml.cs:190-202`) only runs when a stored size exists, so a field
 nobody has dragged opens at about two lines. Stored sizes are clamped by
@@ -127,14 +132,71 @@ beyond how it degrades an out-of-range length.
 >
 > | | |
 > |---|---|
-> | Q1 | (a) A **fixed default of about four rows**, full form width. ADR-0009's independence of width and length stands, unamended. |
+> | Q1 | (a) A **fixed default of about four rows**, full form width. ADR-0009's independence of width and length stands, unamended. **Superseded 2026-09-20 — see below.** |
 > | Q2 | (a) **Yes — "Memo" joins the Type dropdown**, storing Text plus the flag. The checkbox column goes. |
 > | N1 | (a) Record editor only. |
 > | N2 | (a) Groups side panels left as they are; recorded as a follow-up. |
 
+### Amendment, 2026-09-20 — the drag grip goes
+
+Q1's answer was built and tried on the real window against a 1,398-character `Notes` value in
+Jim's data. **It does not work, because the grip cannot be reached.** A memo box is capped at the
+form pane's width (`FormColumn`, 520 of 1280 px), and its resize handle is a 12×12 target in the
+box's bottom-right corner — sitting beside the pane divider and the form's scrollbar, three small
+targets in the same square inch. Franz: *"you cannot get to the corner of the screen because of
+the slider and split screen."*
+
+A default height was the wrong fix for the wrong problem: the box was not just small, it was not
+resizable in practice.
+
+**New answer, chosen 2026-09-20:** a memo **fills the form pane's width and grows with its text**
+to a maximum of 20 lines, then scrolls. **The drag grip is removed**, and with it per-field memo
+sizes. The pane divider becomes the only width control — one large target instead of three small
+ones.
+
+**Second amendment, same day — every text field wraps.** The first attempt still failed on the
+real window, and the reason was not the memo box at all: the group being tested is pinned to field
+layout **v2**, where `Notes` is an ordinary Text field. The memo work was invisible because no
+memo was on screen. Franz's instruction — *"remove the slider at the bottom and have all text
+fields wrap when you make the text area smaller and larger"* — fixes it at the root:
+
+- **Every** text field wraps and grows with its content (1–20 lines for plain text, 3–20 for a
+  memo), not only memo fields.
+- The form's **horizontal scrollbar is disabled**. Nothing scrolls sideways; the form is exactly
+  as wide as its pane and fields reflow as the divider moves.
+- Reading a long value no longer depends on the memo flag, so a group does not have to be moved
+  to a newer field layout to be readable. **Verified working on the real window, 2026-09-20.**
+
+The memo flag now controls only the character limit (100 vs 2000) and the starting height.
+
+**Raised and not yet decided: "display length".** Franz distinguishes the *field* length — how
+much data may go in — from a **display length**, how wide the box renders, measured in characters,
+which he would set to 80, with memo boxes draggable wider from there. FG Scanner has no such
+concept today. It is a per-field layout property in the same family as `MaxLength` and `Memo` —
+never exported (ADR-0009) — and it would need a column and a migration. **Deferred to its own
+spec** rather than folded in here; this spec's job was the three things reported on 2026-09-20,
+and the wrapping change resolved the complaint that prompted it.
+
+What this changes elsewhere:
+
+- The memo entries in the record editor's saved layout become unused. Pane sizes are still
+  remembered; the `memo` key in stored JSON is ignored, and old layouts still parse.
+- ADR-0009's "shown in a larger box the operator can resize" is now "shown in a box that fills the
+  form and grows with its text". The **flag-not-a-type** decision is untouched.
+- AC-1..AC-3 are restated below.
+- A per-field length cap was raised as an alternative and **rejected**: shortening a field's length
+  does not shorten values already stored, so the 1,398-character `Notes` value would show as
+  invalid until someone edited evidence text to fit a form. The screen problem is fixed on the
+  screen.
+
 **Blocking**
 
-1. **How should a memo box size itself when nobody has dragged it?** — *why it matters:*
+1. ~~**How should a memo box size itself when nobody has dragged it?**~~ — **ANSWERED, then
+   SUPERSEDED.** Franz chose a fixed default (4 lines), which shipped; the 2026-09-20 amendment
+   then removed dragging altogether, so there is no longer a "dragged" case to default against.
+   Memo boxes open at 3 lines, every text field wraps and grows, and the pane divider sets the
+   width. ADR-0009:46-48 was **not** amended to let length drive height — that rule stands, and
+   the amendment says so. Original text: — *why it matters:*
    a fixed default (say 4 rows, full form width) is predictable and one line of XAML.
    Sizing from the field's character limit — a 2000-character `Notes` opening taller than
    a 200-character `Basis` — reads better but contradicts ADR-0009:46-48, where you
@@ -188,13 +250,14 @@ ADR-0009, and as an amendment to ADR-0009 itself.
 
 ## 08 · Architecture and approach
 
-**Memo default size.** Add the default to the XAML (`RecordEditorWindow.xaml:57`) and let
+**Memo default size.** **Superseded — what shipped is simpler than this.** `MinLines="3"` on the memo box and
+`MinLines="1"` on every other text box, both with `MaxLines="20"` and `TextWrapping="Wrap"`;
+no pixel conversion, no clamping, and no per-field size to store. `ApplyMemoSize`, the
+line↔pixel helpers and the `MinMemoWidth`/`MinMemoLines`/`MaxMemoLines` constants were deleted
+with the grip, and `RecordEditorLayout` now carries only the two pane sizes. The original
+paragraph read: Add the default to the XAML (`RecordEditorWindow.xaml:57`) and let
 the existing restore path keep overriding it, since `ApplyMemoSize` runs only when a
-stored size exists. If the default is expressed in rows, it is converted with the
-existing line↔pixel helpers (`RecordEditorWindow.xaml.cs:253-260`) so one definition of a
-"line" is used. `MinMemoLines` in `RecordEditorLayoutStore.cs:31` stays at 2 — it is the
-floor for a *dragged* size, not the default — and `MinMemoWidth` must continue to agree
-with the XAML `MinWidth` (`RecordEditorLayoutStoreTests.cs:221-226`).
+stored size exists.
 
 **Dropdown width.** `HorizontalAlignment="Left"` on the `ComboBox`
 (`RecordEditorWindow.xaml:71`). WPF then measures the widest item. No code change; the
@@ -242,23 +305,32 @@ The app's own WPF Fluent theme governs.
 
 ## 10 · Acceptance criteria
 
-> **AC-1** — Given a memo field with a stored value of 300 characters and no saved size,
-> when the record editor opens, the box shows the value on at least four lines without
-> the operator resizing anything.
-> *Proven by:* `manual` — Franz, on the `Notes` field of a record in the copy of Jim's
-> data (a rendered pixel height cannot be asserted headlessly)
+> **AC-1** — Given a memo field holding 1,398 characters, when the record editor opens, the box
+> fills the form pane's width and is tall enough to read the value without the operator resizing
+> anything; beyond 20 lines it scrolls.
+> *Proven by:* `manual` — Franz, on `Notes` in "Defamation Folder" (a rendered pixel height
+> cannot be asserted headlessly)
 
-> **AC-2** — The default memo size is inside the stored-size clamp, so a dragged size can
-> never be smaller than the default is tall.
-> *Proven by:* `tests/FgScanner.App.Tests/RecordEditorLayoutStoreTests.cs` → "the default
-> memo size satisfies the clamp"
+> **AC-2** — A memo box grows and shrinks with its content between its minimum and 20 lines, and
+> never needs a horizontal scrollbar: the text wraps.
+> *Proven by:* `manual`, same pass
 
-> **AC-3** — Given a memo the operator has dragged to 6 lines, when the editor is
-> reopened, it is 6 lines — the default does not overwrite it.
-> *Proven by:* same file → existing "memo sizes are kept by field name", extended
+> **AC-3** — There is no resize grip on a memo box, and widening the form pane widens every memo
+> in it.
+> *Proven by:* `manual` — Franz, 2026-09-21. The test "a saved layout carries pane sizes only"
+> is **not** proof of this: it asserts the serialized layout holds no `memo` key, and the layout
+> DTO no longer declares one, so re-adding a grip to the XAML would leave it green. It is a
+> guard against the storage growing a memo size again, and nothing more.
 
 > **AC-4** — Given a list field whose longest choice is "Correspondence", the dropdown is
 > approximately that wide and not the width of the form pane.
+> **NOT MET — half shipped (2026-09-21).** The dropdown is no longer the form's width, which is
+> the visible half and what Franz accepted on screen. But a WPF ComboBox sizes to its *selected*
+> item, not to its items: the choices live in a Popup that contributes nothing to layout. So a
+> list with nothing chosen shows as a bare 120px stub whatever its choices, and the box changes
+> width as the operator pages through rows. Meeting this properly needs the choices measured
+> (a hidden measuring `ItemsControl`, or a width computed from `Choices`). Carried forward, not
+> quietly ticked.
 > *Proven by:* `manual` — Franz, on `DocType` in the Evidence profile
 
 > **AC-5** — A list field with no choices, and one with a very long choice, both render
@@ -277,8 +349,12 @@ The app's own WPF Fluent theme governs.
 > snapshots, unmodified
 
 > **AC-8** — A memo value still contains no line breaks after editing.
-> *Proven by:* `tests/FgScanner.App.Tests/RecordEditorViewModelTests.cs` → existing memo
-> cases, extended with a newline-refusal assertion
+> *Proven by:* **nothing automated — the named test was never written.** The behaviour holds:
+> every box is `AcceptsReturn="False"`, and WPF strips line breaks from a paste before the value
+> is set (measured in a real TextBox, 2026-09-21), so no break reaches `index.json`. Worth
+> knowing: a two-line paste is silently reduced to its first line, with no refusal and no
+> message — unlike an over-long paste, which `TextLengthGuard` refuses whole and explains.
+> That gap is pre-existing and is logged for the display-length spec.
 
 ## 11 · Test strategy
 
@@ -286,8 +362,8 @@ The app's own WPF Fluent theme governs.
 
 | Feature | Test file | The failing assertion |
 |---|---|---|
-| Default memo size is legal | `tests/FgScanner.App.Tests/RecordEditorLayoutStoreTests.cs` | The default, passed through `ClampMemo`, comes back unchanged |
-| Stored size still wins | same | A stored 6-line size survives a load once a default exists |
+| ~~Default memo size is legal~~ | — | **Superseded:** `ClampMemo` was deleted with the grip. What replaced it: a saved layout carries pane sizes only |
+| ~~Stored size still wins~~ | — | **Superseded:** there is no per-field memo size to store |
 | Memo type mapping | `tests/FgScanner.App.Tests/FieldRowTests.cs` | "Memo" → (`Text`, `Memo = true`); "Date" → (`Date`, `Memo = false`) |
 | Export untouched | `tests/FgScanner.Core.Tests/IndexExporterTests.cs` | Verify snapshots match without being re-accepted |
 | No newlines | `tests/FgScanner.App.Tests/RecordEditorViewModelTests.cs` | A value written through a memo field contains no `\n` |
@@ -301,15 +377,17 @@ contract moving and the work is wrong.
 
 - `dotnet build -c Release`, `dotnet test -c Release` (≥ 692), `dotnet format --verify-no-changes`.
 - Manual pass on `D:\Evidence-Scans`: open a record in a group with `Notes` filled; check
-  AC-1, AC-4, AC-5 by eye; confirm a dragged size still persists between openings.
+  AC-1, AC-4, AC-5 by eye. (The "confirm a dragged size persists" step is void — dragging is
+  gone. Walked 2026-09-21; see `docs/manual-tests.md`, where AC-4 is recorded as **failing**.)
 
 ## 12 · Edge cases and failure modes
 
 | Case | Expected behaviour | Where handled |
 |---|---|---|
 | Memo with an empty value | Opens at the default size, not collapsed | XAML default |
-| Memo dragged smaller than the default | Honoured down to the 2-line floor | `RecordEditorLayoutStore.cs:105-113` |
-| Memo wider than the form pane after the pane is narrowed | Clamped to the pane on restore | `:243-256` (existing) |
+| ~~Memo dragged smaller than the default~~ | **Void — dragging removed** | — |
+| ~~Memo wider than the form pane~~ | **Void** — a memo can no longer be wider than the pane | — |
+| A field name long enough to fill the form pane | The input keeps a 120px minimum and the label clips; with no sideways scrollbar there is otherwise no way back to the box | `RecordEditorWindow.xaml:32` |
 | List with zero choices | Renders at a sensible minimum, not zero-width | AC-5 |
 | List whose stored value is not among the choices | Value survives, nothing written — existing null filter | `RecordEditorViewModel.cs:333-350` |
 | A very long single choice | Dropdown may reach the pane width; the form scrolls horizontally as it already can | `RecordEditorWindow.xaml:129-130` |
@@ -341,30 +419,35 @@ cap is raised far beyond 16 or if the form gains virtualisation.
 | # | What could break | Why | Evidence (file:line) | Mitigation |
 |---|---|---|---|---|
 | R1 | The export contract moves | A `FieldType.Memo` member would shift the positional cast and change the name in `manifest.json`, which the JimsStuff importer parses | `Entities.cs:167-173`; `IndexModels.cs:11-17`; ADR-0009:12-18 | No enum member is added; AC-7 pins the snapshots |
-| R2 | `MinMemoWidth` and the XAML `MinWidth` drift apart | A test asserts they agree, and the store would then clamp against a stale number | `RecordEditorLayoutStoreTests.cs:221-226`; `RecordEditorLayoutStore.cs:28-33` | Change both or neither; the test stays |
-| R3 | Dragged sizes stop persisting | The default could be applied after the restore instead of before | `RecordEditorWindow.xaml.cs:190-202` | AC-3 pins a stored size beating the default |
-| R4 | Two controls for one truth in Settings | If Memo joins the Type list and the checkbox column stays, they can disagree | `SettingsView.xaml:101` | Q2's answer removes one of them |
+| ~~R2~~ | ~~`MinMemoWidth` and the XAML `MinWidth` drift apart~~ | **Void:** both the constant and the test were deleted with the grip. Do not restore either to satisfy this row | — | — |
+| ~~R3~~ | ~~Dragged sizes stop persisting~~ | **Void:** nothing per-field is persisted any more | — | — |
+| R4 | Two controls for one truth in Settings | If Memo joins the Type list and the checkbox column stays, they can disagree | `SettingsView.xaml:101` | Q2's answer removes one of them. **Happened in a worse form:** the checkbox was removed and the Type list was left bound to the wrong enum, so for one build there was *no* control for the flag at all, and no field's type could be changed. Found by review, fixed in `b97311f`. A `DataGridColumn` is not in the visual tree, so its items are set in code-behind — outside the diff, and invisible to every headless test |
 | R5 | Long list values force a horizontal scrollbar | Left alignment lets a wide item size the control | `RecordEditorWindow.xaml:129-134` | Cap the dropdown at the pane width, as the memo box already is (`xaml.cs:247`) |
 | R6 | The Groups panels still show a memo as a 160px one-liner | They are a separate template with no `IsMemo` | `GroupsView.xaml:122`; `GroupDetailViewModel.cs:813` | Out of scope by §05 N2 — stated, not forgotten |
 
 ## 17 · Migration and rollback
 
 _Not applicable — no data change._ Rollback is reinstalling the previous installer.
-Memo sizes stored by an older version remain readable; the clamp is unchanged.
+A layout saved by an older version still parses; its `memo` entry is read and ignored, pinned by a
+test. Nothing in the database moved, so a rollback needs no migration.
 
 ## 18 · Documentation updates
 
-- **docs/adr/0009-field-length-and-memo.md** — amend, do not replace: record that Memo may
-  be *presented* as a type while remaining a flag, and that the default memo height is
-  (or is not) derived from the character limit, per §05 Q1.
-- **docs/user-guide.md** — the "Length and memo (Text fields)" section gains the new
+- [x] **docs/adr/0009-field-length-and-memo.md** — amended 2026-09-21, not replaced: "Amendment,
+  2026-09-21 (SPEC-2026-005)". Memo is *presented* as a type and remains a flag; the default
+  height is fixed and is **not** derived from the character limit, so ADR-0009:46-48 stands; the
+  grip wording at :25 and :46-48 is corrected, since the grip was deleted.
+- [x] **docs/user-guide.md** — the "Length and memo (Text fields)" section gains the new
   default behaviour and, if Q2 is yes, describes Memo as a choice in the Type list.
-- **docs/manual-tests.md** — add AC-1, AC-4, AC-5 as manual rows, since they cannot be
+- [x] **docs/manual-tests.md** — add AC-1, AC-4, AC-5 as manual rows, since they cannot be
   automated.
-- **CLAUDE.md** — the evidence-work section already says memo is a flag, not a
+- [x] **CLAUDE.md** — the evidence-work section already says memo is a flag, not a
   `FieldType`; extend that line to add "even when the Settings screen shows it as one".
-- **Memory** — update `fg-scanner-memo-is-a-flag` so a later session does not read a Memo
+- [x] **Memory** — update `fg-scanner-memo-is-a-flag` so a later session does not read a Memo
   entry in the Type dropdown as evidence that the enum gained a member.
+- [x] **docs/FEATURE-PARITY.md** — the record-editor row no longer claims memo-box sizes are
+  remembered (they are not, since the grip went); three rows added for Memo in the Type list,
+  universal wrapping, and the list-width change with its AC-4 gap stated.
 
 ## 19 · Phase plan
 
@@ -389,13 +472,18 @@ Memo sizes stored by an older version remain readable; the clamp is unchanged.
 
 ## 21 · Definition of done
 
-- [ ] All acceptance criteria met
-- [ ] Failing tests written first, now passing
-- [ ] Full suite green (≥ 692)
-- [ ] `/code-review max` run, findings resolved or accepted in writing
-- [ ] Security review — _not applicable_
-- [ ] Documentation updated per §18
-- [ ] Verified by eye on the copy of Jim's data
+- [x] All acceptance criteria met — **except AC-4**, which is half met and recorded above
+      rather than ticked
+- [x] Failing tests written first, now passing
+- [x] Full suite green (722 on 2026-09-21, up from 692)
+- [x] `/code-review max` run, findings resolved or accepted in writing — 14 findings plus a
+      5-finding addendum; 12 fixed in `b97311f`, 2 accepted in writing (the list-width gap under
+      AC-4, and `SettingsViewModel.ReloadAsync`'s `Profiles.Clear()`, whose real harm — a reload
+      rebuilds the field grid from the database and drops unsaved edits either way — belongs with
+      the display-length spec)
+- [x] Security review — _not applicable_
+- [x] Documentation updated per §18
+- [x] Verified by eye on the copy of Jim's data
 - [ ] Rollback tested or explicitly waived by Franz
 
 ## 22 · Sign-off
@@ -404,5 +492,5 @@ Memo sizes stored by an older version remain readable; the clamp is unchanged.
 |---|---|
 | **Review round answered** | ☑ 2026-09-20 — [Round A, part 1 of 3](https://claude.ai/artifact/CCZuGgTi2dm7YK4wqDDbdx) · db doc `review/SPEC-2026-004-005-rA-p1` |
 | **Franz approved** | ☑ 2026-09-20 (verdict `approve`, all items option (a)) |
-| **Built** | ☐ date: |
+| **Built** | ☑ 2026-09-21 — branch `phase-24-memo-and-widths`; commits `25db558`, `5334f40`, `8ad71ec`, `b97311f`; 722 tests green, export snapshots unmoved |
 | **Verified in production** | ☐ date: |
