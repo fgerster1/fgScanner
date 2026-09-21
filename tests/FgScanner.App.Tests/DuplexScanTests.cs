@@ -294,6 +294,74 @@ public sealed class DuplexScanTests : IDisposable
         Assert.Equal(6, await PagesInAsync(group.Id));
     }
 
+    /// <summary>
+    /// A save that could not take every page leaves the rest staged and asks the operator to try
+    /// again. The retry is still that stack's save, so it still needs the checksum skip — the
+    /// locked page's checksum was never registered, so a blank back that comes back on the second
+    /// attempt matches a blank already in the group and is dropped as a duplicate.
+    /// </summary>
+    [Fact]
+    public async Task A_retry_after_a_partial_save_still_keeps_the_stack_together()
+    {
+        var scan = await CreateScanViewModelAsync(
+            new FakeScanService { PageCount = 2, BlankIdenticalPages = true });
+        var group = await GroupAsync("Partial save");
+        _activeGroup.Current = group;
+
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+        Assert.Equal(4, scan.Pages.Count);
+
+        // One page held open, the way a virus scanner or the shell's thumbnailer holds a scan
+        // written milliseconds ago — the case RetryOnLockAsync exists for.
+        var locked = scan.Pages[2].FilePath;
+        using (new FileStream(locked, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            await scan.SaveToGroupCommand.ExecuteAsync(null);
+        }
+
+        Assert.Equal(3, await PagesInAsync(group.Id));
+        Assert.Single(scan.Pages);
+
+        await scan.SaveToGroupCommand.ExecuteAsync(null);
+
+        Assert.Equal(4, await PagesInAsync(group.Id));
+        Assert.Empty(scan.Pages);
+    }
+
+    /// <summary>
+    /// The skip is granted to a stack's pages, not to the view model, so it lasts exactly as long
+    /// as those pages are staged. Left standing it turns de-duplication off for the next, unrelated
+    /// save — the protection GroupService gives every other path against a folder adopted twice.
+    /// </summary>
+    [Fact]
+    public async Task The_stacks_protection_does_not_outlive_its_pages()
+    {
+        var scan = await CreateScanViewModelAsync(
+            new FakeScanService { PageCount = 2, BlankIdenticalPages = true });
+        var group = await GroupAsync("Leak");
+        _activeGroup.Current = group;
+        scan.ConfirmDelete = _ => true;
+
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+
+        // Thrown away rather than saved, so nothing is left that the skip was granted for.
+        foreach (var page in scan.Pages.ToList())
+        {
+            scan.SelectedPages.Add(page);
+        }
+
+        scan.DeleteSelectedPagesCommand.Execute(null);
+        Assert.Empty(scan.Pages);
+
+        await scan.ScanCommand.ExecuteAsync(null);
+        await scan.SaveToGroupCommand.ExecuteAsync(null);
+
+        // Two identical pages from an ordinary scan: one is adopted, the other reported.
+        Assert.Equal(1, await PagesInAsync(group.Id));
+    }
+
     /// <summary>A stack saved in sheet order keeps that order in the group's own numbering.</summary>
     [Fact]
     public async Task The_group_receives_the_pages_in_sheet_order()

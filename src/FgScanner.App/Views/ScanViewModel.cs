@@ -57,6 +57,13 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         {
             SaveToGroupCommand.NotifyCanExecuteChanged();
             OpenPageViewerCommand.NotifyCanExecuteChanged();
+
+            // One place covers every way a page can leave — saved, deleted from the thumbnails,
+            // abandoned with its stack, or dropped by a path written after this one.
+            if (_stackPages.Count > 0)
+            {
+                _stackPages.IntersectWith(Pages.Select(p => p.FilePath));
+            }
         };
         SelectedPages.CollectionChanged += (_, _) => DeleteSelectedPagesCommand.NotifyCanExecuteChanged();
 
@@ -860,12 +867,12 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     {
         var result = Duplex.Interleave();
         var counted = $"{Duplex.FrontCount} front(s) and {Duplex.BackCount} back(s)";
-        Duplex.Cancel(); // ends the sequence; the pages stay in the session either way
 
-        // Set even when the pairing is refused: those pages are still a duplex run, and their
-        // blank backs are still identical to each other. A refused stack saved as it is must not
-        // lose nine backs out of ten on the way in.
-        _stackAwaitingSave = true;
+        // Cancel ends the sequence and hands back both passes; the pages stay in the session
+        // either way. Marked even when the pairing is refused — those pages are still a duplex
+        // run, and their blank backs are still identical to each other, so a refused stack saved
+        // as it stands must not lose nine backs out of ten on the way in.
+        MarkStackPages(Duplex.Cancel());
 
         if (result.Refused)
         {
@@ -910,8 +917,23 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             Pages.Add(page);
         }
 
+        // The rebuild above emptied the list, and the pruning that hangs off it takes the stack's
+        // pages with it. They are back in the list now, so they are marked again.
+        MarkStackPages(ordered);
+
         StatusText = $"Both sides scanned — {counted}, paired into {ordered.Count} page(s) in sheet order.";
         return true;
+    }
+
+    /// <summary>
+    /// Records that these staged pages came off a two-pass stack, so the save keeps every one of
+    /// them. Anything no longer staged is dropped straight away rather than waiting for a removal
+    /// that has already happened.
+    /// </summary>
+    private void MarkStackPages(IEnumerable<string> paths)
+    {
+        _stackPages.UnionWith(paths);
+        _stackPages.IntersectWith(Pages.Select(p => p.FilePath));
     }
 
     private bool CanCancelDuplex() => Duplex.IsActive && !IsScanning;
@@ -953,7 +975,6 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             Pages.Remove(page);
         }
 
-        _stackAwaitingSave = Pages.Count > 0 && _stackAwaitingSave;
         StatusText = $"Stack abandoned — {discarded.Count} page(s) moved to the Recycle Bin.";
         AnnouncedDuplexState();
         await SettledAsync();
@@ -986,12 +1007,18 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     private void CancelScan() => _scanCts?.Cancel();
 
     /// <summary>
-    /// Set when a two-pass stack has been paired and is waiting to be saved. Adoption drops a page
-    /// whose checksum is already in the group, and the blank backs of a stack are identical to the
-    /// byte — ten sheets would save one blank and drop nine, shifting every pairing after it. The
-    /// flag is cleared by the save, so it never widens past the stack that earned it.
+    /// The pages of a two-pass stack that are still staged. Adoption drops a page whose checksum is
+    /// already in the group, and the blank backs of a stack are identical to the byte — ten sheets
+    /// would save one blank and drop nine, shifting every pairing after it.
+    ///
+    /// Held as the pages themselves rather than as a flag, because a flag answers the wrong
+    /// question. It has to survive a save that could not take every page, since the retry is still
+    /// that stack's save and the pages it left behind still need the skip. It must not survive the
+    /// pages, or the next unrelated save adopts genuine duplicates with nothing reported — the one
+    /// protection GroupService gives every other path against a folder adopted twice. Both follow
+    /// from asking which staged pages came off a stack, and neither followed from a bool.
     /// </summary>
-    private bool _stackAwaitingSave;
+    private readonly HashSet<string> _stackPages = new(StringComparer.OrdinalIgnoreCase);
 
     private bool CanSaveToGroup() => _activeGroup.Current is not null && Pages.Count > 0 && !IsScanning;
 
@@ -1018,16 +1045,18 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         DeleteSelectedPagesCommand.NotifyCanExecuteChanged();
         try
         {
-            // The same flag governs both halves of the same loss. Triage would delete the blank
-            // backs outright — not to the Recycle Bin — before adoption ever sees them, and
-            // adoption would then skip whichever survivors share a checksum. Either alone leaves a
-            // stack short and every pairing after the gap shifted.
+            // Asked of the pages actually going in, so a retry after a partial save is still
+            // covered and a save with none of the stack left is not. The same answer governs both
+            // halves of the same loss: triage would delete the blank backs outright — not to the
+            // Recycle Bin — before adoption ever sees them, and adoption would then skip whichever
+            // survivors share a checksum. Either alone leaves the stack short and every pairing
+            // after the gap shifted.
+            var staged = Pages.OrderBy(p => p.SequenceNumber).Select(p => p.FilePath).ToList();
+            var fromStack = staged.Any(_stackPages.Contains);
             var triage = await _toolset.Triage.TriageAsync(
-                group,
-                [.. Pages.OrderBy(p => p.SequenceNumber).Select(p => p.FilePath)],
-                keepBlankPages: _stackAwaitingSave);
+                group, staged, keepBlankPages: fromStack);
             var result = await _groupService.AdoptPagesAsync(
-                group.Id, triage.FilesToAdopt, triage.IsBlankFlagged, _stackAwaitingSave);
+                group.Id, triage.FilesToAdopt, triage.IsBlankFlagged, fromStack);
             var adopted = result.Adopted.Select(p => p.DocumentId).ToList();
             await _indexingService.ApplyInitialValuesAsync(
                 group.Id, adopted, StampNoteState(_activeGroup.PendingValues));
@@ -1045,9 +1074,6 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 
             await _ocrTrigger.EnqueueIfProfileEnabledAsync(group);
             _activeGroup.NotifyGroupContentChanged();
-
-            // The stack is in the group; the next save is an ordinary one again.
-            _stackAwaitingSave = false;
 
             var stuck = result.FailedSourceFiles.Select(f => f.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var summary = $"Saved {result.Adopted.Count} page(s) to \"{group.Name}\"."
