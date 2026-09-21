@@ -66,7 +66,16 @@
                          MinLines="3" MaxLines="20" Padding="2,1"
                          Visibility="{Binding IsMemo, Converter={x:Static views:BoolToVisibilityConverter.Instance}}" />
 
-                <ComboBox Grid.Row="0" Grid.Column="1"
+                <!-- Sized to its longest choice, not to the form. A list of four short words
+                     stretched the full width of the pane, so the eye travelled past a lot of empty
+                     box to reach the next label. MinWidth keeps a list with no choices from
+                     collapsing to nothing; the form no longer scrolls sideways, so a very long
+                     choice is bounded by the pane rather than pushing a scrollbar back.
+
+                     This reverses a non-goal from SPEC-2026-002 ("no per-field width for non-memo
+                     fields"); Franz approved the reversal on 2026-09-20. Ordinary text boxes still
+                     fill the form width, per ADR-0009. -->
+                <ComboBox Grid.Row="0" Grid.Column="1" HorizontalAlignment="Left" MinWidth="120"
                           ItemsSource="{Binding Choices}" SelectedItem="{Binding ListValue}" IsEditable="False"
                           IsEnabled="{Binding IsEditable}"
                           AutomationProperties.LabeledBy="{Binding ElementName=FieldLabel}"
