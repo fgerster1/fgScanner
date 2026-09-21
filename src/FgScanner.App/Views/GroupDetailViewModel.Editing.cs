@@ -316,7 +316,29 @@ public sealed partial class GroupDetailViewModel
         var source = SelectedRows.Count > 0
             ? (SelectedRows.Count == 1 ? "the selected page" : $"the {SelectedRows.Count} selected pages")
             : $"\"{Group.Name}\"";
-        StatusText = await _toolset.Email.SendAsync(pages, Group.Name, source);
+        StatusText = await _toolset.Email.SendAsync(pages, Group.Name, source, await IsEvidenceRecordAsync());
+    }
+
+    /// <summary>
+    /// Whether this group is a finished evidence record — committed, on the Evidence profile.
+    /// Only then is a send leaving a folder whose index, checksums and `originals\` archive are
+    /// its integrity, which is what §05 Q2b's one-time warning is about.
+    ///
+    /// Identified by the profile's name, because that is how the app itself creates and repairs
+    /// it (`ProfileService.EnsureEvidenceProfileAsync`). A profile renamed by hand would stop
+    /// matching and the warning would not appear — it is a nudge and not a gate, so that is a
+    /// missed reminder rather than a hole, but it is the first thing to fix if it ever matters.
+    /// </summary>
+    private async Task<bool> IsEvidenceRecordAsync()
+    {
+        if (Group.State != GroupState.Committed || Group.ProfileId is not { } profileId)
+        {
+            return false;
+        }
+
+        var profiles = await _profileService.ListAsync();
+        return profiles.Any(p => p.Id == profileId
+            && string.Equals(p.Name, ProfileService.EvidenceProfileName, StringComparison.Ordinal));
     }
 
     /// <summary>Selection of 2+ exports just those pages; otherwise the whole group.</summary>

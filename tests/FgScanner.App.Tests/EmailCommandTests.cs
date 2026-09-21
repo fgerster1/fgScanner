@@ -206,10 +206,11 @@ public sealed class EmailCommandTests : IDisposable
 
     // ---- which pages a send actually takes ----
 
-    private async Task<GroupDetailViewModel> GroupOfAsync(int pages)
+    private async Task<GroupDetailViewModel> GroupOfAsync(
+        int pages, bool evidenceProfile = false, bool committed = false)
     {
         var ct = TestContext.Current.CancellationToken;
-        var dbPath = Path.Combine(_root, "group.db");
+        var dbPath = Path.Combine(_root, $"group-{evidenceProfile}-{committed}.db");
         using (var db = new FgScanner.Data.FgScannerDbContext(FgScanner.Data.DbBootstrapper.BuildOptions(dbPath)))
         {
             Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.Migrate(db.Database);
@@ -222,13 +223,43 @@ public sealed class EmailCommandTests : IDisposable
         var indexing = new FgScanner.Data.IndexingService(
             factory, profiles, new FgScanner.Core.Index.IndexExporter());
 
-        var incoming = Path.Combine(_root, "incoming");
+        var incoming = Path.Combine(_root, $"incoming-{evidenceProfile}-{committed}");
         Directory.CreateDirectory(incoming);
-        var group = await groups.CreateGroupAsync(Path.Combine(_root, "groups"), "Farm Folder", null, ct);
+
+        (Guid, int)? profileRef = null;
+        if (evidenceProfile)
+        {
+            var evidence = await profiles.EnsureEvidenceProfileAsync(ct);
+            profileRef = (evidence.Id, (await profiles.GetLatestSchemaAsync(evidence.Id, ct)).Version);
+        }
+        else
+        {
+            var ordinary = await profiles.CreateAsync("Invoices", ct);
+            profileRef = (ordinary.Id, (await profiles.GetLatestSchemaAsync(ordinary.Id, ct)).Version);
+        }
+
+        var group = await groups.CreateGroupAsync(
+            Path.Combine(_root, $"groups-{evidenceProfile}-{committed}"), "Farm Folder", profileRef, ct);
         var files = Enumerable.Range(1, pages)
             .Select(i => MakePageIn(incoming, $"in_{i:00}.png"))
             .ToList();
         await groups.AdoptPagesAsync(group.Id, files, null, false, ct);
+        if (committed)
+        {
+            // Committing is IndexingService's job and needs an index; the state is what the
+            // warning turns on, so it is set directly here — in the row and in the instance the
+            // view model is handed.
+            await using (var db = new FgScanner.Data.FgScannerDbContext(
+                FgScanner.Data.DbBootstrapper.BuildOptions(dbPath)))
+            {
+                var row = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
+                    .FirstAsync(db.Groups, g => g.Id == group.Id, ct);
+                row.State = FgScanner.Data.GroupState.Committed;
+                await db.SaveChangesAsync(ct);
+            }
+
+            group.State = FgScanner.Data.GroupState.Committed;
+        }
 
         var toolset = new PageEditingToolset(
             new FgScanner.Scanning.Editing.ImageEditor(),
@@ -351,6 +382,149 @@ public sealed class EmailCommandTests : IDisposable
         }
 
         return scan;
+    }
+
+    // ---- the one-time evidence warning (§05 Q2b) ----
+
+    /// <summary>
+    /// Records what the dialog was asked to show, and answers as if the operator pressed
+    /// Continue. Replaces the real dialog so a send can be walked without a window.
+    /// </summary>
+    private sealed class RecordingAsk
+    {
+        public List<bool> WarningShown { get; } = [];
+
+        public bool Dismiss { get; set; }
+
+        public (EmailAttachment Format, string Subject, bool DontWarnAgain)? Ask(
+            int pageCount, string source, string subject, EmailAttachment format, bool warn)
+        {
+            WarningShown.Add(warn);
+            return (format, subject, Dismiss);
+        }
+    }
+
+    private async Task<(GroupDetailViewModel Vm, RecordingAsk Ask)> EvidenceGroupAsync(
+        bool evidenceProfile = true, bool committed = true)
+    {
+        var vm = await GroupOfAsync(2, evidenceProfile, committed);
+        var ask = new RecordingAsk();
+        vm.Email.Ask = ask.Ask;
+        return (vm, ask);
+    }
+
+    /// <summary>
+    /// §05 Q2b. A send copies pages out of the folder whose checksums and `originals\` archive
+    /// are its evidentiary integrity (ADR-0003). It is allowed — but the operator is told, once,
+    /// what leaving that folder means. It never blocks the send.
+    /// </summary>
+    [Fact]
+    public async Task A_committed_evidence_group_warns_on_the_first_send()
+    {
+        var (vm, ask) = await EvidenceGroupAsync();
+
+        await vm.EmailCommand.ExecuteAsync(null);
+
+        Assert.Equal([true], ask.WarningShown);
+    }
+
+    [Fact]
+    public async Task The_warning_does_not_come_back_once_it_is_dismissed()
+    {
+        var (vm, ask) = await EvidenceGroupAsync();
+        ask.Dismiss = true;
+
+        await vm.EmailCommand.ExecuteAsync(null);
+        await vm.EmailCommand.ExecuteAsync(null);
+
+        Assert.Equal([true, false], ask.WarningShown);
+    }
+
+    /// <summary>Not every group is evidence; a warning shown everywhere is a warning nobody reads.</summary>
+    [Fact]
+    public async Task A_group_on_an_ordinary_profile_is_never_warned_about()
+    {
+        var (vm, ask) = await EvidenceGroupAsync(evidenceProfile: false);
+
+        await vm.EmailCommand.ExecuteAsync(null);
+
+        Assert.Equal([false], ask.WarningShown);
+    }
+
+    /// <summary>
+    /// Before commit there is no index and no `originals\` archive to speak of — the folder is
+    /// still being built, and the warning is about leaving a finished record.
+    /// </summary>
+    [Fact]
+    public async Task An_uncommitted_group_is_never_warned_about()
+    {
+        var (vm, ask) = await EvidenceGroupAsync(committed: false);
+
+        await vm.EmailCommand.ExecuteAsync(null);
+
+        Assert.Equal([false], ask.WarningShown);
+    }
+
+    /// <summary>
+    /// §14. Every send is logged: which surface, how many pages, which format, which route.
+    ///
+    /// And never a recipient. The app does not know one — the operator addresses the message in
+    /// their own client — and it must not start keeping a record of who case material was sent
+    /// to as a side effect of logging that it was sent. That would be a decision of its own, and
+    /// nobody has made it. Asserted rather than eyeballed, because a log line grows by accident.
+    /// </summary>
+    [Fact]
+    public async Task Every_send_is_logged_without_a_recipient()
+    {
+        var written = new List<string>();
+        var previous = Serilog.Log.Logger;
+        Serilog.Log.Logger = new Serilog.LoggerConfiguration()
+            .MinimumLevel.Information()
+            .WriteTo.Sink(new CapturingSink(written))
+            .CreateLogger();
+        try
+        {
+            var share = new FakeShareService(ShareRoute.Explorer);
+            var sender = new EmailSender(Builder(), share, Settings())
+            {
+                Ask = (_, _, subject, format, _) => (format, subject, false),
+            };
+
+            await sender.SendAsync(
+                [MakePage("log-1.png"), MakePage("log-2.png")],
+                "Farm Folder",
+                "the 2 selected pages",
+                evidenceRecord: false,
+                TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            (Serilog.Log.Logger as IDisposable)?.Dispose();
+            Serilog.Log.Logger = previous;
+        }
+
+        var line = Assert.Single(written, l => l.Contains("Email:", StringComparison.Ordinal));
+        Assert.Contains("2 page(s)", line, StringComparison.Ordinal);
+        Assert.Contains("the 2 selected pages", line, StringComparison.Ordinal);
+        Assert.Contains("Pdf", line, StringComparison.Ordinal);
+        Assert.Contains("Explorer", line, StringComparison.Ordinal);
+
+        // Nothing that could be an address, anywhere in the whole run's output.
+        Assert.All(written, l => Assert.DoesNotContain("@", l, StringComparison.Ordinal));
+        foreach (var word in new[] { "recipient", "mailto", "To:", "Cc" })
+        {
+            Assert.All(written, l => Assert.DoesNotContain(word, l, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private sealed class CapturingSink(List<string> lines) : Serilog.Core.ILogEventSink
+    {
+        public void Emit(Serilog.Events.LogEvent logEvent)
+        {
+            using var writer = new StringWriter();
+            logEvent.RenderMessage(writer, System.Globalization.CultureInfo.InvariantCulture);
+            lines.Add($"[{logEvent.Level}] {writer}");
+        }
     }
 
     private AttachmentBuilder Builder() => new(

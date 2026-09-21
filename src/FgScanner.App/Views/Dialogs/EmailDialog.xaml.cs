@@ -30,19 +30,31 @@ public partial class EmailDialog : Window
         set => SubjectBox.Text = value;
     }
 
+    /// <summary>Ticked only when the evidence warning was actually shown.</summary>
+    public bool DontWarnAgain => EvidencePanel.Visibility == Visibility.Visible && DontWarnCheck.IsChecked == true;
+
     public void Describe(int pageCount, string source) =>
         SummaryText.Text = pageCount == 1
             ? $"1 page from {source} will be attached."
             : $"{pageCount} pages from {source} will be attached.";
 
+    public void ShowEvidenceWarning() => EvidencePanel.Visibility = Visibility.Visible;
+
     /// <summary>Shows the dialog over the active window, or null if it was cancelled.</summary>
-    public static (EmailAttachment Format, string Subject)? Ask(
-        int pageCount, string source, string subject, EmailAttachment format)
+    public static (EmailAttachment Format, string Subject, bool DontWarnAgain)? Ask(
+        int pageCount, string source, string subject, EmailAttachment format, bool warnEvidence)
     {
         var dialog = new EmailDialog { Owner = Application.Current?.MainWindow, Subject = subject };
         dialog.Format = format;
         dialog.Describe(pageCount, source);
-        return dialog.ShowDialog() == true ? (dialog.Format, dialog.Subject) : null;
+        if (warnEvidence)
+        {
+            dialog.ShowEvidenceWarning();
+        }
+
+        return dialog.ShowDialog() == true
+            ? (dialog.Format, dialog.Subject, dialog.DontWarnAgain)
+            : null;
     }
 
     private void OnContinue(object sender, RoutedEventArgs e) => DialogResult = true;

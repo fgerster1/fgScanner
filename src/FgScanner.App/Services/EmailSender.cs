@@ -21,13 +21,16 @@ public sealed class EmailSender(
     /// Asks the operator what to attach. Replaceable so a send can be walked in a test without a
     /// window, the way <c>ConfirmDelete</c> and <c>ShowPageViewer</c> already are.
     /// </summary>
-    public Func<int, string, string, EmailAttachment, (EmailAttachment Format, string Subject)?> Ask { get; set; }
+    public Func<int, string, string, EmailAttachment, bool,
+        (EmailAttachment Format, string Subject, bool DontWarnAgain)?> Ask
+    { get; set; }
         = Views.Dialogs.EmailDialog.Ask;
 
     public async Task<string> SendAsync(
         IReadOnlyList<string> pages,
         string subject,
         string source,
+        bool evidenceRecord = false,
         CancellationToken cancellationToken = default)
     {
         if (pages.Count == 0)
@@ -38,9 +41,20 @@ public sealed class EmailSender(
         // Read per send, never captured once: a format chosen in Settings reaches the next send
         // without a restart (ADR-0010).
         var remembered = await EmailSettings.ReadAsync(settings, cancellationToken).ConfigureAwait(false);
-        if (Ask(pages.Count, source, subject, remembered) is not { } chosen)
+
+        // §05 Q2b: allowed, but said once. The warning rides inside the dialog the operator was
+        // going to see anyway — it is not a second confirmation and it cannot stop a send.
+        var warn = evidenceRecord
+            && !await EmailSettings.WarningSeenAsync(settings, cancellationToken).ConfigureAwait(false);
+
+        if (Ask(pages.Count, source, subject, remembered, warn) is not { } chosen)
         {
             return "Email cancelled — nothing left the app.";
+        }
+
+        if (warn && chosen.DontWarnAgain)
+        {
+            await EmailSettings.MarkWarningSeenAsync(settings, cancellationToken).ConfigureAwait(false);
         }
 
         if (chosen.Format != remembered)

@@ -56,6 +56,9 @@ public sealed partial class GroupDetailViewModel : ObservableObject
     /// <summary>The app settings store, for views that remember their own sizes.</summary>
     public AppSettingsService Settings => _toolset.Settings;
 
+    /// <summary>Exposed the way <see cref="Settings"/> is, so a send can be walked without a window.</summary>
+    public EmailSender Email => _toolset.Email;
+
     public ObservableCollection<DocumentRow> Rows { get; } = [];
 
     /// <summary>Field editors for "values for the next scan" (pre-scan entry, PLAN §5.4). Row-scoped only — a batch field belongs to <see cref="BatchFields"/> instead.</summary>

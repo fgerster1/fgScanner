@@ -23,6 +23,24 @@ public static class EmailSettings
     public const string AttachmentKey = "Email.Attachment";
 
     /// <summary>
+    /// Whether the operator has already been told, once, what sending a committed evidence
+    /// group's pages means (§05 Q2b, §07). Stored rather than shown every time, because a warning
+    /// that appears on every send is a warning nobody reads — and this one is worth reading.
+    /// </summary>
+    public const string EvidenceWarningSeenKey = "Email.EvidenceWarningSeen";
+
+    public static async Task<bool> WarningSeenAsync(
+        FgScanner.Data.AppSettingsService settings, CancellationToken cancellationToken = default) =>
+        string.Equals(
+            await settings.GetAsync(EvidenceWarningSeenKey, "false", cancellationToken).ConfigureAwait(false),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+
+    public static Task MarkWarningSeenAsync(
+        FgScanner.Data.AppSettingsService settings, CancellationToken cancellationToken = default) =>
+        settings.SetAsync(EvidenceWarningSeenKey, "true", cancellationToken);
+
+    /// <summary>
     /// PDF by default: one file, the format a recipient can open anywhere, and the same artefact
     /// the export button produces. An unreadable or unknown stored value falls back to it rather
     /// than throwing — a corrupt setting must not stop an operator sending a page.
