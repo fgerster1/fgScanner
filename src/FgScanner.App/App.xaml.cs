@@ -113,6 +113,13 @@ public partial class App : Application
                         "FGScanner", "trash")));
                 services.AddSingleton<ReorderService>();
                 services.AddSingleton<AppSettingsService>();
+
+                // Sharing: one builder for the session so every temp folder it makes is known to
+                // OnExit, and one share service so both call sites take the same interface.
+                services.AddSingleton(_ => new AttachmentBuilder(
+                    new FgScanner.Scanning.Export.PdfExportService(),
+                    new FgScanner.Scanning.Export.ImageExportService()));
+                services.AddSingleton<FgScanner.Core.Sharing.IShareService>(_ => new WindowsShareService());
                 services.AddSingleton<OcrQueueService>();
                 services.AddSingleton<AiQueueService>();
                 services.AddSingleton(sp => new FgScanner.Ai.CredentialStore());
@@ -317,6 +324,11 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         Log.Information("FG Scanner exiting");
+
+        // Attachments are copies of case material sitting in the system temp folder. They are
+        // temporary by design (§07), and leaving them behind after the app has gone is the quiet
+        // spread §13 is about. Before the host goes, because the builder lives in it.
+        _host?.Services.GetService<AttachmentBuilder>()?.CleanUp();
         _host?.StopAsync().GetAwaiter().GetResult();
         _host?.Dispose();
         _singleInstanceMutex?.Dispose();

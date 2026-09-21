@@ -78,7 +78,7 @@ public static partial class NamingEngine
         {
             var fieldName = token["field:".Length..];
             return context.FieldValues.TryGetValue(fieldName, out var value)
-                ? Slugify(value ?? "")
+                ? Sanitize(value ?? "")
                 : "";
         }
 
@@ -92,7 +92,7 @@ public static partial class NamingEngine
             "hh" => t.Hour.ToString("00", CultureInfo.InvariantCulture),
             "mm" => t.Minute.ToString("00", CultureInfo.InvariantCulture),
             "ss" => t.Second.ToString("00", CultureInfo.InvariantCulture),
-            "group" => Slugify(context.GroupName),
+            "group" => Sanitize(context.GroupName),
             "doc" => context.DocumentSequence.ToString(CultureInfo.InvariantCulture),
             "page" => context.PageSequence.ToString(CultureInfo.InvariantCulture),
             "barcode" => "", // reserved for phase 10 barcode work
@@ -100,8 +100,13 @@ public static partial class NamingEngine
         };
     }
 
-    /// <summary>Substituted values must never break the file name; the pattern itself is the user's choice.</summary>
-    private static string Slugify(string value)
+    /// <summary>
+    /// Substituted values must never break the file name; the pattern itself is the user's choice.
+    /// Public because an email attachment is named from a group name or a subject and must be
+    /// sanitised the same way an exported file is, rather than by a second copy of this rule
+    /// (SPEC-2026-007 §13).
+    /// </summary>
+    public static string Sanitize(string value)
     {
         var invalid = Path.GetInvalidFileNameChars();
         var chars = value.Select(c => invalid.Contains(c) ? '-' : c).ToArray();

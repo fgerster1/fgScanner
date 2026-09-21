@@ -44,10 +44,20 @@ public sealed class EmailCommandTests : IDisposable
         }
     }
 
-    private string MakePage(string name)
+    private string MakePage(string name) => MakePageIn(_root, name);
+
+    /// <summary>A real PNG, because the exporters decode what they are given.</summary>
+    private static string MakePageIn(string directory, string name)
     {
-        var path = Path.Combine(_root, name);
-        File.WriteAllText(path, name);
+        var path = Path.Combine(directory, name);
+        using var bitmap = new System.Drawing.Bitmap(120, 160);
+        using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
+        {
+            graphics.Clear(System.Drawing.Color.White);
+            graphics.FillRectangle(System.Drawing.Brushes.Black, 20, 20, 80, 12);
+        }
+
+        bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
         return path;
     }
 
@@ -148,6 +158,109 @@ public sealed class EmailCommandTests : IDisposable
             revealInExplorer: _ => { order.Add("explorer"); return true; });
         Assert.Equal(ShareRoute.Mapi, mapiWins.Open(Request()).Route);
         Assert.Equal(["sheet", "mapi"], order);
+    }
+
+    private sealed class TestFactory(string dbPath)
+        : Microsoft.EntityFrameworkCore.IDbContextFactory<FgScanner.Data.FgScannerDbContext>
+    {
+        public FgScanner.Data.FgScannerDbContext CreateDbContext() =>
+            new(FgScanner.Data.DbBootstrapper.BuildOptions(dbPath));
+    }
+
+    private FgScanner.Data.AppSettingsService Settings()
+    {
+        var dbPath = Path.Combine(_root, "settings.db");
+        using (var db = new FgScanner.Data.FgScannerDbContext(FgScanner.Data.DbBootstrapper.BuildOptions(dbPath)))
+        {
+            Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.Migrate(db.Database);
+        }
+
+        return new FgScanner.Data.AppSettingsService(new TestFactory(dbPath));
+    }
+
+    /// <summary>
+    /// §07: read fresh per send, and a value that cannot be read falls back to PDF rather than
+    /// throwing. A corrupt setting must not stop an operator sending a page, and it must not
+    /// quietly change what gets attached either.
+    /// </summary>
+    [Fact]
+    public async Task The_attachment_format_is_read_fresh_and_falls_back_to_pdf()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var settings = Settings();
+
+        Assert.Equal(EmailAttachment.Pdf, await EmailSettings.ReadAsync(settings, ct));
+
+        await EmailSettings.WriteAsync(settings, EmailAttachment.Images, ct);
+        Assert.Equal(EmailAttachment.Images, await EmailSettings.ReadAsync(settings, ct));
+
+        await settings.SetAsync(EmailSettings.AttachmentKey, "Fax", ct);
+        Assert.Equal(EmailAttachment.Pdf, await EmailSettings.ReadAsync(settings, ct));
+    }
+
+    private AttachmentBuilder Builder() => new(
+        new FgScanner.Scanning.Export.PdfExportService(),
+        new FgScanner.Scanning.Export.ImageExportService(),
+        Path.Combine(_root, "temp"));
+
+    /// <summary>
+    /// AC-9. The group folder is the record: its checksums and its `originals\` archive are what
+    /// make it evidence (ADR-0003). Building something to attach must not add a file to it, move
+    /// one, or touch one — the copy that leaves is a copy, and the folder is as it was.
+    /// </summary>
+    [Fact]
+    public async Task Building_attachments_writes_nothing_into_the_group_folder()
+    {
+        var group = Path.Combine(_root, "group");
+        Directory.CreateDirectory(group);
+        var pages = new[] { MakePageIn(group, "scan_00001.png"), MakePageIn(group, "scan_00002.png") };
+        var before = Directory.GetFiles(group, "*", SearchOption.AllDirectories)
+            .ToDictionary(f => f, f => new FileInfo(f).LastWriteTimeUtc, StringComparer.OrdinalIgnoreCase);
+
+        var built = await Builder().BuildAsync(pages, "Farm Folder", EmailAttachment.Pdf, TestContext.Current.CancellationToken);
+
+        Assert.True(built.Ok, built.Message);
+        Assert.NotEmpty(built.FilePaths);
+        Assert.All(built.FilePaths, p => Assert.DoesNotContain(group, p, StringComparison.OrdinalIgnoreCase));
+
+        var after = Directory.GetFiles(group, "*", SearchOption.AllDirectories)
+            .ToDictionary(f => f, f => new FileInfo(f).LastWriteTimeUtc, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal(before.Keys.Order(), after.Keys.Order());
+        Assert.All(before, kv => Assert.Equal(kv.Value, after[kv.Key]));
+    }
+
+    /// <summary>
+    /// A page whose file has gone — moved, deleted, a drive unplugged — must name the page and
+    /// share nothing. Sending a PDF silently short of a page is the failure mode that matters
+    /// here: the message looks complete to whoever receives it.
+    /// </summary>
+    [Fact]
+    public async Task A_missing_page_names_the_page_and_shares_nothing()
+    {
+        var present = MakePage("here.png");
+        var missing = Path.Combine(_root, "gone.png");
+
+        var built = await Builder().BuildAsync([present, missing], "Farm Folder", EmailAttachment.Pdf, TestContext.Current.CancellationToken);
+
+        Assert.False(built.Ok);
+        Assert.Empty(built.FilePaths);
+        Assert.Contains("gone.png", built.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Exception", built.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>§15: warn above 20 MB, never refuse — the operator decides.</summary>
+    [Fact]
+    public async Task A_large_attachment_warns_but_still_goes()
+    {
+        var built = await Builder().BuildAsync([MakePage("one.png")], "Small", EmailAttachment.Pdf, TestContext.Current.CancellationToken);
+        Assert.True(built.Ok);
+        Assert.False(built.TooLarge);
+        Assert.Equal("", built.Warning);
+
+        var over = AttachmentBuilder.SizeWarning(21L * 1024 * 1024);
+        Assert.Contains("20 MB", over, StringComparison.Ordinal);
+        Assert.Contains("21", over, StringComparison.Ordinal);
+        Assert.Equal("", AttachmentBuilder.SizeWarning(19L * 1024 * 1024));
     }
 
     /// <summary>
