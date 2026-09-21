@@ -14,3 +14,5 @@ Write the ADR in the same commit as the code that implements the decision.
 | [0004](0004-field-scope.md) | A field can be scoped to the group instead of the row |
 | [0005](0005-captured-by-is-null-for-adopted-files.md) | `capturedBy` is null for retro-processed pages |
 | [0009](0009-field-length-and-memo.md) | Field length and memo are settings on Text, not a new field type |
+| [0010](0010-settings-change-notification.md) | One announced settings change, and a capture in hand wins |
+| [0011](0011-duplex-ordering.md) | A two-pass stack is ordered before adoption, and keeps every back |

@@ -501,13 +501,27 @@ _No data migration._ Code only.
 
 ## 21 · Definition of done
 
-- [ ] All acceptance criteria met
-- [ ] Failing tests written first, now passing
-- [ ] Full suite green (≥ 692)
-- [ ] `/code-review max` run, findings resolved or accepted in writing
-- [ ] Security review — _not applicable_
-- [ ] Documentation updated per §18
-- [ ] Manual scanner checks in §11.3 recorded in `docs/manual-tests.md`
+- [x] All acceptance criteria met — AC-1 to AC-10. **AC-2 with a caveat:** `PaperSource.Duplex`
+      and `FlipDuplexedPages` are proven to reach `ScanOptions` by `ScanOptionMappingTests`, which
+      is what the AC names, but no physical duplex page has been produced by this code. §11.3 row
+      1 is where that gets settled.
+- [x] Failing tests written first, now passing
+- [x] Full suite green (≥ 692) — **793**, up from 765 at the code review
+- [x] `/code-review max` run, findings resolved or accepted in writing — 14 findings, all fixed
+      on `phase-25-duplex`, one per commit with the reasoning in the message. The headline was
+      that the feature was unreachable in the app: `ScanBothSidesCommand` was in no
+      `NotifyCanExecuteChangedFor` list, so the button was disabled for the life of the window.
+      **Accepted rather than fixed, and still open:** the §14 logging for the two-pass path; a
+      Patch-T separator inside a stack is still dropped (shifting the pairing the same way a blank
+      back would, and the spec is silent on separators in a duplex run); ~82 lines of fixture
+      bootstrap duplicated across the two new App test files; only three NAPS2 exceptions are
+      translated, so a paper jam still reads "Scan failed: …".
+- [—] Security review — _not applicable_
+- [x] Documentation updated per §18
+- [◐] Manual scanner checks in §11.3 recorded in `docs/manual-tests.md` — **rehearsed on the fake
+      scanner 2026-09-21, not on hardware.** Rows 2–7 pass; row 1 (rotation on a real duplex
+      scanner) cannot be rehearsed and is open. All rows are owed again on the dev station's
+      HP ENVY 7640 and on Jim's machine, named with the scanner.
 - [ ] Rollback tested or explicitly waived by Franz
 
 ## 22 · Sign-off
@@ -516,5 +530,5 @@ _No data migration._ Code only.
 |---|---|
 | **Review round answered** | ☑ 2026-09-20 — [Round A, part 2 of 3](https://claude.ai/artifact/DHsGWBY5RVTi5ub4nwgyST) · db doc `review/SPEC-2026-006-rA-p2` |
 | **Franz approved** | ☑ 2026-09-20 (verdict `approve`, all items option (a)) |
-| **Built** | ☐ date: |
-| **Verified in production** | ☐ date: |
+| **Built** | ☑ 2026-09-21 — branch `phase-25-duplex`, prompts 1–8. Not yet merged or pushed. |
+| **Verified in production** | ☐ date: — needs §11.3 on real paper, then Jim's station |

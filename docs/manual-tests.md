@@ -28,7 +28,9 @@ Run before each release, and after any change to FgScanner.Scanning. Automated t
       This is the BUG-1 regression case and it now passes; see the 2026-08-27 findings. 2026-08-27
 - [x] Feeder scan with 3+ pages — 3 pages captured twice via CLI, exit 0, all 2480x3507 px.
       **The "thumbnails stream in one at a time" half is GUI-only and still untested.** 2026-08-24
-- [ ] Duplex scan (if hardware supports) → front/back pages in order
+- [ ] Duplex scan (if hardware supports) → front/back pages in order.
+      **Superseded by the SPEC-2026-006 section at the end of this file**, which covers one-pass
+      duplex and the two-pass flow separately. Row 1 there is this row, and is still open.
 - [~] BlackWhite bit depth + 150 DPI — eSCL produced a correct 1275x1650 px @ 150 DPI file, but the
       sheet on the glass was blank so "still legible" is **inconclusive**. Re-run over real text.
 - [ ] Cancel mid-feeder-run → already-scanned pages remain, status shows canceled
@@ -229,7 +231,9 @@ so it affects the XSD, the manifest, and the Verify snapshots.
 ### Still requiring a human at the GUI
 
 Thumbnail streaming, cancel mid-run, the crash-recovery prompt, duplex, empty-feeder error surfacing,
-`--fake-scanner` startup, and everything in the phase 4-10 sections.
+`--fake-scanner` startup, and everything in the phase 4-10 sections. **Duplex is now tracked in the
+SPEC-2026-006 section at the end of this file**, where the two-pass rows have been rehearsed on the
+fake scanner and the hardware rows are listed as owed.
 
 ## Findings from the 2026-08-27 pass (pre-hand-off, on the Pantum M6550NW)
 
@@ -277,7 +281,8 @@ looked like a phase-18 regression. It is not one — re-running with the 0.3.2 b
 
 ### Still open on this pass — all need a human at the scanner
 
-Feeder 3+ pages with thumbnail streaming · duplex · cancel mid-run · empty-feeder error ·
+Feeder 3+ pages with thumbnail streaming · duplex (see the SPEC-2026-006 section) · cancel mid-run ·
+empty-feeder error ·
 BlackWhite 150 DPI over real text (still the `[~]` row) · all four crash-recovery rows ·
 32-bit-only vendor TWAIN driver · unplug mid-scan · WIA (no WIA device on this machine).
 

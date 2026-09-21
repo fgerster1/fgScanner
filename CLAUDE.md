@@ -98,6 +98,32 @@ the JimsStuff portal (`JimsStuff/pipeline/import_fgscanner.py`) parses committed
   Cancel, the one control that keeps a half-pair off the disk, is unreachable. Every path that
   moves the sequence calls `AnnouncedAnnotatedState()`; a state change nobody announces hides
   that control while a sheet is genuinely in hand, which a test pins directly.
+- **Both sides of a stack are captured in two passes on a feeder that scans one side**, and
+  `DuplexPassSequence` (`FgScanner.Core.Capture`) works out which back belongs to which front.
+  **The pairing happens on the Scan page, before anything is saved** — adoption numbers documents
+  in the order it is handed them and renames the files to match, so ordering afterwards rewrites
+  rows that are already written and re-exports a committed group (ADR-0011). The Groups-page
+  Reverse / Interleave / Deinterleave buttons are the *repair* tool for stacks captured before
+  this existed, or for one whose pairing was refused; never send an operator there for a fresh
+  two-pass run.
+
+  **The Scan panel must keep showing `DuplexPrompt` and the Cancel control while `DuplexActive`,
+  and every path that moves the sequence must call `AnnouncedDuplexState()`** — the same rule as
+  the annotated sheet, for the same reason, with a whole stack attached to it instead of one
+  sheet. A stack left half-captured with nothing on screen saying so ends with the fronts adopted
+  as whole one-sided documents. Both sequences own that one prompt area, so they are mutually
+  exclusive; neither may start while the other is in hand.
+
+  On a count mismatch **nothing is paired** and both counts are reported (§05 Q1a) — an odd stack
+  is a mismatch. A confident wrong pairing is worse than an obvious mess, because nobody looks for
+  it until it is read out. Two passes are refused unless the source is the feeder.
+
+  **A duplex save keeps every back.** Blank backs are byte-identical, so a save whose pages were
+  captured as pairs suppresses *both* things that remove them — adoption's checksum skip and
+  capture triage's blank-page Drop policy — for those pages only, never as a default. The blank
+  back of an evidence page is evidence that the back is blank, and a page removed shifts every
+  pairing after it. That suppression belongs to the pages and lasts exactly as long as they are
+  staged: it must survive a save that could not take every page, and must not outlive them.
 - `Feature.PreserveOriginals` stays ON for evidence groups (ADR-0003); the `originals\`
   subfolder and its checksums are part of the folder's evidentiary integrity.
 - **A field's length and memo flag are layout and validation settings, never part of the export
