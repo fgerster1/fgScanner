@@ -41,6 +41,15 @@ public sealed class FakeScanService : IScanService
     /// <summary>When set, thrown from the capability probe — the driver that cannot answer.</summary>
     public Exception? CapabilitiesError { get; init; }
 
+    /// <summary>
+    /// Produces byte-identical pages: a stack of blank backs, which is what a real duplex run
+    /// hands back and what no other fake scan can reproduce. Off by default, because the run
+    /// number stamped into every page is deliberate — it stops consecutive scans colliding on
+    /// checksum, which would make adoption drop them. Turning it on is how a test asks for
+    /// exactly that collision.
+    /// </summary>
+    public bool BlankIdenticalPages { get; init; }
+
     /// <summary>How many times the device has been asked; a probe on the scan path shows up here.</summary>
     public int CapabilityProbes => _capabilityProbes;
 
@@ -86,7 +95,7 @@ public sealed class FakeScanService : IScanService
             }
 
             var path = storage.ReserveNextPagePath("png");
-            WritePageImage(path, run, i, options);
+            WritePageImage(path, BlankIdenticalPages ? null : (run, i), options);
             var page = new ScannedPage(path, ExtractSequence(path));
             storage.CommitPage(page);
             yield return page;
@@ -100,15 +109,23 @@ public sealed class FakeScanService : IScanService
         return dash >= 0 && int.TryParse(name[(dash + 1)..], out var n) ? n : 0;
     }
 
-    private static void WritePageImage(string path, int run, int pageNumber, ScanProfileOptions options)
+    /// <summary>
+    /// Writes a page. A null <paramref name="marks"/> leaves it blank and therefore identical to
+    /// every other blank one — the stack of blank backs a duplex run produces.
+    /// </summary>
+    private static void WritePageImage(string path, (int Run, int Page)? marks, ScanProfileOptions options)
     {
         // Letter aspect at 1/4 scale keeps fixtures small but visually page-like.
         using var bitmap = new Bitmap(212, 275);
         using var graphics = Graphics.FromImage(bitmap);
         graphics.Clear(options.BitDepth == ScanBitDepth.Color ? Color.Ivory : Color.White);
-        using var font = new Font(FontFamily.GenericSansSerif, 24);
-        graphics.DrawString($"Page {pageNumber}", font, Brushes.Black, 40, 110);
-        graphics.DrawString($"Sheet {run}", font, Brushes.DimGray, 40, 160);
+        if (marks is { } mark)
+        {
+            using var font = new Font(FontFamily.GenericSansSerif, 24);
+            graphics.DrawString($"Page {mark.Page}", font, Brushes.Black, 40, 110);
+            graphics.DrawString($"Sheet {mark.Run}", font, Brushes.DimGray, 40, 160);
+        }
+
         graphics.DrawRectangle(Pens.Gray, 5, 5, 201, 264);
         bitmap.Save(path, ImageFormat.Png);
     }

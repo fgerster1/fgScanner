@@ -334,8 +334,25 @@ public sealed class GroupService(IDbContextFactory<FgScannerDbContext> dbFactory
         AdoptPagesAsync(groupId, sourceFiles, isBlank: null, cancellationToken);
 
     /// <summary>Capture triage passes <paramref name="isBlank"/> so flag-policy blanks are marked on adoption.</summary>
+    public Task<AdoptResult> AdoptPagesAsync(
+        Guid groupId, IEnumerable<string> sourceFiles, Func<string, bool>? isBlank,
+        CancellationToken cancellationToken = default) =>
+        AdoptPagesAsync(groupId, sourceFiles, isBlank, keepIdenticalPages: false, cancellationToken);
+
+    /// <summary>
+    /// <paramref name="keepIdenticalPages"/> suspends the duplicate skip for this call only, for a
+    /// two-pass duplex run. The blank back of a printed sheet is byte-identical to the blank back
+    /// of every other sheet scanned at the same settings, so ten sheets would save one blank and
+    /// drop nine — and every pairing after the first drop would be wrong, with nothing on screen
+    /// saying so. The blank back of an evidence page is evidence (§05 Q2a).
+    ///
+    /// It is an argument rather than a setting on the group, and false everywhere else, because
+    /// the skip is what protects a folder adopted twice and a batch replayed after a partial run.
+    /// A duplex stack is the one case where identical pages are genuinely different pages.
+    /// </summary>
     public async Task<AdoptResult> AdoptPagesAsync(
         Guid groupId, IEnumerable<string> sourceFiles, Func<string, bool>? isBlank,
+        bool keepIdenticalPages,
         CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
@@ -383,7 +400,10 @@ public sealed class GroupService(IDbContextFactory<FgScannerDbContext> dbFactory
                 continue;
             }
 
-            if (!knownChecksums.Add(checksum))
+            // Add() is called either way, so the group's known checksums stay accurate for the
+            // adoptions that follow this one.
+            var alreadyHere = !knownChecksums.Add(checksum);
+            if (alreadyHere && !keepIdenticalPages)
             {
                 duplicates.Add(sourceFile);
                 continue;
