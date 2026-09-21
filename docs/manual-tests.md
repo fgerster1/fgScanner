@@ -419,3 +419,40 @@ Still open — these need a second pass, and the starred ones were never exercis
 - [ ] Save Settings **during a feeder run**, and again **with an annotated sheet in hand**: the change
       is held, and lands when the run finishes or the sheet is completed or abandoned
 - [ ] Kill the app during a deferred change: nothing is left half-applied on the next launch
+
+## SPEC-2026-005 — memo, wrapping and field widths (phase 24)
+
+Every row here needs a real window: WPF's layout, its write-back into a bound selection, and the
+focus walk are all invisible to a headless suite. That blind spot is exactly what let the Settings
+Type list ship empty (see below), so none of these is ticked from a green test run.
+
+**Walked 2026-09-21** (Franz, dev station, against the copy of Jim's data at `D:\Evidence-Scans`)
+
+- [x] AC-1 — a long value is readable without resizing anything: open the **Defamation Folder**
+      group's 1,398-character `Notes` in the record editor. It wraps, grows, and does not need a
+      sideways scrollbar. (Confirmed after two failed attempts; the first two fixes reached only
+      the memo box, and the group is pinned to field layout v2 where `Notes` is plain Text.)
+- [x] AC-6 — **Memo** appears in the Settings field grid's **Type** list, and the separate Memo
+      checkbox is gone. A field already stored as a memo reads back as Memo when Settings reopens.
+- [x] AC-5 — a list field's dropdown is no longer the full width of the form.
+
+Still open — these need a pass on the real window:
+
+- [ ] AC-4 — a list field is about as wide as its **longest** choice. **Known to fail:** the box
+      tracks the *currently selected* choice, so a list with nothing chosen is a narrow stub and
+      the box changes width as you page through rows with Ctrl+PageDown. Recorded rather than
+      ticked; a real fix has to measure the choices.
+- [ ] *(regression)* Change a field's **Type** in Settings and save — the value must stick. The
+      column's items and its selection binding were different types for one build, so every Type
+      cell rendered blank and no edit could be written. No test can see this.
+- [ ] *(regression)* Switch a Memo field with a 2000-character length to **Text** and save. The
+      length must clear, and the save must complete — a length plain text cannot hold used to
+      throw before theme, retention, flags and the shortcut map were written.
+- [ ] *(regression)* Tab to the **last** field in the record editor and press **Enter**: focus must
+      stay in the form. Past the last field it reached the toolbar, where **Delete** trashes the
+      page instead of clearing a value.
+- [ ] `DocNo` (a **Number** field, required) has a box to type in, in the record editor.
+- [ ] A long value in the group grid ends in an ellipsis, not a hard clip at the cell edge —
+      on a plain Text field, not only on a memo.
+- [ ] Make a field name long enough to fill the form pane, then drag the divider to its minimum:
+      the input must not vanish.
