@@ -144,6 +144,37 @@ public sealed class ProfileImportExportTests : IDisposable
     }
 
     /// <summary>
+    /// The same boundary again, on the one value that was still parsed unguarded. A type this
+    /// build does not know cannot be stored as itself — the type's NAME is what manifest.json
+    /// hands the JimsStuff importer — so it lands as Text, which holds whatever was typed.
+    /// </summary>
+    [Fact]
+    public async Task An_unknown_field_type_in_a_file_lands_as_text_rather_than_throwing()
+    {
+        const string v3 = """
+            {
+              "FormatVersion": 3,
+              "Name": "From a newer build",
+              "OcrEnabled": false,
+              "ExportCsv": true,
+              "ExportXlsx": false,
+              "ExportXml": false,
+              "ExportJson": false,
+              "CsvDelimiter": ",",
+              "Fields": [
+                { "Name": "Title", "Type": "Currency", "Required": false, "Sticky": false,
+                  "DefaultValue": null, "ListChoicesJson": null, "MaxLength": null, "Memo": false }
+              ]
+            }
+            """;
+
+        var imported = await _profiles.ImportProfileJsonAsync(v3, Ct);
+
+        var title = Assert.Single((await _profiles.GetLatestSchemaAsync(imported.Id, Ct)).Fields);
+        Assert.Equal(FieldType.Text, title.Type);
+    }
+
+    /// <summary>
     /// Profiles already exported onto the hand-off USB stick are version 1. Refusing them would
     /// strand the operator mid-box with a file that worked yesterday.
     /// </summary>

@@ -37,6 +37,22 @@ public class FormFieldTests
     }
 
     /// <summary>
+    /// A number types like text. It has no input of its own, and the Evidence profile opens with
+    /// one — DocNo, required — so a field with no box renders as a label, an empty cell and a
+    /// required-field error the operator cannot clear.
+    /// </summary>
+    [Fact]
+    public void A_number_field_gets_a_box_to_type_in()
+    {
+        var field = new FormField(new FieldDefinition { Name = "DocNo", Type = FieldType.Number, Required = true });
+
+        Assert.True(field.IsPlainText);
+        Assert.False(field.IsMemo);
+        Assert.False(field.IsDate);
+        Assert.False(field.IsList);
+    }
+
+    /// <summary>
     /// ProfileService clears these on save, but a FieldDefinition can be built by hand; the form
     /// must not put a length guard or a memo box on a date because a stray value said so.
     /// </summary>

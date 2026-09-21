@@ -428,7 +428,12 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
                 [.. file.Fields.Select(f => new FieldDefinition
                 {
                     Name = f.Name,
-                    Type = Enum.Parse<FieldType>(f.Type),
+                    // The same file boundary once more: a type from a newer build degrades to
+                    // Text, which holds whatever was typed. Parsing it unguarded threw on the
+                    // operator's own profile, and "7" would have parsed into no member at all.
+                    Type = Enum.TryParse<FieldType>(f.Type, ignoreCase: true, out var type) && Enum.IsDefined(type)
+                        ? type
+                        : FieldType.Text,
                     Required = f.Required,
                     Sticky = f.Sticky,
                     // Unrecognised scope from a newer build degrades to today's behaviour rather than

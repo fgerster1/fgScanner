@@ -46,7 +46,7 @@
                       MinHeight="140" MaxHeight="280" Margin="0,0,0,6" x:Name="FieldsGrid">
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Name" Binding="{Binding Name, UpdateSourceTrigger=LostFocus}" Width="160" />
-                    <DataGridComboBoxColumn Header="Type" SelectedItemBinding="{Binding Type}" Width="90"
+                    <DataGridComboBoxColumn Header="Type" SelectedItemBinding="{Binding DisplayType}" Width="90"
                                             x:Name="TypeColumn" />
                     <DataGridCheckBoxColumn Header="Required" Binding="{Binding Required}" Width="70" />
                     <!--
@@ -76,7 +76,8 @@
                             </Style>
                         </DataGridCheckBoxColumn.EditingElementStyle>
                     </DataGridCheckBoxColumn>
-                    <!-- Length and Memo apply to Text fields only, so both are disabled for any other type. -->
+                    <!-- Length applies to text fields only (Text or Memo), so it is disabled for any other type.
+                         Memo is no longer a checkbox: it is the Memo entry in the Type list above. -->
                     <DataGridTextColumn Header="Length" Width="60"
                                         Binding="{Binding Length, TargetNullValue='', UpdateSourceTrigger=LostFocus}">
                         <DataGridTextColumn.ElementStyle>
@@ -98,26 +99,6 @@
                             </Style>
                         </DataGridTextColumn.EditingElementStyle>
                     </DataGridTextColumn>
-                    <DataGridCheckBoxColumn Header="Memo" Binding="{Binding Memo}" Width="55">
-                        <DataGridCheckBoxColumn.ElementStyle>
-                            <Style TargetType="CheckBox">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsText}" Value="False">
-                                        <Setter Property="IsEnabled" Value="False" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </DataGridCheckBoxColumn.ElementStyle>
-                        <DataGridCheckBoxColumn.EditingElementStyle>
-                            <Style TargetType="CheckBox">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsText}" Value="False">
-                                        <Setter Property="IsEnabled" Value="False" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </DataGridCheckBoxColumn.EditingElementStyle>
-                    </DataGridCheckBoxColumn>
                     <DataGridTextColumn Header="Default ($(today) $(group) $(counter) $(user))" Binding="{Binding DefaultValue}" Width="220" />
                     <DataGridTextColumn Header="Choices (List; separate with ;)" Binding="{Binding Choices}" Width="*" />
                 </DataGrid.Columns>

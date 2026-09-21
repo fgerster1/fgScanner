@@ -149,9 +149,13 @@ public class FieldDefinition
     public int? MaxLength { get; set; }
 
     /// <summary>
-    /// A long Text field, shown in a larger box the operator can resize. A flag rather than a new
-    /// <see cref="FieldType"/>: FieldType casts positionally to IndexFieldType and its name is
-    /// written into manifest.json, so a new type would change the export contract. Not exported.
+    /// A long Text field: it takes a larger character limit and opens at three lines rather than
+    /// one. Every text field wraps and grows with its text now, so this no longer decides whether
+    /// a long value can be read — only how much may be typed and how tall the box starts. A flag
+    /// rather than a new <see cref="FieldType"/>: FieldType casts positionally to IndexFieldType
+    /// and its name is written into manifest.json, so a new type would change the export
+    /// contract. The Settings Type list offers it as a fifth entry; it is still Text underneath
+    /// (ADR-0009). Not exported.
     /// </summary>
     public bool Memo { get; set; }
 

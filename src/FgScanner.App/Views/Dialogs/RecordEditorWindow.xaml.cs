@@ -145,6 +145,16 @@ public partial class RecordEditorWindow : Window
         if (e.Key == Key.Enter && sender is TextBox box)
         {
             box.MoveFocus(new TraversalRequest(FocusNavigationDirection.Next));
+
+            // Enter walks the form and must not walk out of it. Past the last field the next stop
+            // is a toolbar button, where Delete no longer clears a value — it sends the page to
+            // the Trash (OnPreviewKeyDown), and an operator who thinks they are still typing has
+            // no reason to expect that.
+            if (!FocusIsInTheForm())
+            {
+                box.Focus();
+            }
+
             e.Handled = true;
         }
     }
