@@ -19,4 +19,16 @@ public sealed record PageEditingToolset(
     CredentialStore Credentials,
     AppSettingsService Settings,
     CaptureTriageService Triage,
-    DuplicateFinder Duplicates);
+    DuplicateFinder Duplicates)
+{
+    /// <summary>
+    /// Sends pages to the operator's mail path. An init property rather than a thirteenth
+    /// positional parameter, so the app can hand over the DI instance — whose temp folders
+    /// <c>App.OnExit</c> cleans up — while every existing construction site keeps working with a
+    /// self-contained default.
+    /// </summary>
+    public EmailSender Email { get; init; } = new(
+        new AttachmentBuilder(PdfExport, ImageExport),
+        new WindowsShareService(),
+        Settings);
+}

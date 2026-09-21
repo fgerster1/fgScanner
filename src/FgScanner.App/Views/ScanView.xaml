@@ -150,6 +150,11 @@
                         Visibility="{Binding SeparatorSheetVisible, Converter={x:Static views:BoolToVisibilityConverter.Instance}}"
                         ToolTip="Save a printable Patch-T separator sheet (PDF)" />
 
+                <Button Content="Email…" Command="{Binding EmailCommand}"
+                        Padding="0,8" Margin="0,6,0,0"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="Attach these scans to a new message. Nothing is sent until you press Send in your mail app. Needs at least one scanned page, and not while a scan or a save is running." />
+
                 <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Margin="0,10,0,0" Opacity="0.8" />
             </StackPanel>
         </ScrollViewer>

@@ -278,6 +278,47 @@ public sealed partial class GroupDetailViewModel
         StatusText = "Redone.";
     }
 
+    /// <summary>
+    /// Which pages a send takes: **any** selection means exactly that selection, and no selection
+    /// means the group (§05 N2a).
+    ///
+    /// Deliberately not <see cref="ExportImagePaths"/>, which widens a selection of one to the
+    /// whole group. That is defensible for an export the operator then looks at in a folder; it
+    /// is not defensible for a send, where picking one page and mailing sixty is a mistake only
+    /// the recipient notices, and the pages are case material. The export rule is left exactly as
+    /// it was — changing it would alter four buttons nobody asked about.
+    /// </summary>
+    public IReadOnlyList<string> EmailImagePaths =>
+        (SelectedRows.Count > 0 ? SelectedRows.OrderBy(r => r.Sequence) : Rows.AsEnumerable())
+        .Select(r => r.ImagePath)
+        .ToList();
+
+    private bool CanEmail() => Rows.Count > 0;
+
+    /// <summary>
+    /// Opens a message with the chosen pages attached. This app never sends: the operator presses
+    /// Send in their own mail client, having seen the message (AC-5).
+    ///
+    /// The pages leave the group folder here — the folder's checksums and its `originals\`
+    /// archive stay exactly as they were, and what goes is a copy built by the same exporters the
+    /// export buttons use.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanEmail))]
+    private async Task EmailAsync()
+    {
+        var pages = EmailImagePaths;
+        if (pages.Count == 0)
+        {
+            StatusText = "There are no pages to email.";
+            return;
+        }
+
+        var source = SelectedRows.Count > 0
+            ? (SelectedRows.Count == 1 ? "the selected page" : $"the {SelectedRows.Count} selected pages")
+            : $"\"{Group.Name}\"";
+        StatusText = await _toolset.Email.SendAsync(pages, Group.Name, source);
+    }
+
     /// <summary>Selection of 2+ exports just those pages; otherwise the whole group.</summary>
     private IReadOnlyList<string> ExportImagePaths =>
         (SelectedRows.Count > 1 ? SelectedRows.OrderBy(r => r.Sequence) : Rows.AsEnumerable())

@@ -155,6 +155,30 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Which pages a send takes from this page: everything staged, in the order on screen.
+    ///
+    /// The order is the list, not the sequence numbers — those record what came off the scanner
+    /// first, and a two-pass duplex stack is deliberately no longer in that order. Sending by
+    /// sequence would mail a paired stack as fronts-then-backs while the screen showed sheet
+    /// order, which is the same trap `SaveToGroupAsync` avoids for adoption.
+    /// </summary>
+    public IReadOnlyList<string> EmailImagePaths => [.. Pages.Select(p => p.FilePath)];
+
+    private bool CanEmail() => Pages.Count > 0 && !IsScanning && _savesRunning == 0;
+
+    /// <summary>
+    /// Opens a message with everything staged on this page attached. The pages have not been
+    /// saved to a group yet, so what leaves is a copy of a capture that is still only in the scan
+    /// session — the session itself is untouched and the pages stay on screen.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanEmail))]
+    private async Task EmailAsync()
+    {
+        var subject = _activeGroup.Current is { } group ? group.Name : "Scanned pages";
+        StatusText = await _toolset.Email.SendAsync(EmailImagePaths, subject, "this scan");
+    }
+
     /// <summary>Asks before deleting, with Cancel as the default answer. Replaceable so tests show no dialog.</summary>
     public Func<string, bool> ConfirmDelete { get; set; } = message =>
         System.Windows.MessageBox.Show(

@@ -120,6 +120,7 @@ public partial class App : Application
                     new FgScanner.Scanning.Export.PdfExportService(),
                     new FgScanner.Scanning.Export.ImageExportService()));
                 services.AddSingleton<FgScanner.Core.Sharing.IShareService>(_ => new WindowsShareService());
+                services.AddSingleton<EmailSender>();
                 services.AddSingleton<OcrQueueService>();
                 services.AddSingleton<AiQueueService>();
                 services.AddSingleton(sp => new FgScanner.Ai.CredentialStore());
@@ -146,7 +147,11 @@ public partial class App : Application
                     sp.GetRequiredService<FgScanner.Ai.CredentialStore>(),
                     sp.GetRequiredService<AppSettingsService>(),
                     sp.GetRequiredService<CaptureTriageService>(),
-                    sp.GetRequiredService<DuplicateFinder>()));
+                    sp.GetRequiredService<DuplicateFinder>())
+                {
+                    // The DI sender, so the attachment folders it makes are the ones OnExit removes.
+                    Email = sp.GetRequiredService<EmailSender>(),
+                });
                 services.AddSingleton(sp => new FgScanner.Ocr.LanguageManager());
                 services.AddSingleton(sp => new FgScanner.Ocr.TesseractRunner(
                     tessdataDir: sp.GetRequiredService<FgScanner.Ocr.LanguageManager>().TessdataDir));

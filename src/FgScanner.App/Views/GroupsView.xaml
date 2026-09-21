@@ -260,6 +260,9 @@
                     <Button Content="Export images…" Command="{Binding ExportImagesCommand}" Padding="8,4" Margin="0,0,4,0" />
                     <Button Content="Print…" Command="{Binding PrintCommand}" Padding="8,4" Margin="0,0,4,0" />
                     <Button Content="Copy" Command="{Binding CopyPageCommand}" Padding="8,4" ToolTip="Copy page image to clipboard" />
+                    <Button Content="Email…" Command="{Binding EmailCommand}" Padding="8,4" Margin="4,0,0,0"
+                            ToolTipService.ShowOnDisabled="True"
+                            ToolTip="Attach the selected pages — or the whole group when nothing is selected — to a new message. Nothing is sent until you press Send in your mail app. Needs a group with at least one page." />
                     <Button Content="Duplicates…" Command="{Binding CheckDuplicatesCommand}" Padding="8,4" Margin="4,0,0,0"
                             ToolTip="Find pages in this group that look like the same document" />
                 </WrapPanel>

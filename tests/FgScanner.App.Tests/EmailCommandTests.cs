@@ -1,6 +1,7 @@
 using System.IO;
 using System.Reflection;
 using FgScanner.App.Services;
+using FgScanner.App.Views;
 using FgScanner.Core.Sharing;
 using Xunit;
 
@@ -46,7 +47,11 @@ public sealed class EmailCommandTests : IDisposable
 
     private string MakePage(string name) => MakePageIn(_root, name);
 
-    /// <summary>A real PNG, because the exporters decode what they are given.</summary>
+    /// <summary>
+    /// A real PNG, because the exporters decode what they are given — and a distinct one, because
+    /// adoption drops a page whose checksum is already in the group and identical fixtures would
+    /// quietly leave a six-page group holding one row.
+    /// </summary>
     private static string MakePageIn(string directory, string name)
     {
         var path = Path.Combine(directory, name);
@@ -54,7 +59,8 @@ public sealed class EmailCommandTests : IDisposable
         using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
         {
             graphics.Clear(System.Drawing.Color.White);
-            graphics.FillRectangle(System.Drawing.Brushes.Black, 20, 20, 80, 12);
+            using var font = new System.Drawing.Font(System.Drawing.FontFamily.GenericSansSerif, 10);
+            graphics.DrawString(name, font, System.Drawing.Brushes.Black, 6, 40);
         }
 
         bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
@@ -196,6 +202,155 @@ public sealed class EmailCommandTests : IDisposable
 
         await settings.SetAsync(EmailSettings.AttachmentKey, "Fax", ct);
         Assert.Equal(EmailAttachment.Pdf, await EmailSettings.ReadAsync(settings, ct));
+    }
+
+    // ---- which pages a send actually takes ----
+
+    private async Task<GroupDetailViewModel> GroupOfAsync(int pages)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var dbPath = Path.Combine(_root, "group.db");
+        using (var db = new FgScanner.Data.FgScannerDbContext(FgScanner.Data.DbBootstrapper.BuildOptions(dbPath)))
+        {
+            Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.Migrate(db.Database);
+        }
+
+        var factory = new TestFactory(dbPath);
+        var groups = new FgScanner.Data.GroupService(factory);
+        var profiles = new FgScanner.Data.ProfileService(factory);
+        var trash = new FgScanner.Data.TrashService(factory, Path.Combine(_root, "trash"));
+        var indexing = new FgScanner.Data.IndexingService(
+            factory, profiles, new FgScanner.Core.Index.IndexExporter());
+
+        var incoming = Path.Combine(_root, "incoming");
+        Directory.CreateDirectory(incoming);
+        var group = await groups.CreateGroupAsync(Path.Combine(_root, "groups"), "Farm Folder", null, ct);
+        var files = Enumerable.Range(1, pages)
+            .Select(i => MakePageIn(incoming, $"in_{i:00}.png"))
+            .ToList();
+        await groups.AdoptPagesAsync(group.Id, files, null, false, ct);
+
+        var toolset = new PageEditingToolset(
+            new FgScanner.Scanning.Editing.ImageEditor(),
+            new FgScanner.Scanning.Export.PdfExportService(),
+            new FgScanner.Scanning.Export.ImageExportService(),
+            new FgScanner.Scanning.Import.FileImportService(),
+            new FgScanner.Data.ReorderService(factory),
+            new FgScanner.Data.OcrQueueService(factory),
+            new FgScanner.Data.AiQueueService(factory),
+            new FgScanner.Data.RetroProcessService(factory, groups, trash),
+            new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false),
+            new FgScanner.Data.AppSettingsService(factory),
+            new FgScanner.Data.CaptureTriageService(factory, new FgScanner.Data.AppSettingsService(factory)),
+            new FgScanner.Data.DuplicateFinder(factory));
+
+        var vm = new GroupDetailViewModel(
+            group, groups, profiles, indexing, trash, new ActiveGroupStore(), toolset);
+        await vm.LoadAsync();
+        return vm;
+    }
+
+    /// <summary>
+    /// §05 N2a. Export treats a selection of one as "the whole group"
+    /// (`ExportImagePaths`, deliberately left alone). Email must not: picking one page and
+    /// sending sixty is the kind of mistake that is only noticed by the recipient, and this is
+    /// case material. Email gets its own rule — any selection means exactly that selection.
+    /// </summary>
+    [Fact]
+    public async Task Three_selected_rows_send_exactly_those_three_in_sequence_order()
+    {
+        var vm = await GroupOfAsync(6);
+        foreach (var row in new[] { vm.Rows[4], vm.Rows[1], vm.Rows[3] })
+        {
+            vm.SelectedRows.Add(row);
+        }
+
+        Assert.Equal(
+            [vm.Rows[1].ImagePath, vm.Rows[3].ImagePath, vm.Rows[4].ImagePath],
+            vm.EmailImagePaths);
+    }
+
+    [Fact]
+    public async Task One_selected_row_sends_that_row_and_not_the_group()
+    {
+        var vm = await GroupOfAsync(6);
+        vm.SelectedRows.Add(vm.Rows[2]);
+
+        Assert.Equal([vm.Rows[2].ImagePath], vm.EmailImagePaths);
+
+        // The export rule is the one that widens to the group, and it stays that way.
+        Assert.Equal(6, vm.Rows.Count);
+    }
+
+    [Fact]
+    public async Task No_selection_sends_the_whole_group()
+    {
+        var vm = await GroupOfAsync(4);
+
+        Assert.Empty(vm.SelectedRows);
+        Assert.Equal(vm.Rows.Select(r => r.ImagePath), vm.EmailImagePaths);
+    }
+
+    /// <summary>
+    /// The Scan page sends what is on screen, in the order it is on screen.
+    ///
+    /// The prompt for this phase says "ordered by sequence", which was true when it was written.
+    /// Phase 25 changed it: a two-pass duplex stack is deliberately no longer in capture order,
+    /// the sequence numbers record what came off the scanner first, and the list is the order —
+    /// which is what SaveToGroupAsync reads. Ordering a send by sequence number would email a
+    /// paired stack as fronts-then-backs while the screen showed sheet order.
+    /// </summary>
+    [Fact]
+    public void The_scan_page_sends_its_pages_in_the_order_on_screen()
+    {
+        var scan = ScanViewModelFor([
+            new FgScanner.Scanning.ScannedPage(MakePage("a.png"), 1),
+            new FgScanner.Scanning.ScannedPage(MakePage("b.png"), 4),
+            new FgScanner.Scanning.ScannedPage(MakePage("c.png"), 2),
+        ]);
+
+        Assert.Equal(scan.Pages.Select(p => p.FilePath), scan.EmailImagePaths);
+    }
+
+    private ScanViewModel ScanViewModelFor(IReadOnlyList<FgScanner.Scanning.ScannedPage> pages)
+    {
+        var dbPath = Path.Combine(_root, "scan.db");
+        using (var db = new FgScanner.Data.FgScannerDbContext(FgScanner.Data.DbBootstrapper.BuildOptions(dbPath)))
+        {
+            Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.Migrate(db.Database);
+        }
+
+        var factory = new TestFactory(dbPath);
+        var groups = new FgScanner.Data.GroupService(factory);
+        var profiles = new FgScanner.Data.ProfileService(factory);
+        var trash = new FgScanner.Data.TrashService(factory, Path.Combine(_root, "scantrash"));
+        var scan = new ScanViewModel(
+            new FgScanner.Scanning.FakeScanService(),
+            new ScanSessionService(Path.Combine(_root, "recovery")),
+            groups,
+            new FgScanner.Data.IndexingService(factory, profiles, new FgScanner.Core.Index.IndexExporter()),
+            new ActiveGroupStore(),
+            new ProfileOcrTrigger(profiles, new FgScanner.Data.OcrQueueService(factory)),
+            new PageEditingToolset(
+                new FgScanner.Scanning.Editing.ImageEditor(),
+                new FgScanner.Scanning.Export.PdfExportService(),
+                new FgScanner.Scanning.Export.ImageExportService(),
+                new FgScanner.Scanning.Import.FileImportService(),
+                new FgScanner.Data.ReorderService(factory),
+                new FgScanner.Data.OcrQueueService(factory),
+                new FgScanner.Data.AiQueueService(factory),
+                new FgScanner.Data.RetroProcessService(factory, groups, trash),
+                new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred2"), useCredentialManager: false),
+                new FgScanner.Data.AppSettingsService(factory),
+                new FgScanner.Data.CaptureTriageService(factory, new FgScanner.Data.AppSettingsService(factory)),
+                new FgScanner.Data.DuplicateFinder(factory)),
+            trash);
+        foreach (var page in pages)
+        {
+            scan.Pages.Add(page);
+        }
+
+        return scan;
     }
 
     private AttachmentBuilder Builder() => new(
