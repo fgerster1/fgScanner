@@ -23,13 +23,7 @@ public partial class RecordEditorWindow : Window
     private readonly ZoomController _zoom = new();
     private readonly FitPolicy _fit;
 
-    /// <summary>The memo boxes now on screen, by field name, so their sizes can be restored and saved.</summary>
-    private readonly Dictionary<string, TextBox> _memoBoxes = new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>Memo boxes the operator actually dragged. A box left alone keeps whatever size was stored for it, rather than having this window's incidental measurement saved over it.</summary>
-    private readonly HashSet<string> _resizedMemos = new(StringComparer.OrdinalIgnoreCase);
-
-    private RecordEditorLayout _layout = new(0, 0, new Dictionary<string, MemoSize>());
+    private RecordEditorLayout _layout = new(0, 0);
 
     /// <summary>Set once the operator has moved something, so a restore arriving late cannot undo it.</summary>
     private bool _layoutTouched;
@@ -112,11 +106,6 @@ public partial class RecordEditorWindow : Window
                 FormColumn.Width = new GridLength(_layout.FormWidth);
                 TopRow.Height = new GridLength(_layout.TopHeight);
             }
-
-            foreach (var (name, box) in _memoBoxes)
-            {
-                ApplyMemoSize(box, name);
-            }
         }
         catch (Exception ex)
         {
@@ -138,26 +127,7 @@ public partial class RecordEditorWindow : Window
     {
         try
         {
-            var memo = new Dictionary<string, MemoSize>(StringComparer.OrdinalIgnoreCase);
-            foreach (var name in _resizedMemos)
-            {
-                if (_memoBoxes.TryGetValue(name, out var box))
-                {
-                    memo[name] = new MemoSize(box.ActualWidth, Lines(box, box.ActualHeight));
-                }
-            }
-
-            // Sizes left over from a memo field that has since been renamed or removed are kept: the
-            // field may come back, and a handful of stale keys costs nothing (§07).
-            foreach (var (name, size) in _layout.Memo)
-            {
-                if (!memo.ContainsKey(name))
-                {
-                    memo[name] = size;
-                }
-            }
-
-            _layout = new RecordEditorLayout(FormColumn.ActualWidth, TopRow.ActualHeight, memo);
+            _layout = new RecordEditorLayout(FormColumn.ActualWidth, TopRow.ActualHeight);
             await _editor.Layout.SaveAsync(_editor.Group.Id, _layout);
         }
         catch (Exception ex)
@@ -166,83 +136,11 @@ public partial class RecordEditorWindow : Window
         }
     }
 
-    private void OnMemoBoxLoaded(object sender, RoutedEventArgs e)
-    {
-        if (sender is TextBox box && box.DataContext is FormField field)
-        {
-            _memoBoxes[field.Name] = box;
-            ApplyMemoSize(box, field.Name);
-        }
-    }
-
-    private void OnMemoBoxUnloaded(object sender, RoutedEventArgs e)
-    {
-        // By identity: rebuilding the form can load the replacement box before this fires for the old
-        // one, and removing by name alone would evict the live box and stop saving that field's size.
-        if (sender is TextBox { DataContext: FormField field } box
-            && _memoBoxes.TryGetValue(field.Name, out var current)
-            && ReferenceEquals(current, box))
-        {
-            _memoBoxes.Remove(field.Name);
-        }
-    }
-
-    private void ApplyMemoSize(TextBox box, string name)
-    {
-        // An unmeasured pane would clamp every box to nothing, and a box the operator has just
-        // dragged is theirs — a restore arriving afterwards must not snap it back.
-        if (PaneWidth() <= 0 || _resizedMemos.Contains(name))
-        {
-            return;
-        }
-
-        // Nothing stored for this field: open at the default rather than at the XAML minimum. The
-        // box already wrapped, but two lines of a 2000-character note is not something anyone can
-        // check, so every field had to be dragged before it could be read (SPEC-2026-005).
-        if (!_layout.Memo.TryGetValue(name, out var stored))
-        {
-            var fallback = RecordEditorLayoutStore.DefaultMemo(PaneWidth());
-            box.Width = fallback.Width;
-            box.Height = Pixels(box, fallback.Height);
-            return;
-        }
-
-        var size = RecordEditorLayoutStore.ClampMemo(stored, PaneWidth());
-        box.Width = size.Width;
-        box.Height = Pixels(box, size.Height);
-    }
-
-    /// <summary>Resizes the memo box by dragging its grip, within what the pane and 2–20 lines allow.</summary>
-    private void OnMemoResize(object sender, DragDeltaEventArgs e)
-    {
-        if (sender is not Thumb thumb || MemoBoxOf(thumb) is not { } box)
-        {
-            return;
-        }
-
-        var wanted = new MemoSize(
-            box.ActualWidth + e.HorizontalChange,
-            Lines(box, box.ActualHeight + e.VerticalChange));
-        var size = RecordEditorLayoutStore.ClampMemo(wanted, PaneWidth());
-        box.Width = size.Width;
-        box.Height = Pixels(box, size.Height);
-        if (box.DataContext is FormField field)
-        {
-            _resizedMemos.Add(field.Name);
-        }
-    }
-
-    private void OnMemoResizeCompleted(object sender, DragCompletedEventArgs e)
-    {
-        _layoutTouched = true;
-        _ = SaveLayoutAsync();
-    }
-
     /// <summary>
-    /// No line breaks are stored (§05 Q3), so Enter has nothing to do in a memo box. It moves to the
+    /// No line breaks are stored (§05 Q3), so Enter has nothing to do in any text field. It moves to the
     /// next field instead, which is what a typist pressing it expects.
     /// </summary>
-    private void OnMemoKeyDown(object sender, KeyEventArgs e)
+    private void OnFieldKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter && sender is TextBox box)
         {
@@ -250,25 +148,6 @@ public partial class RecordEditorWindow : Window
             e.Handled = true;
         }
     }
-
-    private static TextBox? MemoBoxOf(Thumb thumb) =>
-        (thumb.Parent as Grid)?.Children.OfType<TextBox>().FirstOrDefault();
-
-    /// <summary>A memo box may be as wide as the form pane and no wider (§08).</summary>
-    private double PaneWidth() => FormScroller.ViewportWidth > 0 ? FormScroller.ViewportWidth : FormColumn.ActualWidth;
-
-    /// <summary>
-    /// Heights are stored in lines rather than pixels, so a box keeps its meaning at another font
-    /// size. The chrome is the padding and border the text sits inside.
-    /// </summary>
-    private static double LineHeight(TextBox box) => box.FontFamily.LineSpacing * box.FontSize;
-
-    private static double Chrome(TextBox box) =>
-        box.Padding.Top + box.Padding.Bottom + box.BorderThickness.Top + box.BorderThickness.Bottom;
-
-    private static double Lines(TextBox box, double pixels) => (pixels - Chrome(box)) / LineHeight(box);
-
-    private static double Pixels(TextBox box, double lines) => (lines * LineHeight(box)) + Chrome(box);
 
     /// <summary>Each newly selected page opens showing all of itself, as the Groups preview does.</summary>
     private void OnImageChanged(object sender, System.Windows.Data.DataTransferEventArgs e)

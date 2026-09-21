@@ -127,10 +127,62 @@ beyond how it degrades an out-of-range length.
 >
 > | | |
 > |---|---|
-> | Q1 | (a) A **fixed default of about four rows**, full form width. ADR-0009's independence of width and length stands, unamended. |
+> | Q1 | (a) A **fixed default of about four rows**, full form width. ADR-0009's independence of width and length stands, unamended. **Superseded 2026-09-20 — see below.** |
 > | Q2 | (a) **Yes — "Memo" joins the Type dropdown**, storing Text plus the flag. The checkbox column goes. |
 > | N1 | (a) Record editor only. |
 > | N2 | (a) Groups side panels left as they are; recorded as a follow-up. |
+
+### Amendment, 2026-09-20 — the drag grip goes
+
+Q1's answer was built and tried on the real window against a 1,398-character `Notes` value in
+Jim's data. **It does not work, because the grip cannot be reached.** A memo box is capped at the
+form pane's width (`FormColumn`, 520 of 1280 px), and its resize handle is a 12×12 target in the
+box's bottom-right corner — sitting beside the pane divider and the form's scrollbar, three small
+targets in the same square inch. Franz: *"you cannot get to the corner of the screen because of
+the slider and split screen."*
+
+A default height was the wrong fix for the wrong problem: the box was not just small, it was not
+resizable in practice.
+
+**New answer, chosen 2026-09-20:** a memo **fills the form pane's width and grows with its text**
+to a maximum of 20 lines, then scrolls. **The drag grip is removed**, and with it per-field memo
+sizes. The pane divider becomes the only width control — one large target instead of three small
+ones.
+
+**Second amendment, same day — every text field wraps.** The first attempt still failed on the
+real window, and the reason was not the memo box at all: the group being tested is pinned to field
+layout **v2**, where `Notes` is an ordinary Text field. The memo work was invisible because no
+memo was on screen. Franz's instruction — *"remove the slider at the bottom and have all text
+fields wrap when you make the text area smaller and larger"* — fixes it at the root:
+
+- **Every** text field wraps and grows with its content (1–20 lines for plain text, 3–20 for a
+  memo), not only memo fields.
+- The form's **horizontal scrollbar is disabled**. Nothing scrolls sideways; the form is exactly
+  as wide as its pane and fields reflow as the divider moves.
+- Reading a long value no longer depends on the memo flag, so a group does not have to be moved
+  to a newer field layout to be readable. **Verified working on the real window, 2026-09-20.**
+
+The memo flag now controls only the character limit (100 vs 2000) and the starting height.
+
+**Raised and not yet decided: "display length".** Franz distinguishes the *field* length — how
+much data may go in — from a **display length**, how wide the box renders, measured in characters,
+which he would set to 80, with memo boxes draggable wider from there. FG Scanner has no such
+concept today. It is a per-field layout property in the same family as `MaxLength` and `Memo` —
+never exported (ADR-0009) — and it would need a column and a migration. **Deferred to its own
+spec** rather than folded in here; this spec's job was the three things reported on 2026-09-20,
+and the wrapping change resolved the complaint that prompted it.
+
+What this changes elsewhere:
+
+- The memo entries in the record editor's saved layout become unused. Pane sizes are still
+  remembered; the `memo` key in stored JSON is ignored, and old layouts still parse.
+- ADR-0009's "shown in a larger box the operator can resize" is now "shown in a box that fills the
+  form and grows with its text". The **flag-not-a-type** decision is untouched.
+- AC-1..AC-3 are restated below.
+- A per-field length cap was raised as an alternative and **rejected**: shortening a field's length
+  does not shorten values already stored, so the 1,398-character `Notes` value would show as
+  invalid until someone edited evidence text to fit a form. The screen problem is fixed on the
+  screen.
 
 **Blocking**
 
@@ -242,20 +294,21 @@ The app's own WPF Fluent theme governs.
 
 ## 10 · Acceptance criteria
 
-> **AC-1** — Given a memo field with a stored value of 300 characters and no saved size,
-> when the record editor opens, the box shows the value on at least four lines without
-> the operator resizing anything.
-> *Proven by:* `manual` — Franz, on the `Notes` field of a record in the copy of Jim's
-> data (a rendered pixel height cannot be asserted headlessly)
+> **AC-1** — Given a memo field holding 1,398 characters, when the record editor opens, the box
+> fills the form pane's width and is tall enough to read the value without the operator resizing
+> anything; beyond 20 lines it scrolls.
+> *Proven by:* `manual` — Franz, on `Notes` in "Defamation Folder" (a rendered pixel height
+> cannot be asserted headlessly)
 
-> **AC-2** — The default memo size is inside the stored-size clamp, so a dragged size can
-> never be smaller than the default is tall.
-> *Proven by:* `tests/FgScanner.App.Tests/RecordEditorLayoutStoreTests.cs` → "the default
-> memo size satisfies the clamp"
+> **AC-2** — A memo box grows and shrinks with its content between its minimum and 20 lines, and
+> never needs a horizontal scrollbar: the text wraps.
+> *Proven by:* `manual`, same pass
 
-> **AC-3** — Given a memo the operator has dragged to 6 lines, when the editor is
-> reopened, it is 6 lines — the default does not overwrite it.
-> *Proven by:* same file → existing "memo sizes are kept by field name", extended
+> **AC-3** — There is no resize grip on a memo box, and widening the form pane widens every memo
+> in it.
+> *Proven by:* `manual`, same pass; plus
+> `tests/FgScanner.App.Tests/RecordEditorLayoutStoreTests.cs` → "a saved layout carries pane sizes
+> only"
 
 > **AC-4** — Given a list field whose longest choice is "Correspondence", the dropdown is
 > approximately that wide and not the width of the form pane.

@@ -35,38 +35,36 @@
                 <TextBlock x:Name="FieldLabel" Grid.Row="0" Grid.Column="0" Text="{Binding Label}"
                            Margin="0,5,8,0" VerticalAlignment="Top" />
 
-                <TextBox Grid.Row="0" Grid.Column="1"
+                <!-- Every text field wraps, memo or not. A one-line box holding a long value can
+                     only be read by scrolling through it a few characters at a time, and on this
+                     station a field that was never marked as a memo still holds 1,398 characters
+                     of evidence. It grows with its text and reflows when the divider moves; the
+                     character limit is unchanged and still decides what may be typed. -->
+                <TextBox Grid.Row="0" Grid.Column="1" KeyDown="OnFieldKeyDown"
                          Text="{Binding Value, UpdateSourceTrigger=LostFocus}"
                          IsEnabled="{Binding IsEditable}"
                          views:TextLengthGuard.Limit="{Binding MaxLength}"
                          AutomationProperties.LabeledBy="{Binding ElementName=FieldLabel}"
+                         AcceptsReturn="False" TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto"
+                         MinLines="1" MaxLines="20"
                          Visibility="{Binding IsPlainText, Converter={x:Static views:BoolToVisibilityConverter.Instance}}" />
 
-                <!-- The memo box is sized by its grip, not by its character limit: width and length
-                     are independent (§05 N4). AcceptsReturn is False — no line breaks are stored
+                <!-- A memo fills the form pane and grows with its text, to 20 lines, then scrolls
+                     (SPEC-2026-005 amendment). It used to be sized by a 12x12 grip in its corner,
+                     beside the pane divider and the scrollbar: three small targets in one square
+                     inch, and the box could never be wider than the pane anyway. The divider is
+                     the width control now. AcceptsReturn is False — no line breaks are stored
                      (§05 Q3) — so Enter moves to the next field instead of doing nothing. -->
-                <Grid Grid.Row="0" Grid.Column="1" HorizontalAlignment="Left"
-                      Visibility="{Binding IsMemo, Converter={x:Static views:BoolToVisibilityConverter.Instance}}">
-                    <TextBox Loaded="OnMemoBoxLoaded" Unloaded="OnMemoBoxUnloaded" KeyDown="OnMemoKeyDown"
-                             Text="{Binding Value, UpdateSourceTrigger=LostFocus}"
-                             IsEnabled="{Binding IsEditable}"
-                             views:TextLengthGuard.Limit="{Binding MaxLength}"
-                             AutomationProperties.LabeledBy="{Binding ElementName=FieldLabel}"
-                             AcceptsReturn="False" TextWrapping="Wrap"
-                             VerticalScrollBarVisibility="Auto"
-                             MinWidth="120" MinHeight="40" Padding="2,1" />
-                    <Thumb HorizontalAlignment="Right" VerticalAlignment="Bottom" Width="12" Height="12"
-                           Margin="0,0,2,2" Cursor="SizeNWSE"
-                           DragDelta="OnMemoResize" DragCompleted="OnMemoResizeCompleted"
-                           ToolTip="Drag to resize this box">
-                        <Thumb.Template>
-                            <!-- Always visible, not on hover (§09): a grip nobody can see is not a handle. -->
-                            <ControlTemplate TargetType="Thumb">
-                                <Border Background="#66808080" CornerRadius="2" />
-                            </ControlTemplate>
-                        </Thumb.Template>
-                    </Thumb>
-                </Grid>
+                <TextBox Grid.Row="0" Grid.Column="1" KeyDown="OnFieldKeyDown"
+                         Text="{Binding Value, UpdateSourceTrigger=LostFocus}"
+                         IsEnabled="{Binding IsEditable}"
+                         views:TextLengthGuard.Limit="{Binding MaxLength}"
+                         AutomationProperties.LabeledBy="{Binding ElementName=FieldLabel}"
+                         AcceptsReturn="False" TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto"
+                         MinLines="3" MaxLines="20" Padding="2,1"
+                         Visibility="{Binding IsMemo, Converter={x:Static views:BoolToVisibilityConverter.Instance}}" />
 
                 <ComboBox Grid.Row="0" Grid.Column="1"
                           ItemsSource="{Binding Choices}" SelectedItem="{Binding ListValue}" IsEditable="False"
@@ -124,14 +122,14 @@
                     <ColumnDefinition Width="*" MinWidth="200" />
                 </Grid.ColumnDefinitions>
 
-                <!-- Both scrollbars: 16 fields on the station's screen do not fit, and a memo box
-                     dragged wider than the pane must still be reachable. -->
+                <!-- No sideways scrolling: the form is exactly as wide as its pane, and every text
+                     box wraps inside it. The horizontal bar existed for memo boxes dragged wider
+                     than the pane, and dragging is gone — a bar along the bottom that has to be
+                     used to read a field is a worse answer than text that fits (SPEC-2026-005
+                     amendment). Fields reflow as the divider moves. -->
                 <ScrollViewer x:Name="FormScroller" Grid.Column="0" TabIndex="0"
-                              HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                    <!-- At least as wide as the pane so ordinary boxes fill it, wider only if a memo
-                         box was dragged out; that is what the horizontal bar is for. -->
-                    <StackPanel Grid.IsSharedSizeScope="True" Margin="0,0,8,0"
-                                MinWidth="{Binding ViewportWidth, ElementName=FormScroller}">
+                              HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Grid.IsSharedSizeScope="True" Margin="0,0,8,0">
                         <TextBlock Text="{Binding EmptyText}" Opacity="0.8" Margin="0,4,0,8" TextWrapping="Wrap"
                                    Visibility="{Binding EmptyText, Converter={x:Static views:StringToVisibilityConverter.Instance}}" />
 
