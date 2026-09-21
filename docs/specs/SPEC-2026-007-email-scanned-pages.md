@@ -504,3 +504,48 @@ fail; the operator decides. Revisit if anyone routinely sends whole boxes.
 | **Franz approved** | ☑ 2026-09-20 (verdict `approve`) |
 | **Built** | ☐ date: |
 | **Verified in production** | ☐ date: |
+
+### Phase 1 spike — result: **GO**, 2026-09-21
+
+Branch `phase-26-email` off `main` (`0ec1d8d`). The only change is the target framework:
+`net10.0-windows` → **`net10.0-windows10.0.26100.0`** in `FgScanner.App.csproj`, and in
+`FgScanner.App.Tests.csproj`, which had to follow — a test project cannot reference a project
+with a higher platform version. `10.0.26100.0` is the only Windows Kit on this machine.
+`FgScanner.Scanning` did **not** need to change: a `net10.0-windows10.0.x` project can reference
+a plain `net10.0-windows` one. `git diff` was two `.csproj` lines and nothing else.
+
+**The projection resolved**, which is what the spike existed to find out:
+`Microsoft.Windows.SDK.NET.Ref 10.0.26100.57` restored from NuGet with no feed or SDK
+intervention, and `WinRT.Runtime.dll` (1,364 KB) is in the output.
+`IDataTransferManagerInterop` is therefore reachable, so route 1 in §08 is open.
+
+| Check | Result |
+|---|---|
+| a · `dotnet build -c Release` | `0 Warning(s), 0 Error(s)` — warnings are errors in Release |
+| b · `dotnet test -c Release` | `total: 793, failed: 0, succeeded: 793` — unchanged |
+| c · `dotnet publish -p:PublishProfile=win-x64` | **LGPL separation intact** — see below |
+| d · installer built, installed, runs | `fgscanner-0.5.1-win-x64.exe`, exit code 0, app scans |
+
+**c — the separation, in numbers.** Nine NAPS2 assemblies present as separate files
+(`NAPS2.Sdk.dll` 1,420 KB, `NAPS2.Images.dll` 332 KB, `NAPS2.Internals.dll` 256 KB,
+`NAPS2.Escl.dll` 252 KB, `NAPS2.Wia.dll` 100 KB, `NAPS2.Images.Gdi.dll` 52 KB, plus the three
+small binaries packages) alongside the out-of-process `NAPS2.Worker.exe`. 340 files, 329 DLLs,
+and `FgScanner.exe` is 0.16 MB — a launcher, not a bundle. Not trimmed:
+`PresentationFramework.dll` 15,446 KB and `System.Private.CoreLib.dll` 15,658 KB are full size.
+
+**d — installed, not merely compiled.** The installer grew from **94.8 MB to 104.1 MB**; the
+WinRT projection assemblies are the difference, and that is the visible cost of this route.
+Installed over the existing 0.5.1 into `C:\Program Files\FGScanner` (`PrivilegesRequired=admin`),
+exit code 0, log reads *"Installation process succeeded."* The installed copy was then launched
+with `--fake-scanner`: **"1 device(s) found."**, **"Scan complete — 1 page(s)."**, and the
+phase-25 two-pass button present and enabled. 344 files in the install directory with the NAPS2
+assemblies still separate, so the separation survives packaging as well as publishing.
+
+**Not proven by this spike**, and not claimed: that the Share sheet itself works. The spike shows
+the framework change is safe and the projection is reachable; whether `DataTransferManager`
+behaves for an unpackaged WPF app with new Outlook as a target is Prompt 2's problem. The
+installer's file-association, StillImage and AutoPlay registrations were written by this install
+but not exercised.
+
+**Version note.** This installed build carries version 0.5.1, the same number as what it replaced,
+and it includes the whole of phase 25. It is not the 0.5.2 release; `<Version>` was not bumped.
