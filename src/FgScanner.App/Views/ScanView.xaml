@@ -101,6 +101,29 @@
                             ToolTip="Abandon this sheet and move its captures to the Trash" />
                 </UniformGrid>
 
+                <!-- Both sides on a scanner that has no one-pass duplex: the fronts, then the
+                     stack turned over, then the backs. The button carries the step, because it
+                     both starts a stack and continues one. -->
+                <Button Content="{Binding DuplexButtonText}" Command="{Binding ScanBothSidesCommand}"
+                        Padding="0,8" Margin="0,6,0,0"
+                        ToolTip="Scan the fronts, turn the whole stack over, then scan the backs" />
+
+                <!-- Only while a stack is part-scanned, and for the same reason as the annotated
+                     block above: the fronts otherwise sit in the session with nothing saying a
+                     second pass is owed, the next ordinary scan quietly becomes that pass, and
+                     Cancel — the one control that keeps a half-captured stack off the disk — is
+                     unreachable. -->
+                <StackPanel Margin="0,10,0,0"
+                            Visibility="{Binding DuplexActive, Converter={x:Static views:BoolToVisibilityConverter.Instance}}">
+                    <TextBlock Text="{Binding DuplexPrompt}" TextWrapping="Wrap" FontWeight="SemiBold" />
+                    <CheckBox Content="The backs come off the stack in reverse order"
+                              IsChecked="{Binding BacksReversed}" Margin="0,6,0,0"
+                              ToolTip="On if you turn the whole stack over; off if you flip it sheet by sheet" />
+                    <Button Content="Cancel stack" Command="{Binding CancelDuplexCommand}"
+                            Padding="0,6" Margin="0,6,0,0"
+                            ToolTip="Abandon this stack and move both passes to the Recycle Bin" />
+                </StackPanel>
+
                 <Button Content="{Binding SaveTargetText}" Command="{Binding SaveToGroupCommand}"
                         Padding="0,8" Margin="0,8,0,0" />
 

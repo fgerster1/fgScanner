@@ -20,8 +20,12 @@ public sealed class FakeScanService : IScanService
         new(ScanDriver.Escl, "fake-escl-1", "Fake Network Scanner"),
     ];
 
-    /// <summary>Pages produced per scan run (feeder simulation).</summary>
-    public int PageCount { get; init; } = 3;
+    /// <summary>
+    /// Pages produced per scan run (feeder simulation). Settable between runs, so a test can make
+    /// the second pass of a stack come up short — a double feed or a sheet left in the tray, which
+    /// is the ordinary failure a two-pass run has to survive.
+    /// </summary>
+    public int PageCount { get; set; } = 3;
 
     /// <summary>Delay between pages, to exercise streaming UI.</summary>
     public TimeSpan PageDelay { get; init; } = TimeSpan.Zero;

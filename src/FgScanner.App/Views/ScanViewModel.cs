@@ -3,6 +3,7 @@ using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FgScanner.App.Services;
+using FgScanner.Core.Capture;
 using FgScanner.Core.Evidence;
 using FgScanner.Data;
 using FgScanner.Scanning;
@@ -504,7 +505,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     /// this page's state now would strand an as-found capture with no clean partner, which is a
     /// whole-group refusal at import (CLAUDE.md), so callers wait for <see cref="CaptureSettled"/>.
     /// </summary>
-    public bool CaptureInHand => IsScanning || AnnotatedActive;
+    public bool CaptureInHand => IsScanning || AnnotatedActive || DuplexActive;
 
     /// <summary>
     /// Raised once nothing is in hand any more — a scan finished, or a sheet was completed or
@@ -564,7 +565,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     /// ApplyInitialValuesAsync stamps one dictionary onto every document adopted in a save
     /// and the clean capture must not inherit this one's NoteState.
     /// </summary>
-    [RelayCommand(CanExecute = nameof(CanScan))]
+    [RelayCommand(CanExecute = nameof(CanScanAnnotated))]
     private async Task ScanAnnotatedAsync()
     {
         if (!Annotated.IsActive)
@@ -587,6 +588,13 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 
     private bool CanScanNoteFace() =>
         CanScan() && Annotated.NoteStateForNextCapture == AnnotatedCaptureSequence.Clean;
+
+    /// <summary>
+    /// The two sequences are mutually exclusive (§16 R4). Both live here and both own the Scan
+    /// page's one prompt area, so starting either while the other is in hand would leave a sheet
+    /// or a stack captured behind the wrong prompt, with the wrong Cancel wired up.
+    /// </summary>
+    private bool CanScanAnnotated() => CanScan() && !Duplex.IsActive;
 
     private async Task ScanOneCaptureAsync()
     {
@@ -628,6 +636,214 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
+    /// The stack in hand, when both sides are captured in two passes on a scanner with no one-pass
+    /// duplex. The ordering itself lives in Core, where it can be proved without a scanner; this
+    /// view model only feeds it the passes and applies the answer.
+    /// </summary>
+    public DuplexPassSequence Duplex { get; } = new();
+
+    /// <summary>Whether a stack is part-captured right now — fronts in, backs still to come.</summary>
+    public bool DuplexActive => Duplex.IsActive;
+
+    /// <summary>
+    /// Whether the backs arrive last-sheet-first. Turning the whole stack over end-for-end is the
+    /// usual gesture, so this is on; flipping sheet by sheet keeps the order. Getting it wrong
+    /// reverses every pairing while leaving the page count right, which is why the operator
+    /// answers it rather than the app guessing from the images.
+    /// </summary>
+    public bool BacksReversed
+    {
+        get => Duplex.BacksReversed;
+        set
+        {
+            if (Duplex.BacksReversed == value)
+            {
+                return;
+            }
+
+            Duplex.BacksReversed = value;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>
+    /// What the operator does next, or empty when no stack is in hand. Without it the sequence is
+    /// invisible: the fronts sit in the session with nothing on screen saying a second pass is
+    /// owed, and the next ordinary scan quietly becomes that pass.
+    /// </summary>
+    public string DuplexPrompt => Duplex.State switch
+    {
+        DuplexPassState.Fronts => "Scanning the fronts…",
+        DuplexPassState.AwaitingFlip =>
+            $"{Duplex.FrontCount} front(s) scanned. Turn the whole stack over, put it back in the "
+            + "feeder, and press “Scan the backs”.",
+        _ => "",
+    };
+
+    /// <summary>What the two-pass button says, since it both starts a stack and continues one.</summary>
+    public string DuplexButtonText =>
+        Duplex.State == DuplexPassState.AwaitingFlip ? "Scan the backs" : "Both sides (two passes)";
+
+    /// <summary>
+    /// Announces the stack's state to the view. A change nobody announces hides the prompt and
+    /// Cancel while a stack is genuinely in hand — the same failure CLAUDE.md pins for annotated
+    /// sheets, with a whole stack attached to it instead of one sheet.
+    /// </summary>
+    private void AnnouncedDuplexState()
+    {
+        OnPropertyChanged(nameof(DuplexActive));
+        OnPropertyChanged(nameof(DuplexPrompt));
+        OnPropertyChanged(nameof(DuplexButtonText));
+        OnPropertyChanged(nameof(CaptureInHand));
+        ScanBothSidesCommand.NotifyCanExecuteChanged();
+        CancelDuplexCommand.NotifyCanExecuteChanged();
+        ScanAnnotatedCommand.NotifyCanExecuteChanged();
+    }
+
+    private bool CanScanBothSides() => CanScan() && !Annotated.IsActive;
+
+    /// <summary>
+    /// Scans one pass of a two-pass stack: the fronts, then — once the operator has turned the
+    /// stack over — the backs. The pages stay in the session either way, and the order is applied
+    /// to the list here, before anything is saved, because adoption numbers pages in the order it
+    /// is handed them and reordering afterwards renumbers rows that are already written.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanScanBothSides))]
+    private async Task ScanBothSidesAsync()
+    {
+        if (!Duplex.IsActive)
+        {
+            Duplex.Start();
+        }
+
+        AnnouncedDuplexState();
+
+        var before = Pages.Select(p => p.FilePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        await ScanAsync();
+        var captured = Pages.Where(p => !before.Contains(p.FilePath)).Select(p => p.FilePath).ToList();
+
+        // A pass that produced nothing is not a pass. Recording it would move the sequence on and
+        // ask the operator to turn over a stack the scanner never took.
+        if (captured.Count == 0)
+        {
+            if (Duplex.State == DuplexPassState.Fronts)
+            {
+                Duplex.Cancel();
+                StatusText = $"{StatusText} The stack was not started.";
+            }
+
+            AnnouncedDuplexState();
+            await SettledAsync();
+            return;
+        }
+
+        Duplex.RecordPass(captured);
+        if (Duplex.State == DuplexPassState.AwaitingFlip)
+        {
+            StatusText = DuplexPrompt;
+            AnnouncedDuplexState();
+            return;
+        }
+
+        ApplyDuplexOrder();
+        AnnouncedDuplexState();
+        await SettledAsync();
+    }
+
+    /// <summary>
+    /// Puts the captured stack into sheet order, or says why it will not. A refusal leaves the
+    /// pages exactly as captured — fronts, then backs — so the operator can rescan the backs or
+    /// save them and reorder in Groups. Half an order would be adopted as a whole one.
+    /// </summary>
+    private void ApplyDuplexOrder()
+    {
+        var result = Duplex.Interleave();
+        var counted = $"{Duplex.FrontCount} front(s) and {Duplex.BackCount} back(s)";
+        Duplex.Cancel(); // ends the sequence; the pages stay in the session either way
+
+        // Set even when the pairing is refused: those pages are still a duplex run, and their
+        // blank backs are still identical to each other. A refused stack saved as it is must not
+        // lose nine backs out of ten on the way in.
+        _stackAwaitingSave = true;
+
+        if (result.Refused)
+        {
+            StatusText = result.Refusal!;
+            return;
+        }
+
+        var known = Pages.Select(p => p.FilePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var ordered = result.Order
+            .Where(known.Contains)
+            .Select((path, i) => new ScannedPage(path, i + 1))
+            .ToList();
+        if (ordered.Count != Pages.Count)
+        {
+            // Something outside the sequence changed the list mid-stack — a page deleted from the
+            // thumbnails, most likely. Leaving the capture order alone is the safe answer: an
+            // order missing a page pairs everything after it wrongly.
+            StatusText = "The pages changed while the stack was being scanned, so they were left in "
+                + $"the order they were captured ({counted}).";
+            return;
+        }
+
+        // SaveToGroupAsync hands adoption the pages sorted by sequence number, so the order has to
+        // be written into the numbers, not only into the list the thumbnails read.
+        Pages.Clear();
+        foreach (var page in ordered)
+        {
+            Pages.Add(page);
+        }
+
+        StatusText = $"Both sides scanned — {counted}, paired into {ordered.Count} page(s) in sheet order.";
+    }
+
+    private bool CanCancelDuplex() => Duplex.IsActive && !IsScanning;
+
+    /// <summary>
+    /// Abandons the stack and takes both passes with it. These pages have not been adopted yet, so
+    /// they are discarded from the session the way a staged delete is — a front whose back was
+    /// never captured is not half a record on disk: it is adopted as a whole document and read as
+    /// one. They go to the Recycle Bin, so a mis-click is recoverable.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanCancelDuplex))]
+    private async Task CancelDuplexAsync()
+    {
+        var discarded = Duplex.Cancel();
+        var session = _sessionService.Session;
+        try
+        {
+            session.ForgetPages(discarded);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // No file goes while the index on disk may still name it: an index naming a missing
+            // file stops recovery at that file.
+            Log.Warning(ex, "Could not update the recovery index in {Folder} while abandoning a stack", session.FolderPath);
+            StatusText = "Could not abandon the stack: the scan session's recovery index could not be "
+                + $"updated ({ex.Message}). The pages are still here; try again.";
+            AnnouncedDuplexState();
+            return;
+        }
+
+        foreach (var path in discarded)
+        {
+            _discarder.TryDiscard(session.FolderPath, path, out _);
+        }
+
+        var gone = discarded.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var page in Pages.Where(p => gone.Contains(p.FilePath)).ToList())
+        {
+            Pages.Remove(page);
+        }
+
+        _stackAwaitingSave = Pages.Count > 0 && _stackAwaitingSave;
+        StatusText = $"Stack abandoned — {discarded.Count} page(s) moved to the Recycle Bin.";
+        AnnouncedDuplexState();
+        await SettledAsync();
+    }
+
+    /// <summary>
     /// Adds the sheet-in-hand's NoteState to the operator's pending values without disturbing
     /// them, so the value lives for exactly one capture. Pending values persist across scans
     /// until the group changes, and a NoteState that outlived its sheet would stamp `as-found`
@@ -653,6 +869,14 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanCancelScan))]
     private void CancelScan() => _scanCts?.Cancel();
 
+    /// <summary>
+    /// Set when a two-pass stack has been paired and is waiting to be saved. Adoption drops a page
+    /// whose checksum is already in the group, and the blank backs of a stack are identical to the
+    /// byte — ten sheets would save one blank and drop nine, shifting every pairing after it. The
+    /// flag is cleared by the save, so it never widens past the stack that earned it.
+    /// </summary>
+    private bool _stackAwaitingSave;
+
     private bool CanSaveToGroup() => _activeGroup.Current is not null && Pages.Count > 0 && !IsScanning;
 
     /// <summary>Moves the session's pages into the active group (files + DB rows), then resets the session.</summary>
@@ -667,7 +891,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             var triage = await _toolset.Triage.TriageAsync(
                 group, [.. Pages.OrderBy(p => p.SequenceNumber).Select(p => p.FilePath)]);
             var result = await _groupService.AdoptPagesAsync(
-                group.Id, triage.FilesToAdopt, triage.IsBlankFlagged);
+                group.Id, triage.FilesToAdopt, triage.IsBlankFlagged, _stackAwaitingSave);
             var adopted = result.Adopted.Select(p => p.DocumentId).ToList();
             await _indexingService.ApplyInitialValuesAsync(
                 group.Id, adopted, StampNoteState(_activeGroup.PendingValues));
@@ -685,6 +909,9 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 
             await _ocrTrigger.EnqueueIfProfileEnabledAsync(group);
             _activeGroup.NotifyGroupContentChanged();
+
+            // The stack is in the group; the next save is an ordinary one again.
+            _stackAwaitingSave = false;
 
             var stuck = result.FailedSourceFiles.Select(f => f.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var summary = $"Saved {result.Adopted.Count} page(s) to \"{group.Name}\"."
