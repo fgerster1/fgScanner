@@ -1018,8 +1018,14 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         DeleteSelectedPagesCommand.NotifyCanExecuteChanged();
         try
         {
+            // The same flag governs both halves of the same loss. Triage would delete the blank
+            // backs outright — not to the Recycle Bin — before adoption ever sees them, and
+            // adoption would then skip whichever survivors share a checksum. Either alone leaves a
+            // stack short and every pairing after the gap shifted.
             var triage = await _toolset.Triage.TriageAsync(
-                group, [.. Pages.OrderBy(p => p.SequenceNumber).Select(p => p.FilePath)]);
+                group,
+                [.. Pages.OrderBy(p => p.SequenceNumber).Select(p => p.FilePath)],
+                keepBlankPages: _stackAwaitingSave);
             var result = await _groupService.AdoptPagesAsync(
                 group.Id, triage.FilesToAdopt, triage.IsBlankFlagged, _stackAwaitingSave);
             var adopted = result.Adopted.Select(p => p.DocumentId).ToList();

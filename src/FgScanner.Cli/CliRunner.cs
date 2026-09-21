@@ -181,7 +181,8 @@ public static class CliRunner
                             }
                         }
 
-                        var triage = await services.Triage.TriageAsync(group, scanned, cancellationToken)
+                        var triage = await services.Triage
+                            .TriageAsync(group, scanned, cancellationToken: cancellationToken)
                             .ConfigureAwait(false);
                         if (triage.DroppedCount > 0 && parseResult.GetValue(verbose))
                         {

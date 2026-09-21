@@ -64,7 +64,18 @@ public sealed class DuplexScanTests : IDisposable
     private RetroProcessService CreateRetroService() => new(
         new TestFactory(_dbPath), _groupService, _trashService);
 
-    private PageEditingToolset CreateToolset() => new(
+    /// <summary>
+    /// Calls every page blank — a stack whose backs are all blank, which is what a duplex run of
+    /// one-sided documents produces and the case the Drop policy acts on.
+    /// </summary>
+    private sealed class BlankClassifier : FgScanner.Core.Capture.IPageClassifier
+    {
+        public FgScanner.Core.Capture.PageKind Classify(
+            string imagePath, FgScanner.Core.Capture.CapturePolicy policy) =>
+            FgScanner.Core.Capture.PageKind.Blank;
+    }
+
+    private PageEditingToolset CreateToolset(FgScanner.Core.Capture.IPageClassifier? classifier = null) => new(
         new FgScanner.Scanning.Editing.ImageEditor(),
         new FgScanner.Scanning.Export.PdfExportService(),
         new FgScanner.Scanning.Export.ImageExportService(),
@@ -75,7 +86,8 @@ public sealed class DuplexScanTests : IDisposable
         CreateRetroService(),
         new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false),
         new AppSettingsService(new TestFactory(_dbPath)),
-        new CaptureTriageService(new TestFactory(_dbPath), new AppSettingsService(new TestFactory(_dbPath))),
+        new CaptureTriageService(
+            new TestFactory(_dbPath), new AppSettingsService(new TestFactory(_dbPath)), classifier),
         new DuplicateFinder(new TestFactory(_dbPath)));
 
     /// <summary>
@@ -96,14 +108,16 @@ public sealed class DuplexScanTests : IDisposable
     /// A view model with no device chosen yet — the state the window opens in, and the only state
     /// in which a command's wake-up can be observed.
     /// </summary>
-    private ScanViewModel CreateViewModel(FakeScanService scanner) => new(
+    private ScanViewModel CreateViewModel(
+        FakeScanService scanner, FgScanner.Core.Capture.IPageClassifier? classifier = null) => new(
         scanner, _sessionService, _groupService, _indexingService, _activeGroup,
         new ProfileOcrTrigger(_profileService, new OcrQueueService(new TestFactory(_dbPath))),
-        CreateToolset(), _trashService, new FakeDiscarder());
+        CreateToolset(classifier), _trashService, new FakeDiscarder());
 
-    private async Task<ScanViewModel> CreateScanViewModelAsync(FakeScanService scanner)
+    private async Task<ScanViewModel> CreateScanViewModelAsync(
+        FakeScanService scanner, FgScanner.Core.Capture.IPageClassifier? classifier = null)
     {
-        var scan = CreateViewModel(scanner);
+        var scan = CreateViewModel(scanner, classifier);
         await scan.RefreshDevicesCommand.ExecuteAsync(null);
 
         // A stack scanned in two passes goes through the feeder by definition; the fake hands back
@@ -249,6 +263,35 @@ public sealed class DuplexScanTests : IDisposable
         var saved = await db.Pages.CountAsync(
             p => p.Document!.GroupId == group.Id, TestContext.Current.CancellationToken);
         Assert.Equal(6, saved);
+    }
+
+    /// <summary>
+    /// AC-7 end to end, through the half of the save the checksum flag does not reach. Triage runs
+    /// before adoption, so a profile whose blank-page policy is Drop — an ordinary batch-scanning
+    /// setting the operator already has — deletes every blank back off the disk outright, not to
+    /// the Recycle Bin, before adoption is ever told to keep the stack's identical pages. Ten
+    /// sheets would save as ten pages, not twenty, with every pairing after the first shifted.
+    /// </summary>
+    [Fact]
+    public async Task A_profile_that_drops_blank_pages_does_not_eat_the_backs_of_a_stack()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await new AppSettingsService(new TestFactory(_dbPath)).SetAsync(FeatureFlags.BlankPolicy, "true", ct);
+        var profile = await _profileService.CreateAsync("Drops blanks", ct);
+        await _profileService.UpdateCapturePolicyAsync(
+            profile.Id, false, false, BlankPagePolicy.Drop, ct);
+        var group = await _groupService.CreateGroupAsync(
+            Path.Combine(_root, "groups"), "Blank backs", (profile.Id, 1), ct);
+        _activeGroup.Current = group;
+
+        var scan = await CreateScanViewModelAsync(
+            new FakeScanService { PageCount = 3, BlankIdenticalPages = true }, new BlankClassifier());
+
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+        await scan.SaveToGroupCommand.ExecuteAsync(null);
+
+        Assert.Equal(6, await PagesInAsync(group.Id));
     }
 
     /// <summary>A stack saved in sheet order keeps that order in the group's own numbering.</summary>
