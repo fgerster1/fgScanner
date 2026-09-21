@@ -51,3 +51,22 @@ public sealed record ScanProfileOptions
 
 /// <summary>A scanned page persisted to disk (inside the active recovery session folder).</summary>
 public sealed record ScannedPage(string FilePath, int SequenceNumber);
+
+/// <summary>
+/// What a device says it can do, asked once when the device is chosen. Every value defaults to
+/// supported: a driver that cannot answer, or answers wrongly — which some TWAIN drivers do — must
+/// never be able to stop a scan the hardware can actually perform (SPEC-2026-006 §16 R5). The probe
+/// removes a confusing error, it does not police the scanner.
+/// </summary>
+public sealed record ScanCapabilities(bool Flatbed = true, bool Feeder = true, bool Duplex = true)
+{
+    public static ScanCapabilities Everything { get; } = new();
+
+    public bool Supports(ScanSource source) => source switch
+    {
+        ScanSource.Flatbed => Flatbed,
+        ScanSource.Feeder => Feeder,
+        ScanSource.Duplex => Duplex,
+        _ => true,
+    };
+}

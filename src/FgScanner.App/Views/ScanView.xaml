@@ -29,7 +29,21 @@
 
                 <TextBlock Text="Profile" FontWeight="SemiBold" Margin="0,12,0,4" />
                 <TextBlock Text="Source" Opacity="0.7" />
-                <ComboBox ItemsSource="{Binding Sources}" SelectedItem="{Binding Source}" Margin="0,2,0,6" />
+                <!-- A source the scanner cannot do stays listed and disabled, with the reason under
+                     the box: hiding it sends the operator hunting for a feature printed on the
+                     machine, and a tooltip on a disabled item is not an answer (§05 N1). -->
+                <ComboBox ItemsSource="{Binding Sources}" SelectedValue="{Binding Source}"
+                          SelectedValuePath="Source" DisplayMemberPath="Name" Margin="0,2,0,2">
+                    <ComboBox.ItemContainerStyle>
+                        <Style TargetType="ComboBoxItem">
+                            <Setter Property="IsEnabled" Value="{Binding IsSupported}" />
+                            <Setter Property="ToolTip" Value="{Binding Reason}" />
+                        </Style>
+                    </ComboBox.ItemContainerStyle>
+                </ComboBox>
+                <TextBlock Text="{Binding SourceWarning}" TextWrapping="Wrap" Foreground="IndianRed"
+                           Margin="0,0,0,6"
+                           Visibility="{Binding SourceWarning, Converter={x:Static views:StringToVisibilityConverter.Instance}}" />
                 <TextBlock Text="Resolution (DPI)" Opacity="0.7" />
                 <ComboBox ItemsSource="{Binding DpiChoices}" SelectedItem="{Binding Dpi}" Margin="0,2,0,6" />
                 <TextBlock Text="Bit depth" Opacity="0.7" />

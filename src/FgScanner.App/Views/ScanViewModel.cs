@@ -70,7 +70,24 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 
     public IReadOnlyList<ScanDriver> Drivers { get; }
 
-    public IReadOnlyList<ScanSource> Sources { get; } = Enum.GetValues<ScanSource>();
+    /// <summary>
+    /// Built once and never rebuilt; each entry is switched on or off when a device is chosen.
+    /// Every source used to be offered whatever the scanner could do, under its bare enum name, so
+    /// a flatbed-only device set to Duplex reached the driver and came back with a raw
+    /// NoDuplexSupportException (SPEC-2026-006 §04).
+    /// </summary>
+    public IReadOnlyList<SourceOption> Sources { get; } =
+    [
+        new(ScanSource.Flatbed, "Flatbed"),
+        new(ScanSource.Feeder, "Feeder (one side)"),
+        new(ScanSource.Duplex, "Feeder (both sides, one pass)"),
+    ];
+
+    /// <summary>
+    /// The capability probe for the device now selected. Exposed so a test can await the answer;
+    /// the probe is started by the selection, which nothing else gives a handle on.
+    /// </summary>
+    public Task CapabilitiesSettled { get; private set; } = Task.CompletedTask;
 
     public IReadOnlyList<ScanBitDepth> BitDepths { get; } = Enum.GetValues<ScanBitDepth>();
 
@@ -202,6 +219,16 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private ScanSource _source = ScanSource.Flatbed;
 
+    /// <summary>
+    /// Why the chosen source cannot be used, shown under the combo. A disabled entry explains
+    /// itself only on hover, and a source chosen before the device was is still the selection.
+    /// </summary>
+    [ObservableProperty]
+    private string _sourceWarning = "";
+
+    partial void OnSourceChanged(ScanSource value) =>
+        SourceWarning = Sources.FirstOrDefault(o => o.Source == value && !o.IsSupported)?.Reason ?? "";
+
     [ObservableProperty]
     private int _dpi = 300;
 
@@ -233,6 +260,38 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 
     partial void OnSelectedDriverChanged(ScanDriver value) => _ = RefreshDevicesAsync();
 
+    partial void OnSelectedDeviceChanged(ScanDeviceInfo? value) => CapabilitiesSettled = ProbeAsync(value);
+
+    /// <summary>
+    /// Asks the chosen device what it can do, once. Never called from the scan path: the answer
+    /// cannot change between pages, and a round trip to the driver mid-run costs the operator time
+    /// for nothing.
+    /// </summary>
+    private async Task ProbeAsync(ScanDeviceInfo? device)
+    {
+        var capabilities = ScanCapabilities.Everything;
+        if (device is not null)
+        {
+            try
+            {
+                capabilities = await _scanService.GetCapabilitiesAsync(device);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // §16 R5: the probe is a convenience, not a gate. A driver that will not answer
+                // must not be able to withhold a source the hardware has.
+                Log.Warning(ex, "Could not read capabilities from {Device}; offering every source", device.Name);
+            }
+        }
+
+        foreach (var option in Sources)
+        {
+            option.Apply(capabilities);
+        }
+
+        SourceWarning = Sources.FirstOrDefault(o => o.Source == Source && !o.IsSupported)?.Reason ?? "";
+    }
+
     [RelayCommand]
     private async Task RefreshDevicesAsync()
     {
@@ -248,6 +307,10 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             }
 
             SelectedDevice = Devices.FirstOrDefault();
+
+            // The selection starts the capability probe; awaiting it here means anyone who awaited
+            // the refresh is looking at the answer rather than at the list as it was before.
+            await CapabilitiesSettled;
             StatusText = Devices.Count == 0 ? $"No {SelectedDriver} devices found." : $"{Devices.Count} device(s) found.";
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

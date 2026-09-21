@@ -42,6 +42,35 @@ public sealed class Naps2ScanService : IScanService, IDisposable
         return [.. devices.Select(d => new ScanDeviceInfo(driver, d.ID, d.Name))];
     }
 
+    /// <inheritdoc />
+    public async Task<ScanCapabilities> GetCapabilitiesAsync(
+        ScanDeviceInfo device,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var caps = await _controller.GetCaps(
+                new ScanDevice(ToNaps2Driver(device.Driver), device.Id, device.Name),
+                cancellationToken).ConfigureAwait(false);
+            if (caps?.PaperSourceCaps is not { } paper)
+            {
+                return ScanCapabilities.Everything;
+            }
+
+            return new ScanCapabilities(paper.SupportsFlatbed, paper.SupportsFeeder, paper.SupportsDuplex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Not every driver answers this, and some answer wrongly. The question is asked to
+            // spare the operator a raw NoDuplexSupportException, so failing to ask must cost them
+            // nothing: offer everything and let the scan itself report what the hardware does.
+            // Swallowed rather than logged because this project takes no logging dependency; the
+            // caller reports it, which is where the operator can see it.
+            _ = ex;
+            return ScanCapabilities.Everything;
+        }
+    }
+
     public async IAsyncEnumerable<ScannedPage> ScanAsync(
         ScanProfileOptions options,
         IPageStorage storage,

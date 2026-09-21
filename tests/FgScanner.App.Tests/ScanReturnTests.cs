@@ -212,6 +212,10 @@ public sealed class ScanReturnTests : IDisposable
             ScanDriver driver, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<ScanDeviceInfo>>([]);
 
+        public Task<ScanCapabilities> GetCapabilitiesAsync(
+            ScanDeviceInfo device, CancellationToken cancellationToken = default) =>
+            Task.FromResult(ScanCapabilities.Everything);
+
         public async IAsyncEnumerable<ScannedPage> ScanAsync(
             ScanProfileOptions options,
             IPageStorage storage,

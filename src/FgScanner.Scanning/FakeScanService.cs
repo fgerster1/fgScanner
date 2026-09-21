@@ -31,7 +31,31 @@ public sealed class FakeScanService : IScanService
 
     public int ErrorAfterPages { get; init; }
 
+    /// <summary>
+    /// What <see cref="GetCapabilitiesAsync"/> reports. Settable rather than init-only so a test
+    /// can swap scanners the way an operator does, and everything is supported by default so no
+    /// existing test changes behaviour by gaining a capability probe.
+    /// </summary>
+    public ScanCapabilities Capabilities { get; set; } = ScanCapabilities.Everything;
+
+    /// <summary>When set, thrown from the capability probe — the driver that cannot answer.</summary>
+    public Exception? CapabilitiesError { get; init; }
+
+    /// <summary>How many times the device has been asked; a probe on the scan path shows up here.</summary>
+    public int CapabilityProbes => _capabilityProbes;
+
+    private int _capabilityProbes;
+
     private int _run;
+
+    public Task<ScanCapabilities> GetCapabilitiesAsync(
+        ScanDeviceInfo device, CancellationToken cancellationToken = default)
+    {
+        Interlocked.Increment(ref _capabilityProbes);
+        return CapabilitiesError is not null
+            ? Task.FromException<ScanCapabilities>(CapabilitiesError)
+            : Task.FromResult(Capabilities);
+    }
 
     public Task<IReadOnlyList<ScanDeviceInfo>> ListDevicesAsync(
         ScanDriver driver, CancellationToken cancellationToken = default) =>
