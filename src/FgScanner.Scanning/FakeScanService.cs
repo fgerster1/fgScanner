@@ -27,6 +27,15 @@ public sealed class FakeScanService : IScanService
     /// </summary>
     public int PageCount { get; set; } = 3;
 
+    /// <summary>
+    /// A count for each successive run, the last of them repeating; null leaves
+    /// <see cref="PageCount"/> governing every run. It exists so the failures of a two-pass stack
+    /// can be rehearsed without paper: [10, 9] is ten sheets with one pulled out before the backs,
+    /// and [5, 4] is an odd stack whose last sheet is single-sided. Both are refusals, and a
+    /// refusal that has never been seen on screen is a refusal nobody has read.
+    /// </summary>
+    public IReadOnlyList<int>? PagesPerRun { get; init; }
+
     /// <summary>Delay between pages, to exercise streaming UI.</summary>
     public TimeSpan PageDelay { get; init; } = TimeSpan.Zero;
 
@@ -84,7 +93,10 @@ public sealed class FakeScanService : IScanService
         // byte-identical — and adoption silently skips a page whose checksum is already in the
         // group. No real scanner hands back a second sheet identical to the first.
         var run = Interlocked.Increment(ref _run);
-        var pagesThisRun = options.Source == ScanSource.Flatbed ? 1 : PageCount;
+        var forThisRun = PagesPerRun is { Count: > 0 } counts
+            ? counts[Math.Min(run - 1, counts.Count - 1)]
+            : PageCount;
+        var pagesThisRun = options.Source == ScanSource.Flatbed ? 1 : forThisRun;
         for (var i = 1; i <= pagesThisRun; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();

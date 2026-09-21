@@ -56,6 +56,34 @@ public sealed class FakeScannerBlankPagesTests : IDisposable
         Assert.Single(checksums);
     }
 
+    /// <summary>
+    /// A stack that comes up short on the second pass is the ordinary failure of a two-pass run —
+    /// a double feed, or a sheet left in the tray — and the last sheet of an odd stack has no back
+    /// at all. Neither can be rehearsed without paper unless the runs can differ, which is what
+    /// the manual protocol in docs/manual-tests.md needs before it reaches a real scanner.
+    /// </summary>
+    [Fact]
+    public async Task Each_run_can_be_given_its_own_page_count()
+    {
+        var service = new FakeScanService { PagesPerRun = [3, 2] };
+
+        Assert.Equal(3, (await ScanAsync(service)).Count);
+        Assert.Equal(2, (await ScanAsync(service)).Count);
+
+        // The last count repeats, so a long session does not fall off the end of the list.
+        Assert.Equal(2, (await ScanAsync(service)).Count);
+    }
+
+    /// <summary>AC-10's neighbour: unset, it changes nothing about an ordinary fake scan.</summary>
+    [Fact]
+    public async Task Without_per_run_counts_every_run_uses_the_page_count()
+    {
+        var service = new FakeScanService { PageCount = 4 };
+
+        Assert.Equal(4, (await ScanAsync(service)).Count);
+        Assert.Equal(4, (await ScanAsync(service)).Count);
+    }
+
     /// <summary>Off by default, so nothing that scans with the fake starts colliding.</summary>
     [Fact]
     public async Task An_ordinary_fake_scan_still_produces_pages_that_differ()

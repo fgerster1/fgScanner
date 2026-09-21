@@ -249,8 +249,9 @@ public sealed class DuplexScanTests : IDisposable
     [Fact]
     public async Task Identical_blank_backs_all_reach_the_group()
     {
+        // AC-7's own numbers: ten sheets with blank backs give twenty pages, not eleven.
         var scan = await CreateScanViewModelAsync(
-            new FakeScanService { PageCount = 3, BlankIdenticalPages = true });
+            new FakeScanService { PageCount = 10, BlankIdenticalPages = true });
         var group = await _groupService.CreateGroupAsync(
             Path.Combine(_root, "groups"), "Blank backs", null, TestContext.Current.CancellationToken);
         _activeGroup.Current = group;
@@ -262,7 +263,7 @@ public sealed class DuplexScanTests : IDisposable
         await using var db = new FgScannerDbContext(DbBootstrapper.BuildOptions(_dbPath));
         var saved = await db.Pages.CountAsync(
             p => p.Document!.GroupId == group.Id, TestContext.Current.CancellationToken);
-        Assert.Equal(6, saved);
+        Assert.Equal(20, saved);
     }
 
     /// <summary>
