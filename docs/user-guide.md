@@ -30,6 +30,84 @@ folder. Everything else — OCR, AI descriptions, PDF export — feeds that inde
   folder (`%APPDATA%\FGScanner\recovery\…`). That folder is cleared after Save to group, so copy the
   restored file somewhere else straight away — or simply scan the sheet again.
 
+## Both sides of the paper
+
+**Which option to use.** The **Source** list offers three:
+
+| Source | Use it when |
+|---|---|
+| **Flatbed** | One sheet at a time on the glass. |
+| **Feeder (one side)** | A stack, fronts only — or a stack whose backs you will take in a second pass. |
+| **Feeder (both sides, one pass)** | Your scanner captures both sides itself. One pass, done. |
+
+If your scanner cannot do one of these, it stays in the list but greyed out, with the reason
+written underneath the box. A greyed-out **Feeder (both sides, one pass)** is what the two-pass
+flow below is for.
+
+**"Turn the backs the right way up"** is for a one-pass duplex scanner that hands the reverse
+sides back upside down. It is off unless you turn it on, and it only applies to that source.
+
+### Two passes, for a scanner that scans one side
+
+Press **Both sides (two passes)** with the source set to **Feeder (one side)**.
+
+1. Put the stack in the feeder, fronts up, and press the button. FG Scanner scans the fronts.
+2. It then says, for example: *"6 front(s) scanned. Turn the whole stack over, put it back in the
+   feeder, and press "Scan the backs"."* The button itself changes to **Scan the backs**.
+3. Turn the **whole stack** over as one block — do not reverse it, do not flip sheet by sheet —
+   put it back, and press **Scan the backs**.
+4. The pages are put into sheet order for you: front 1, back 1, front 2, back 2, and so on. The
+   status line confirms it: *"Both sides scanned — 6 front(s) and 6 back(s), paired into 12
+   page(s) in sheet order."*
+
+Save to a group as usual. The order you see is the order that is saved.
+
+**"The backs come off the stack in reverse order"** is ticked, because turning a whole stack over
+end-for-end reverses it — the last sheet comes off the feeder first. Untick it only if you flip
+the sheets one at a time, keeping the original order. Getting this wrong pairs every sheet with
+the wrong back while the page count still looks right, which is why FG Scanner asks instead of
+guessing.
+
+**While a stack is half captured**, the prompt and a **Cancel stack** button stay on screen, and
+the ordinary **Scan** and **Batch scan…** buttons are unavailable. That is deliberate: a page
+scanned in the middle of a stack is not part of it, and would throw the pairing out.
+
+**Cancel stack** abandons both passes and moves their pages to the Recycle Bin. Use it if the
+stack jams or you lose your place. A front with no back is not half a record — saved, it becomes a
+whole one-sided document and is read as one.
+
+### If the counts disagree
+
+If the two passes do not produce the same number of pages, **nothing is paired**:
+
+> The two passes do not match: 10 front(s) and 9 back(s). Nothing has been paired. Scan the backs
+> again, or save the pages as they are and put them in order in Groups.
+
+Your pages are all still there, in the order they were scanned — fronts first, then backs. You
+have two ways on:
+
+- **Scan the backs again.** Press **Cancel stack**, then start over. This is usually right: a
+  missing back normally means a double feed, and you want to know which sheet lost it.
+- **Save them as they are** and fix the order in Groups with **Interleave**.
+
+FG Scanner will not guess a pairing. A stack that is obviously a mess gets rescanned; a stack that
+was paired wrongly looks perfectly normal until somebody reads it out in a deposition.
+
+**A stack of five sheets where the last one is single-sided** counts as a disagreement — five
+fronts, four backs — and is refused the same way.
+
+### Blank backs
+
+Every back is kept, including the blank ones. Ten double-sided sheets give **twenty** pages, not
+eleven, even though every blank back is an identical image and even if your profile is set to drop
+blank pages. That the back of a page is blank is part of the record.
+
+### If the app closes mid-stack
+
+The pairing is not saved until you save to a group. If FG Scanner is closed or crashes between
+pairing and saving, the recovered pages come back **in the order they were scanned**, not in sheet
+order, and the Scan page says so. Pair them again, or put them in order in Groups.
+
 ## Profiles and index fields (Settings)
 
 A profile holds up to 16 typed fields — Text, Date (ISO), Number, List — each

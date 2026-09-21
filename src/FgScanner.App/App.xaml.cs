@@ -84,8 +84,7 @@ public partial class App : Application
             {
                 if (e.Args.Contains("--fake-scanner"))
                 {
-                    services.AddSingleton<IScanService>(
-                        new FakeScanService { PageDelay = TimeSpan.FromMilliseconds(300) });
+                    services.AddSingleton<IScanService>(BuildFakeScanner(e.Args));
                 }
                 else
                 {
@@ -256,6 +255,41 @@ public partial class App : Application
         {
             _host!.Services.GetRequiredService<ShellViewModel>().SelectedSection = "Settings";
         }
+    }
+
+    /// <summary>
+    /// The fake scanner, shaped by the switches that follow --fake-scanner. They exist so the
+    /// manual duplex protocol in docs/manual-tests.md can be rehearsed on a machine with no
+    /// scanner, or with the scanner in use: a short second pass and an odd stack are refusals, and
+    /// a refusal nobody has read on screen is a refusal nobody has checked the wording of.
+    ///
+    ///   --fake-pages=10      ten sheets per pass
+    ///   --fake-pages=10,9    ten fed, one pulled out before the backs (a count mismatch)
+    ///   --fake-pages=5,4     an odd stack whose last sheet is single-sided
+    ///   --fake-blank-backs   every page byte-identical, as a stack of blank backs is
+    ///   --fake-no-duplex     a feeder-only scanner, which must disable Duplex with a reason
+    ///
+    /// None of this replaces the run on real paper: the fake has no rotation, no jams and no
+    /// feeder, so rows 1 and 6 of §11.3 can only be settled by hardware.
+    /// </summary>
+    private static FakeScanService BuildFakeScanner(string[] args)
+    {
+        var pages = args
+            .FirstOrDefault(a => a.StartsWith("--fake-pages=", StringComparison.Ordinal))?
+            .Split('=')[1]
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(v => int.TryParse(v, CultureInfo.InvariantCulture, out var n) && n > 0 ? n : 3)
+            .ToArray();
+
+        return new FakeScanService
+        {
+            PageDelay = TimeSpan.FromMilliseconds(300),
+            PagesPerRun = pages,
+            BlankIdenticalPages = args.Contains("--fake-blank-backs"),
+            Capabilities = args.Contains("--fake-no-duplex")
+                ? new ScanCapabilities(Flatbed: true, Feeder: true, Duplex: false)
+                : ScanCapabilities.Everything,
+        };
     }
 
     /// <summary>If a previous instance died mid-scan, offer to pull its pages into this session.</summary>

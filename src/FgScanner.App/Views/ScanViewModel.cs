@@ -3,6 +3,7 @@ using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FgScanner.App.Services;
+using FgScanner.Core.Capture;
 using FgScanner.Core.Evidence;
 using FgScanner.Data;
 using FgScanner.Scanning;
@@ -56,12 +57,32 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         {
             SaveToGroupCommand.NotifyCanExecuteChanged();
             OpenPageViewerCommand.NotifyCanExecuteChanged();
+
+            // One place covers every way a page can leave — saved, deleted from the thumbnails,
+            // abandoned with its stack, or dropped by a path written after this one.
+            if (_stackPages.Count > 0)
+            {
+                _stackPages.IntersectWith(Pages.Select(p => p.FilePath));
+            }
         };
         SelectedPages.CollectionChanged += (_, _) => DeleteSelectedPagesCommand.NotifyCanExecuteChanged();
 
         foreach (var page in sessionService.Session.Pages)
         {
             Pages.Add(page);
+        }
+
+        // A session that already holds pages is a recovered one — a fresh session starts empty.
+        // The recovery session knows only the order the pages came off the scanner and replays
+        // them in it, because the pairing of a two-pass stack lives in this list and nowhere else
+        // (§16 R6). A recovered stack therefore comes back fronts-then-backs, looking exactly like
+        // an ordinary session, so it is said out loud: a mis-ordered exhibit reads as normal right
+        // up until it is read out in a deposition.
+        if (Pages.Count > 0)
+        {
+            _statusText = $"{Pages.Count} page(s) recovered from a session that ended unexpectedly, "
+                + "in the order they were scanned. If they were a two-pass stack, the pairing was "
+                + "not saved with them — scan the stack again, or put the pages in order in Groups.";
         }
     }
 
@@ -70,7 +91,24 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 
     public IReadOnlyList<ScanDriver> Drivers { get; }
 
-    public IReadOnlyList<ScanSource> Sources { get; } = Enum.GetValues<ScanSource>();
+    /// <summary>
+    /// Built once and never rebuilt; each entry is switched on or off when a device is chosen.
+    /// Every source used to be offered whatever the scanner could do, under its bare enum name, so
+    /// a flatbed-only device set to Duplex reached the driver and came back with a raw
+    /// NoDuplexSupportException (SPEC-2026-006 §04).
+    /// </summary>
+    public IReadOnlyList<SourceOption> Sources { get; } =
+    [
+        new(ScanSource.Flatbed, "Flatbed"),
+        new(ScanSource.Feeder, "Feeder (one side)"),
+        new(ScanSource.Duplex, "Feeder (both sides, one pass)"),
+    ];
+
+    /// <summary>
+    /// The capability probe for the device now selected. Exposed so a test can await the answer;
+    /// the probe is started by the selection, which nothing else gives a handle on.
+    /// </summary>
+    public Task CapabilitiesSettled { get; private set; } = Task.CompletedTask;
 
     public IReadOnlyList<ScanBitDepth> BitDepths { get; } = Enum.GetValues<ScanBitDepth>();
 
@@ -100,7 +138,10 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanOpenPageViewer))]
     private void OpenPageViewer(ScannedPage? page)
     {
-        var ordered = Pages.OrderBy(p => p.SequenceNumber).ToList();
+        // The list itself is the order, not the sequence numbers it carries. They are the numbers
+        // the pages were captured under, and a two-pass stack is deliberately not in capture
+        // order — the thumbnails already count by position, and the viewer has to agree with them.
+        var ordered = Pages.ToList();
         var chosen = page ?? SelectedPages.FirstOrDefault();
         var start = chosen is null ? 0 : Math.Max(0, ordered.IndexOf(chosen));
         var landed = ShowPageViewer([.. ordered.Select(p => p.FilePath)], start);
@@ -191,16 +232,44 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 
     // Every command gated on CanScan, not just ScanCommand: a CanExecute that
     // is never re-evaluated leaves its button dead for the life of the window.
-    // Selecting a device is the moment they all become possible.
+    // Selecting a device is the moment they all become possible. A command left
+    // off this list is unreachable however correct its predicate is, and no test
+    // that calls CanExecute can see it — only one watching CanExecuteChanged can.
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ScanCommand))]
     [NotifyCanExecuteChangedFor(nameof(BatchScanCommand))]
     [NotifyCanExecuteChangedFor(nameof(ScanAnnotatedCommand))]
     [NotifyCanExecuteChangedFor(nameof(ScanNoteFaceCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ScanBothSidesCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CancelDuplexCommand))]
     private ScanDeviceInfo? _selectedDevice;
 
     [ObservableProperty]
     private ScanSource _source = ScanSource.Flatbed;
+
+    /// <summary>
+    /// Every source this scanner cannot do, and why, shown under the combo. Scoped to the whole
+    /// list rather than to the selection: a disabled entry cannot be selected, so a warning that
+    /// only ever describes the selection is a warning nobody can reach — and WPF suppresses the
+    /// tooltip on a disabled control, which is why §09 asks for a second route in the first place.
+    /// </summary>
+    [ObservableProperty]
+    private string _sourceWarning = "";
+
+    private void RefreshSourceWarning() =>
+        SourceWarning = string.Join(" ", Sources.Where(o => !o.IsSupported).Select(o => o.Reason));
+
+    partial void OnSourceChanged(ScanSource value) => OnPropertyChanged(nameof(CanFlipDuplexedPages));
+
+    /// <summary>
+    /// Corrects backs that a one-pass duplex scanner hands back upside down. Off by default, and
+    /// it reaches the driver only for Duplex: there are no backs to turn over on a source that
+    /// scans one side.
+    /// </summary>
+    [ObservableProperty]
+    private bool _flipDuplexedPages;
+
+    public bool CanFlipDuplexedPages => Source == ScanSource.Duplex;
 
     [ObservableProperty]
     private int _dpi = 300;
@@ -226,12 +295,46 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     [NotifyCanExecuteChangedFor(nameof(CancelAnnotatedCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveToGroupCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeleteSelectedPagesCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ScanBothSidesCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CancelDuplexCommand))]
     private bool _isScanning;
 
     [ObservableProperty]
     private string _statusText = "Select a device and scan.";
 
     partial void OnSelectedDriverChanged(ScanDriver value) => _ = RefreshDevicesAsync();
+
+    partial void OnSelectedDeviceChanged(ScanDeviceInfo? value) => CapabilitiesSettled = ProbeAsync(value);
+
+    /// <summary>
+    /// Asks the chosen device what it can do, once. Never called from the scan path: the answer
+    /// cannot change between pages, and a round trip to the driver mid-run costs the operator time
+    /// for nothing.
+    /// </summary>
+    private async Task ProbeAsync(ScanDeviceInfo? device)
+    {
+        var capabilities = ScanCapabilities.Everything;
+        if (device is not null)
+        {
+            try
+            {
+                capabilities = await _scanService.GetCapabilitiesAsync(device);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // §16 R5: the probe is a convenience, not a gate. A driver that will not answer
+                // must not be able to withhold a source the hardware has.
+                Log.Warning(ex, "Could not read capabilities from {Device}; offering every source", device.Name);
+            }
+        }
+
+        foreach (var option in Sources)
+        {
+            option.Apply(capabilities);
+        }
+
+        RefreshSourceWarning();
+    }
 
     [RelayCommand]
     private async Task RefreshDevicesAsync()
@@ -248,6 +351,10 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             }
 
             SelectedDevice = Devices.FirstOrDefault();
+
+            // The selection starts the capability probe; awaiting it here means anyone who awaited
+            // the refresh is looking at the answer rather than at the list as it was before.
+            await CapabilitiesSettled;
             StatusText = Devices.Count == 0 ? $"No {SelectedDriver} devices found." : $"{Devices.Count} device(s) found.";
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -259,6 +366,18 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 
     private bool CanScan() => SelectedDevice is not null && !IsScanning;
 
+    /// <summary>
+    /// The ordinary Scan and Batch scan, refused while a two-pass stack is part-captured. Their
+    /// pages would enter the session without entering the sequence: Cancel could not take them
+    /// back, and the pairing would count them as strangers and refuse a correctly fed stack. The
+    /// Scan key is bound on the main window and fires whichever section is showing, so the guard
+    /// has to live on the command rather than on the button.
+    ///
+    /// An annotated sheet is the opposite case and is deliberately not covered: the ordinary Scan
+    /// is how its clean capture is taken (CLAUDE.md).
+    /// </summary>
+    private bool CanScanOrdinary() => CanScan() && !Duplex.IsActive;
+
     private ScanProfileOptions BuildOptions() => new()
     {
         Device = SelectedDevice,
@@ -268,6 +387,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         PageSize = PageSize,
         Brightness = Brightness,
         Contrast = Contrast,
+        FlipDuplexedPages = FlipDuplexedPages,
     };
 
     /// <summary>One scanner pass streaming pages into the session; shared by Scan and Batch.</summary>
@@ -293,7 +413,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     /// <summary>Raised only after pages have actually landed in the group.</summary>
     public event Action? SavedToGroup;
 
-    [RelayCommand(CanExecute = nameof(CanScan))]
+    [RelayCommand(CanExecute = nameof(CanScanOrdinary))]
     private async Task ScanAsync()
     {
         IsScanning = true;
@@ -319,6 +439,14 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         {
             StatusText = "Scan canceled.";
         }
+        catch (ScanException ex)
+        {
+            // Already in the operator's words, and it says what to do next — so it is shown as
+            // written, without "Scan failed:" in front of an instruction.
+            Log.Warning(ex, "Scan refused by the device");
+            _sessionService.Session.Flush();
+            StatusText = ex.Message;
+        }
         catch (Exception ex)
         {
             Log.Error(ex, "Scan failed");
@@ -337,7 +465,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 
     /// <summary>Batch scanning (PLAN §5.8): several passes with a prompt or delay between them,
     /// then straight into the save-to-group/commit flow.</summary>
-    [RelayCommand(CanExecute = nameof(CanScan))]
+    [RelayCommand(CanExecute = nameof(CanScanOrdinary))]
     private async Task BatchScanAsync()
     {
         var dialog = new Dialogs.BatchDialog { Owner = System.Windows.Application.Current.MainWindow };
@@ -419,7 +547,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     /// this page's state now would strand an as-found capture with no clean partner, which is a
     /// whole-group refusal at import (CLAUDE.md), so callers wait for <see cref="CaptureSettled"/>.
     /// </summary>
-    public bool CaptureInHand => IsScanning || AnnotatedActive;
+    public bool CaptureInHand => IsScanning || AnnotatedActive || DuplexActive;
 
     /// <summary>
     /// Raised once nothing is in hand any more — a scan finished, or a sheet was completed or
@@ -472,6 +600,10 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(AnnotatedPrompt));
         ScanNoteFaceCommand.NotifyCanExecuteChanged();
         CancelAnnotatedCommand.NotifyCanExecuteChanged();
+
+        // The two sequences exclude each other (§16 R4), and an exclusion announced in one
+        // direction only leaves the other button grey after the sheet in its way has gone.
+        ScanBothSidesCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>
@@ -479,7 +611,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     /// ApplyInitialValuesAsync stamps one dictionary onto every document adopted in a save
     /// and the clean capture must not inherit this one's NoteState.
     /// </summary>
-    [RelayCommand(CanExecute = nameof(CanScan))]
+    [RelayCommand(CanExecute = nameof(CanScanAnnotated))]
     private async Task ScanAnnotatedAsync()
     {
         if (!Annotated.IsActive)
@@ -502,6 +634,13 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 
     private bool CanScanNoteFace() =>
         CanScan() && Annotated.NoteStateForNextCapture == AnnotatedCaptureSequence.Clean;
+
+    /// <summary>
+    /// The two sequences are mutually exclusive (§16 R4). Both live here and both own the Scan
+    /// page's one prompt area, so starting either while the other is in hand would leave a sheet
+    /// or a stack captured behind the wrong prompt, with the wrong Cancel wired up.
+    /// </summary>
+    private bool CanScanAnnotated() => CanScan() && !Duplex.IsActive;
 
     private async Task ScanOneCaptureAsync()
     {
@@ -543,6 +682,328 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
+    /// The stack in hand, when both sides are captured in two passes on a scanner with no one-pass
+    /// duplex. The ordering itself lives in Core, where it can be proved without a scanner; this
+    /// view model only feeds it the passes and applies the answer.
+    /// </summary>
+    public DuplexPassSequence Duplex { get; } = new();
+
+    /// <summary>Whether a stack is part-captured right now — fronts in, backs still to come.</summary>
+    public bool DuplexActive => Duplex.IsActive;
+
+    /// <summary>
+    /// Whether the backs arrive last-sheet-first. Turning the whole stack over end-for-end is the
+    /// usual gesture, so this is on; flipping sheet by sheet keeps the order. Getting it wrong
+    /// reverses every pairing while leaving the page count right, which is why the operator
+    /// answers it rather than the app guessing from the images.
+    /// </summary>
+    public bool BacksReversed
+    {
+        get => Duplex.BacksReversed;
+        set
+        {
+            if (Duplex.BacksReversed == value)
+            {
+                return;
+            }
+
+            Duplex.BacksReversed = value;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>
+    /// What the operator does next, or empty when no stack is in hand. Without it the sequence is
+    /// invisible: the fronts sit in the session with nothing on screen saying a second pass is
+    /// owed, and the next ordinary scan quietly becomes that pass.
+    /// </summary>
+    public string DuplexPrompt => Duplex.State switch
+    {
+        DuplexPassState.Fronts => "Scanning the fronts…",
+        DuplexPassState.AwaitingFlip =>
+            $"{Duplex.FrontCount} front(s) scanned. Turn the whole stack over, put it back in the "
+            + "feeder, and press “Scan the backs”.",
+        _ => "",
+    };
+
+    /// <summary>What the two-pass button says, since it both starts a stack and continues one.</summary>
+    public string DuplexButtonText =>
+        Duplex.State == DuplexPassState.AwaitingFlip ? "Scan the backs" : "Both sides (two passes)";
+
+    /// <summary>
+    /// Announces the stack's state to the view. A change nobody announces hides the prompt and
+    /// Cancel while a stack is genuinely in hand — the same failure CLAUDE.md pins for annotated
+    /// sheets, with a whole stack attached to it instead of one sheet.
+    /// </summary>
+    private void AnnouncedDuplexState()
+    {
+        OnPropertyChanged(nameof(DuplexActive));
+        OnPropertyChanged(nameof(DuplexPrompt));
+        OnPropertyChanged(nameof(DuplexButtonText));
+        OnPropertyChanged(nameof(CaptureInHand));
+        ScanBothSidesCommand.NotifyCanExecuteChanged();
+        CancelDuplexCommand.NotifyCanExecuteChanged();
+        ScanAnnotatedCommand.NotifyCanExecuteChanged();
+
+        // Both are refused while a stack is in hand, so both have to be told when one starts and
+        // when one ends — a Scan button left grey after the stack is finished is as wrong as a
+        // live one during it.
+        ScanCommand.NotifyCanExecuteChanged();
+        BatchScanCommand.NotifyCanExecuteChanged();
+    }
+
+    private bool CanScanBothSides() => CanScan() && !Annotated.IsActive;
+
+    /// <summary>
+    /// Scans one pass of a two-pass stack: the fronts, then — once the operator has turned the
+    /// stack over — the backs. The pages stay in the session either way, and the order is applied
+    /// to the list here, before anything is saved, because adoption numbers pages in the order it
+    /// is handed them and reordering afterwards renumbers rows that are already written.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanScanBothSides))]
+    private async Task ScanBothSidesAsync()
+    {
+        // A stack turned over by hand is a feeder run by definition. On the flatbed each pass is
+        // one sheet, so the stack is a single sheet scanned twice; on a one-pass duplex scanner
+        // each pass already returns both sides, so two passes return four images per sheet and
+        // every sheet is paired with the wrong back — while the counts match and every message on
+        // screen reads as success. It refuses rather than correcting the source, because changing
+        // a control the operator set is a guess, and this one decides what the scanner does.
+        if (Source != ScanSource.Feeder)
+        {
+            var feeder = Sources.First(o => o.Source == ScanSource.Feeder);
+
+            // Sending the operator to an entry the probe has already greyed out is a dead end, so
+            // that case reports what the scanner said instead. It does not claim two passes are
+            // impossible: the probe is a convenience and some drivers answer wrongly (§16 R5).
+            StatusText = !feeder.IsSupported
+                ? $"Two passes need the feeder. {feeder.Reason}"
+                : Duplex.IsActive
+                    ? $"The source is no longer “{feeder.Name}”. Choose it again to scan the backs, "
+                        + "or abandon the stack."
+                    : $"Two passes need the feeder. Choose “{feeder.Name}” as the source, then "
+                        + "press this again.";
+            return;
+        }
+
+        if (!Duplex.IsActive)
+        {
+            Duplex.Start();
+        }
+
+        AnnouncedDuplexState();
+
+        // A pass must not save. "Scan into this group" leaves AutoSaveAfterScan on for the whole
+        // round trip, and the passes run through the ordinary scan path — so the fronts would be
+        // adopted as whole one-sided documents the moment the first pass ended, the session reset
+        // and the operator bounced to Groups, with the backs never asked for and the group looking
+        // complete. The round trip is honoured once, after the pairing, at the end of this method.
+        var autoSave = AutoSaveAfterScan;
+        AutoSaveAfterScan = false;
+        var paired = false;
+        try
+        {
+            paired = await ScanOnePassAsync();
+        }
+        finally
+        {
+            AutoSaveAfterScan = autoSave;
+        }
+
+        // Only a finished, paired stack completes the round trip. A refusal leaves the pages in
+        // capture order with the reason on screen, and saving that automatically would adopt a
+        // stack nobody has looked at and bounce the operator away from the one place it is
+        // written down.
+        if (paired && autoSave && CanSaveToGroup())
+        {
+            await SaveToGroupAsync();
+        }
+
+        await SettledAsync();
+    }
+
+    /// <summary>
+    /// One pass of the stack. Returns true only when that pass completed the stack and the pages
+    /// were put into sheet order — the one outcome that may be saved without the operator looking.
+    /// </summary>
+    private async Task<bool> ScanOnePassAsync()
+    {
+        var before = Pages.Select(p => p.FilePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        await ScanAsync();
+        var captured = Pages.Where(p => !before.Contains(p.FilePath)).Select(p => p.FilePath).ToList();
+
+        // The stack can end while this pass is still in the feeder — Cancel, or anything else that
+        // ends the sequence. Recording a pass onto a sequence that is no longer there throws, and
+        // nothing above a command catches it: the app closes with the whole session unsaved. The
+        // pages stay on screen, because they are real captures whatever became of the sequence.
+        if (!Duplex.IsActive)
+        {
+            StatusText = captured.Count == 0
+                ? "The stack was abandoned while the pass was running."
+                : $"The stack was abandoned while the pass was running; its {captured.Count} page(s) "
+                    + "are listed here, unpaired.";
+            AnnouncedDuplexState();
+            return false;
+        }
+
+        // A pass that produced nothing is not a pass. Recording it would move the sequence on and
+        // ask the operator to turn over a stack the scanner never took.
+        if (captured.Count == 0)
+        {
+            if (Duplex.State == DuplexPassState.Fronts)
+            {
+                Duplex.Cancel();
+                StatusText = $"{StatusText} The stack was not started.";
+            }
+
+            AnnouncedDuplexState();
+            return false;
+        }
+
+        Duplex.RecordPass(captured);
+        if (Duplex.State == DuplexPassState.AwaitingFlip)
+        {
+            StatusText = DuplexPrompt;
+            AnnouncedDuplexState();
+            return false;
+        }
+
+        var paired = ApplyDuplexOrder();
+        AnnouncedDuplexState();
+        return paired;
+    }
+
+    /// <summary>
+    /// Puts the captured stack into sheet order, or says why it will not, and reports which it
+    /// did. A refusal leaves the pages exactly as captured — fronts, then backs — so the operator
+    /// can rescan the backs or save them and reorder in Groups. Half an order would be adopted as
+    /// a whole one.
+    /// </summary>
+    private bool ApplyDuplexOrder()
+    {
+        var result = Duplex.Interleave();
+        var counted = $"{Duplex.FrontCount} front(s) and {Duplex.BackCount} back(s)";
+
+        // Cancel ends the sequence and hands back both passes; the pages stay in the session
+        // either way. Marked even when the pairing is refused — those pages are still a duplex
+        // run, and their blank backs are still identical to each other, so a refused stack saved
+        // as it stands must not lose nine backs out of ten on the way in.
+        MarkStackPages(Duplex.Cancel());
+
+        if (result.Refused)
+        {
+            StatusText = result.Refusal!;
+            return false;
+        }
+
+        // The stack is measured against itself, never against the length of the list. The session
+        // is not empty just because the stack is new — an earlier scan, or a session restored from
+        // crash recovery, leaves pages staged — and counting those as missing refuses a correctly
+        // fed run. Counting them as present is the worse half of the same mistake: fronts adopted
+        // into a group between the passes leave exactly as many backs behind as there are pages,
+        // and the backs alone, reversed, would pass a check against the list length and be written
+        // back and announced as a finished pairing.
+        var known = Pages.Select(p => p.FilePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var ordered = result.Order.Where(known.Contains).ToList();
+        if (ordered.Count != result.Order.Count)
+        {
+            // A page of the stack itself has gone — deleted from the thumbnails, or adopted into a
+            // group between the passes. Leaving the capture order alone is the safe answer: an
+            // order missing a page pairs everything after it wrongly.
+            StatusText = "The pages changed while the stack was being scanned, so they were left in "
+                + $"the order they were captured ({counted}).";
+            return false;
+        }
+
+        // Pages staged before the stack started are not part of it, so they keep their place ahead
+        // of it rather than being interleaved into it or dropped.
+        var byPath = Pages.ToDictionary(p => p.FilePath, StringComparer.OrdinalIgnoreCase);
+        var inStack = result.Order.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var target = Pages
+            .Where(p => !inStack.Contains(p.FilePath))
+            .Concat(ordered.Select(path => byPath[path]))
+            .ToList();
+
+        // Moved, never cleared and refilled, and never replaced either. Pages is the ItemsSource
+        // of the thumbnail ListBox, whose SelectionChanged writes straight back into this view
+        // model: clearing it is the hard rule CLAUDE.md states outright, and replacing an item
+        // takes it out of the ListBox's selection just as quietly — the view model would hold a
+        // page that no longer looks selected, and Delete would remove a thumbnail the operator
+        // cannot see is picked. A Move keeps the very same records, so WPF carries the selection
+        // across the reorder by itself. It also spares a hundred-sheet stack a re-decode of every
+        // thumbnail and a quadratic pass through PagePositionConverter on the UI thread.
+        for (var i = 0; i < target.Count; i++)
+        {
+            var current = Pages.IndexOf(target[i]);
+            if (current != i)
+            {
+                Pages.Move(current, i);
+            }
+        }
+
+        MarkStackPages(ordered);
+
+        StatusText = $"Both sides scanned — {counted}, paired into {ordered.Count} page(s) in sheet order.";
+        return true;
+    }
+
+    /// <summary>
+    /// Records that these staged pages came off a two-pass stack, so the save keeps every one of
+    /// them. Anything no longer staged is dropped straight away rather than waiting for a removal
+    /// that has already happened.
+    /// </summary>
+    private void MarkStackPages(IEnumerable<string> paths)
+    {
+        _stackPages.UnionWith(paths);
+        _stackPages.IntersectWith(Pages.Select(p => p.FilePath));
+    }
+
+
+    private bool CanCancelDuplex() => Duplex.IsActive && !IsScanning;
+
+    /// <summary>
+    /// Abandons the stack and takes both passes with it. These pages have not been adopted yet, so
+    /// they are discarded from the session the way a staged delete is — a front whose back was
+    /// never captured is not half a record on disk: it is adopted as a whole document and read as
+    /// one. They go to the Recycle Bin, so a mis-click is recoverable.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanCancelDuplex))]
+    private async Task CancelDuplexAsync()
+    {
+        var discarded = Duplex.Cancel();
+        var session = _sessionService.Session;
+        try
+        {
+            session.ForgetPages(discarded);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // No file goes while the index on disk may still name it: an index naming a missing
+            // file stops recovery at that file.
+            Log.Warning(ex, "Could not update the recovery index in {Folder} while abandoning a stack", session.FolderPath);
+            StatusText = "Could not abandon the stack: the scan session's recovery index could not be "
+                + $"updated ({ex.Message}). The pages are still here; try again.";
+            AnnouncedDuplexState();
+            return;
+        }
+
+        foreach (var path in discarded)
+        {
+            _discarder.TryDiscard(session.FolderPath, path, out _);
+        }
+
+        var gone = discarded.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var page in Pages.Where(p => gone.Contains(p.FilePath)).ToList())
+        {
+            Pages.Remove(page);
+        }
+
+        StatusText = $"Stack abandoned — {discarded.Count} page(s) moved to the Recycle Bin.";
+        AnnouncedDuplexState();
+        await SettledAsync();
+    }
+
+    /// <summary>
     /// Adds the sheet-in-hand's NoteState to the operator's pending values without disturbing
     /// them, so the value lives for exactly one capture. Pending values persist across scans
     /// until the group changes, and a NoteState that outlived its sheet would stamp `as-found`
@@ -568,21 +1029,60 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanCancelScan))]
     private void CancelScan() => _scanCts?.Cancel();
 
+    /// <summary>
+    /// The pages of a two-pass stack that are still staged. Adoption drops a page whose checksum is
+    /// already in the group, and the blank backs of a stack are identical to the byte — ten sheets
+    /// would save one blank and drop nine, shifting every pairing after it.
+    ///
+    /// Held as the pages themselves rather than as a flag, because a flag answers the wrong
+    /// question. It has to survive a save that could not take every page, since the retry is still
+    /// that stack's save and the pages it left behind still need the skip. It must not survive the
+    /// pages, or the next unrelated save adopts genuine duplicates with nothing reported — the one
+    /// protection GroupService gives every other path against a folder adopted twice. Both follow
+    /// from asking which staged pages came off a stack, and neither followed from a bool.
+    /// </summary>
+    private readonly HashSet<string> _stackPages = new(StringComparer.OrdinalIgnoreCase);
+
     private bool CanSaveToGroup() => _activeGroup.Current is not null && Pages.Count > 0 && !IsScanning;
 
     /// <summary>Moves the session's pages into the active group (files + DB rows), then resets the session.</summary>
     [RelayCommand(CanExecute = nameof(CanSaveToGroup))]
     private async Task SaveToGroupAsync()
     {
+        // The Save button sits directly under the duplex panel and the Save shortcut fires on
+        // whichever section is showing, so a half-captured stack is one keystroke from the group.
+        // A front whose back was never captured is not half a record on disk: it is adopted as a
+        // whole document and read as one. The guard is here rather than on CanSaveToGroup because
+        // BatchScanAsync calls this method directly, and because a button that goes grey without
+        // saying why sends the operator looking for the fault in the group.
+        if (Duplex.IsActive)
+        {
+            StatusText = "This stack is only half captured. Scan the backs, or abandon the stack, "
+                + "before saving — a front whose back was never captured is adopted as a whole "
+                + "document and read as one.";
+            return;
+        }
+
         var group = _activeGroup.Current!;
         _savesRunning++;
         DeleteSelectedPagesCommand.NotifyCanExecuteChanged();
         try
         {
+            // Asked of the pages actually going in, so a retry after a partial save is still
+            // covered and a save with none of the stack left is not. The same answer governs both
+            // halves of the same loss: triage would delete the blank backs outright — not to the
+            // Recycle Bin — before adoption ever sees them, and adoption would then skip whichever
+            // survivors share a checksum. Either alone leaves the stack short and every pairing
+            // after the gap shifted.
+            // Adoption numbers documents in the order it is handed them, and the order is the
+            // list on screen — not the sequence numbers, which record what came off the scanner
+            // first and are deliberately not sheet order for a two-pass stack.
+            var staged = Pages.Select(p => p.FilePath).ToList();
+            var fromStack = staged.Any(_stackPages.Contains);
             var triage = await _toolset.Triage.TriageAsync(
-                group, [.. Pages.OrderBy(p => p.SequenceNumber).Select(p => p.FilePath)]);
+                group, staged, keepBlankPages: fromStack);
             var result = await _groupService.AdoptPagesAsync(
-                group.Id, triage.FilesToAdopt, triage.IsBlankFlagged);
+                group.Id, triage.FilesToAdopt, triage.IsBlankFlagged, fromStack);
             var adopted = result.Adopted.Select(p => p.DocumentId).ToList();
             await _indexingService.ApplyInitialValuesAsync(
                 group.Id, adopted, StampNoteState(_activeGroup.PendingValues));

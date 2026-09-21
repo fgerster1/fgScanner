@@ -32,8 +32,18 @@ public sealed class CaptureTriageService(
     AppSettingsService settings,
     IPageClassifier? classifier = null)
 {
+    /// <param name="keepBlankPages">
+    /// Set by a save that captured its pages as pairs. A two-pass duplex stack pairs by position,
+    /// so a page removed here shifts every pairing after it — and the blank back of an evidence
+    /// page is evidence that the back is blank (SPEC-2026-006 §05 Q2a, AC-7). The pages are still
+    /// classified and still flagged, because the row saying the back is blank is the record; only
+    /// the deletion is suppressed, and only for the caller that asks.
+    /// </param>
     public async Task<TriageResult> TriageAsync(
-        Group group, IReadOnlyList<string> sourceFiles, CancellationToken cancellationToken = default)
+        Group group,
+        IReadOnlyList<string> sourceFiles,
+        bool keepBlankPages = false,
+        CancellationToken cancellationToken = default)
     {
         var policy = await ResolvePolicyAsync(group, cancellationToken).ConfigureAwait(false);
         if (classifier is null || !policy.IsActive)
@@ -72,7 +82,7 @@ public sealed class CaptureTriageService(
                         group.DirectoryPath, $"separator page (Patch T) detected and kept: {Path.GetFileName(file)}",
                         cancellationToken).ConfigureAwait(false);
                     break;
-                case PageKind.Blank when policy.BlankPolicy == BlankPagePolicy.Drop:
+                case PageKind.Blank when policy.BlankPolicy == BlankPagePolicy.Drop && !keepBlankPages:
                     droppedBlanks.Add(file);
                     await DropAsync(group, file, "blank page dropped", cancellationToken).ConfigureAwait(false);
                     break;

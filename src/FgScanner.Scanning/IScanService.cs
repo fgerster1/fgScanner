@@ -15,6 +15,15 @@ public interface IScanService
         ScanProfileOptions options,
         IPageStorage storage,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Which paper sources this device reports. Asked when a device is chosen, never on the scan
+    /// path — the answer cannot change between pages, and a round trip to the driver mid-run buys
+    /// nothing. Implementations report everything as supported when they cannot tell.
+    /// </summary>
+    Task<ScanCapabilities> GetCapabilitiesAsync(
+        ScanDeviceInfo device,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>Where scanned pages get written. Implemented by the recovery session (crash-safe) and by tests.</summary>

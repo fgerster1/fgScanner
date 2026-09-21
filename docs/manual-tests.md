@@ -28,7 +28,9 @@ Run before each release, and after any change to FgScanner.Scanning. Automated t
       This is the BUG-1 regression case and it now passes; see the 2026-08-27 findings. 2026-08-27
 - [x] Feeder scan with 3+ pages — 3 pages captured twice via CLI, exit 0, all 2480x3507 px.
       **The "thumbnails stream in one at a time" half is GUI-only and still untested.** 2026-08-24
-- [ ] Duplex scan (if hardware supports) → front/back pages in order
+- [ ] Duplex scan (if hardware supports) → front/back pages in order.
+      **Superseded by the SPEC-2026-006 section at the end of this file**, which covers one-pass
+      duplex and the two-pass flow separately. Row 1 there is this row, and is still open.
 - [~] BlackWhite bit depth + 150 DPI — eSCL produced a correct 1275x1650 px @ 150 DPI file, but the
       sheet on the glass was blank so "still legible" is **inconclusive**. Re-run over real text.
 - [ ] Cancel mid-feeder-run → already-scanned pages remain, status shows canceled
@@ -229,7 +231,9 @@ so it affects the XSD, the manifest, and the Verify snapshots.
 ### Still requiring a human at the GUI
 
 Thumbnail streaming, cancel mid-run, the crash-recovery prompt, duplex, empty-feeder error surfacing,
-`--fake-scanner` startup, and everything in the phase 4-10 sections.
+`--fake-scanner` startup, and everything in the phase 4-10 sections. **Duplex is now tracked in the
+SPEC-2026-006 section at the end of this file**, where the two-pass rows have been rehearsed on the
+fake scanner and the hardware rows are listed as owed.
 
 ## Findings from the 2026-08-27 pass (pre-hand-off, on the Pantum M6550NW)
 
@@ -277,7 +281,8 @@ looked like a phase-18 regression. It is not one — re-running with the 0.3.2 b
 
 ### Still open on this pass — all need a human at the scanner
 
-Feeder 3+ pages with thumbnail streaming · duplex · cancel mid-run · empty-feeder error ·
+Feeder 3+ pages with thumbnail streaming · duplex (see the SPEC-2026-006 section) · cancel mid-run ·
+empty-feeder error ·
 BlackWhite 150 DPI over real text (still the `[~]` row) · all four crash-recovery rows ·
 32-bit-only vendor TWAIN driver · unplug mid-scan · WIA (no WIA device on this machine).
 
@@ -456,3 +461,51 @@ Still open — these need a pass on the real window:
       on a plain Text field, not only on a memo.
 - [ ] Make a field name long enough to fill the form pane, then drag the divider to its minimum:
       the input must not vanish.
+
+## SPEC-2026-006 — duplex capture (phase 25)
+
+**§11.3 rehearsed on the fake scanner 2026-09-21** (Franz's station, the real scanner in use
+elsewhere). The `--fake-scanner` switch grew options so the protocol can be walked without paper:
+`--fake-pages=10`, `--fake-pages=10,9` (a sheet removed before the backs), `--fake-pages=5,4` (an
+odd stack), `--fake-blank-backs`, `--fake-no-duplex`.
+
+**A fake scanner is not a scanner.** It has no rotation, no jam, no double feed and no real feeder,
+and it always reports what it was told to report. These rows prove the sequence, the wording and
+the refusals; they prove nothing about any device. **Every row below is repeated on hardware, and
+named with the scanner, before this spec is Done** — the dev station has an HP ENVY 7640 and Jim's
+station is a different machine, so a row passed on one proves nothing about the other either.
+
+- [x] **2 — a source the scanner cannot do** (`--fake-no-duplex`). "Feeder (both sides, one pass)"
+      is disabled, and its reason is readable three ways: as text under the box, as the entry's
+      accessibility name, and as a tooltip that shows on a disabled control. Exact wording:
+      *"This scanner does not report feeder (both sides, one pass) support."* No driver error.
+- [x] **3 — two-pass, 10 sheets** (`--fake-pages=10`). After the fronts: *"10 front(s) scanned.
+      Turn the whole stack over, put it back in the feeder, and press "Scan the backs"."* The
+      button changes to **Scan the backs**. After the backs: *"Both sides scanned — 10 front(s)
+      and 10 back(s), paired into 20 page(s) in sheet order."* 20 pages in the session.
+- [x] **4 — blank backs** (`--fake-pages=10 --fake-blank-backs`). 20 pages on disk, **1 distinct
+      checksum between all of them** — a genuine stack of identical blanks — and all 20 paired.
+      The "20, not 11" half is adoption, which is not exercised here because it would write into
+      the live database; `DuplexScanTests.Identical_blank_backs_all_reach_the_group` proves it at
+      exactly those numbers.
+- [x] **5 — a sheet removed before the back pass** (`--fake-pages=10,9`). *"The two passes do not
+      match: 10 front(s) and 9 back(s). Nothing has been paired. Scan the backs again, or save the
+      pages as they are and put them in order in Groups."* 19 pages, left in capture order.
+- [x] **6 — cancel mid-sequence**. *"Stack abandoned — 6 page(s) moved to the Recycle Bin."* The
+      session folder holds 0 pages afterwards, the prompt and **Cancel stack** leave the screen,
+      and **Scan** is enabled again.
+- [x] **7 — odd stack, last sheet single-sided** (`--fake-pages=5,4`). Refused, not guessed:
+      *"The two passes do not match: 5 front(s) and 4 back(s)…"* 9 pages, unpaired. This is §05
+      Q1(a) working as chosen — it costs the operator a rescan rather than risking a wrong pairing.
+
+**OPEN — hardware only, cannot be rehearsed:**
+
+- [ ] **1 — hardware duplex on a duplex-capable scanner**: 3 double-sided sheets, checking order
+      **and rotation**. If the backs come out upside down, tick "Turn the backs the right way up"
+      and repeat. The fake has no physical sides, so nothing here has ever been exercised —
+      `FlipDuplexedPages` reaching the driver is proven only by `ScanOptionMappingTests`.
+- [ ] Re-run rows 2–7 on the dev station's HP ENVY 7640 with real paper.
+- [ ] Re-run rows 1–7 on Jim's station, naming the scanner.
+- [ ] A real feeder failure — a jam or a double feed part-way through a pass — and what the Scan
+      page says. Only three NAPS2 exceptions are translated into plain words; a jam is not yet one
+      of them, so it currently reads "Scan failed: …".

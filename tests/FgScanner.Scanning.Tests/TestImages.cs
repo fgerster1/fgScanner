@@ -9,6 +9,21 @@ internal static class TestImages
 {
     public static readonly GdiImageContext Context = new();
 
+    /// <summary>
+    /// Resolved once, because Image.Save(path, ImageFormat) looks the encoder up on every call by
+    /// asking GDI+ to enumerate its encoders, and that enumeration is not thread-safe. Two test
+    /// classes saving at the same moment can both get nothing back, and Save then throws
+    /// ArgumentNullException (Parameter 'encoder') — which reads as a failure of whatever test
+    /// happened to be running. It surfaced about once in sixty runs of this assembly, in five
+    /// classes at once, because xunit runs them in parallel and they all start by writing a
+    /// fixture image. A static initializer runs under a lock, so this call happens exactly once.
+    /// </summary>
+    private static readonly System.Drawing.Imaging.ImageCodecInfo PngEncoder =
+        System.Drawing.Imaging.ImageCodecInfo.GetImageEncoders()
+            .Single(codec => codec.FormatID == System.Drawing.Imaging.ImageFormat.Png.Guid);
+
+    private static void SavePng(Bitmap bitmap, string path) => bitmap.Save(path, PngEncoder, null);
+
     /// <summary>A page-like image with horizontal dark stripes every 40px (text-line stand-ins).</summary>
     public static string CreateLinedPage(string directory, string name = "page.png", int width = 600, int height = 800)
     {
@@ -24,7 +39,7 @@ internal static class TestImages
         }
 
         var path = Path.Combine(directory, name);
-        bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        SavePng(bitmap, path);
         return path;
     }
 
@@ -43,7 +58,7 @@ internal static class TestImages
         }
 
         var path = Path.Combine(directory, name);
-        bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        SavePng(bitmap, path);
         return path;
     }
 
@@ -57,7 +72,7 @@ internal static class TestImages
         }
 
         var path = Path.Combine(directory, name);
-        bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        SavePng(bitmap, path);
         return path;
     }
 

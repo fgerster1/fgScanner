@@ -6,6 +6,19 @@ namespace FgScanner.Ocr.Tests;
 /// <summary>Renders deterministic text pages for real-Tesseract tests (never mock the engine).</summary>
 internal static class TestPages
 {
+    /// <summary>
+    /// Resolved once. Image.Save(path, ImageFormat) asks GDI+ to enumerate its encoders on every
+    /// call, and that enumeration is not thread-safe: two test classes saving at the same moment
+    /// can both get nothing back, and Save throws ArgumentNullException (Parameter 'encoder') in
+    /// whichever test was running. Reproduced about once in sixty runs of the sibling scanning
+    /// assembly, which has the same helper; these classes run in parallel too and all start by
+    /// writing a fixture page. A static initializer runs under a lock, so this happens once.
+    /// </summary>
+    private static readonly ImageCodecInfo PngEncoder =
+        ImageCodecInfo.GetImageEncoders().Single(codec => codec.FormatID == ImageFormat.Png.Guid);
+
+    private static void SavePng(Bitmap bitmap, string path) => bitmap.Save(path, PngEncoder, null);
+
     /// <summary>A simple page: large title, two body paragraphs. 300-DPI-like sizing.</summary>
     public static string CreateSimplePage(string directory, string name = "page.png")
     {
@@ -24,7 +37,7 @@ internal static class TestPages
         }
 
         var path = Path.Combine(directory, name);
-        bitmap.Save(path, ImageFormat.Png);
+        SavePng(bitmap, path);
         return path;
     }
 
@@ -36,7 +49,7 @@ internal static class TestPages
     {
         using var bitmap = RenderDense();
         var path = Path.Combine(directory, name);
-        bitmap.Save(path, ImageFormat.Png);
+        SavePng(bitmap, path);
         return path;
     }
 
@@ -52,7 +65,7 @@ internal static class TestPages
             _ => RotateFlipType.RotateNoneFlipNone,
         });
         var path = Path.Combine(directory, name ?? $"turned{clockwiseDegrees}.png");
-        bitmap.Save(path, ImageFormat.Png);
+        SavePng(bitmap, path);
         return path;
     }
 
@@ -66,7 +79,7 @@ internal static class TestPages
         }
 
         var path = Path.Combine(directory, name);
-        bitmap.Save(path, ImageFormat.Png);
+        SavePng(bitmap, path);
         return path;
     }
 

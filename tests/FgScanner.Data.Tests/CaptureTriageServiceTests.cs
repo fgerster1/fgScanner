@@ -84,7 +84,7 @@ public sealed class CaptureTriageServiceTests : IDisposable
         var group = await CreateGroupAsync(separators: true, blanks: BlankPagePolicy.Drop);
         var files = await CreateFilesAsync("sep_1.png", "blank_1.png", "page_1.png");
 
-        var result = await CreateService().TriageAsync(group, files, Ct);
+        var result = await CreateService().TriageAsync(group, files, cancellationToken: Ct);
 
         Assert.Equal(files, result.FilesToAdopt);
         Assert.Equal(0, result.DroppedCount);
@@ -98,7 +98,7 @@ public sealed class CaptureTriageServiceTests : IDisposable
         var group = await CreateGroupAsync(separators: true);
         var files = await CreateFilesAsync("page_1.png", "sep_1.png", "page_2.png");
 
-        var result = await CreateService().TriageAsync(group, files, Ct);
+        var result = await CreateService().TriageAsync(group, files, cancellationToken: Ct);
 
         Assert.Equal([files[0], files[2]], result.FilesToAdopt);
         Assert.Single(result.DroppedSeparators);
@@ -115,13 +115,36 @@ public sealed class CaptureTriageServiceTests : IDisposable
         var group = await CreateGroupAsync(separators: true, keepSeparators: true);
         var files = await CreateFilesAsync("sep_1.png", "page_1.png");
 
-        var result = await CreateService().TriageAsync(group, files, Ct);
+        var result = await CreateService().TriageAsync(group, files, cancellationToken: Ct);
 
         Assert.Equal(files, result.FilesToAdopt);
         Assert.Equal(0, result.DroppedCount);
         var journal = await File.ReadAllTextAsync(
             Path.Combine(group.DirectoryPath, GroupJournal.FileName), Ct);
         Assert.Contains("detected and kept: sep_1.png", journal);
+    }
+
+    /// <summary>
+    /// SPEC-2026-006 §05 Q2(a) and AC-7. The blank back of an evidence page is evidence that the
+    /// back is blank, and a page removed here shifts every pairing after it. The Drop policy is a
+    /// batch-scanning convenience and does not outrank a stack that was captured as pairs — so the
+    /// pages are kept, and still flagged blank, because the row saying the back is blank is the
+    /// record. Suppressing it is the save's decision, never this service's default.
+    /// </summary>
+    [Fact]
+    public async Task A_duplex_stack_keeps_its_blank_pages_whatever_the_policy_says()
+    {
+        await EnableFlagsAsync();
+        var group = await CreateGroupAsync(blanks: BlankPagePolicy.Drop);
+        var files = await CreateFilesAsync("page_1.png", "blank_1.png", "page_2.png", "blank_2.png");
+
+        var result = await CreateService().TriageAsync(
+            group, files, keepBlankPages: true, cancellationToken: Ct);
+
+        Assert.Equal(files, result.FilesToAdopt);
+        Assert.Equal(0, result.DroppedCount);
+        Assert.All(files, file => Assert.True(File.Exists(file)));
+        Assert.Equal([files[1], files[3]], result.FlaggedBlanks);
     }
 
     [Fact]
@@ -131,7 +154,7 @@ public sealed class CaptureTriageServiceTests : IDisposable
         var group = await CreateGroupAsync(blanks: BlankPagePolicy.Drop);
         var files = await CreateFilesAsync("blank_1.png", "page_1.png");
 
-        var result = await CreateService().TriageAsync(group, files, Ct);
+        var result = await CreateService().TriageAsync(group, files, cancellationToken: Ct);
 
         Assert.Equal([files[1]], result.FilesToAdopt);
         Assert.Single(result.DroppedBlanks);
@@ -148,7 +171,7 @@ public sealed class CaptureTriageServiceTests : IDisposable
         var group = await CreateGroupAsync(blanks: BlankPagePolicy.Separator);
         var files = await CreateFilesAsync("blank_1.png", "page_1.png");
 
-        var result = await CreateService().TriageAsync(group, files, Ct);
+        var result = await CreateService().TriageAsync(group, files, cancellationToken: Ct);
 
         Assert.Equal([files[1]], result.FilesToAdopt);
         Assert.Single(result.DroppedSeparators);
@@ -161,7 +184,7 @@ public sealed class CaptureTriageServiceTests : IDisposable
         var group = await CreateGroupAsync(blanks: BlankPagePolicy.Flag);
         var files = await CreateFilesAsync("blank_1.png", "page_1.png");
 
-        var result = await CreateService().TriageAsync(group, files, Ct);
+        var result = await CreateService().TriageAsync(group, files, cancellationToken: Ct);
         Assert.Equal(files, result.FilesToAdopt);
         Assert.Single(result.FlaggedBlanks);
 
