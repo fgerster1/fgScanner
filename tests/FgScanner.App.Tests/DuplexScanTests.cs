@@ -470,6 +470,97 @@ public sealed class DuplexScanTests : IDisposable
         Assert.True(scan.ScanBothSidesCommand.CanExecute(null));
     }
 
+    private async Task<int> PagesInAsync(Guid groupId)
+    {
+        await using var db = new FgScannerDbContext(DbBootstrapper.BuildOptions(_dbPath));
+        return await db.Pages.CountAsync(
+            p => p.Document!.GroupId == groupId, TestContext.Current.CancellationToken);
+    }
+
+    private async Task<Group> GroupAsync(string name) => await _groupService.CreateGroupAsync(
+        Path.Combine(_root, "groups"), name, null, TestContext.Current.CancellationToken);
+
+    /// <summary>
+    /// "Scan into this group" leaves AutoSaveAfterScan on for the whole round trip, and the two
+    /// passes go through the ordinary scan path. Left alone, the fronts are adopted as whole
+    /// one-sided documents the moment the first pass ends, the session is reset, and the operator
+    /// is bounced to Groups — where the group looks complete and the backs were never asked for.
+    /// </summary>
+    [Fact]
+    public async Task An_automatic_save_does_not_adopt_the_fronts_on_their_own()
+    {
+        var scan = await CreateScanViewModelAsync(new FakeScanService { PageCount = 3 });
+        var group = await GroupAsync("Round trip");
+        _activeGroup.Current = group;
+        scan.AutoSaveAfterScan = true;
+
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+
+        Assert.True(scan.DuplexActive);
+        Assert.Equal(3, scan.Pages.Count);
+        Assert.Equal(0, await PagesInAsync(group.Id));
+    }
+
+    /// <summary>…and the round trip still completes once both passes are in.</summary>
+    [Fact]
+    public async Task An_automatic_save_adopts_the_whole_stack_once_it_is_paired()
+    {
+        var scan = await CreateScanViewModelAsync(new FakeScanService { PageCount = 3 });
+        var group = await GroupAsync("Round trip");
+        _activeGroup.Current = group;
+        scan.AutoSaveAfterScan = true;
+
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+
+        Assert.Equal(6, await PagesInAsync(group.Id));
+        Assert.Empty(scan.Pages);
+    }
+
+    /// <summary>
+    /// A refused pairing is not a finished stack. Adopting it automatically would put a stack
+    /// nobody has looked at into a group in capture order and bounce the operator away from the
+    /// one screen where the refusal is written.
+    /// </summary>
+    [Fact]
+    public async Task An_automatic_save_leaves_a_refused_pairing_on_screen()
+    {
+        var scanner = new FakeScanService { PageCount = 3 };
+        var scan = await CreateScanViewModelAsync(scanner);
+        var group = await GroupAsync("Mismatch");
+        _activeGroup.Current = group;
+        scan.AutoSaveAfterScan = true;
+
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+        scanner.PageCount = 2;
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+
+        Assert.Equal(5, scan.Pages.Count);
+        Assert.Equal(0, await PagesInAsync(group.Id));
+    }
+
+    /// <summary>
+    /// The Save button sits directly under the duplex panel and the Save shortcut fires on any
+    /// section, so a half-captured stack is one keystroke from being adopted. A front whose back
+    /// was never captured is not half a record on disk: it is adopted as a whole document and
+    /// read as one.
+    /// </summary>
+    [Fact]
+    public async Task Saving_is_refused_while_a_stack_is_half_captured()
+    {
+        var scan = await CreateScanViewModelAsync(new FakeScanService { PageCount = 3 });
+        var group = await GroupAsync("Half a stack");
+        _activeGroup.Current = group;
+
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+        await scan.SaveToGroupCommand.ExecuteAsync(null);
+
+        Assert.Equal(3, scan.Pages.Count);
+        Assert.Equal(0, await PagesInAsync(group.Id));
+        Assert.True(scan.DuplexActive);
+        Assert.Contains("backs", scan.StatusText, StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>The checkbox exists because the gesture differs; both directions must reach Core.</summary>
     [Fact]
     public async Task The_reversed_backs_choice_reaches_the_sequence()

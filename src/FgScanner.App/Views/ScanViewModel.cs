@@ -770,6 +770,41 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 
         AnnouncedDuplexState();
 
+        // A pass must not save. "Scan into this group" leaves AutoSaveAfterScan on for the whole
+        // round trip, and the passes run through the ordinary scan path — so the fronts would be
+        // adopted as whole one-sided documents the moment the first pass ended, the session reset
+        // and the operator bounced to Groups, with the backs never asked for and the group looking
+        // complete. The round trip is honoured once, after the pairing, at the end of this method.
+        var autoSave = AutoSaveAfterScan;
+        AutoSaveAfterScan = false;
+        var paired = false;
+        try
+        {
+            paired = await ScanOnePassAsync();
+        }
+        finally
+        {
+            AutoSaveAfterScan = autoSave;
+        }
+
+        // Only a finished, paired stack completes the round trip. A refusal leaves the pages in
+        // capture order with the reason on screen, and saving that automatically would adopt a
+        // stack nobody has looked at and bounce the operator away from the one place it is
+        // written down.
+        if (paired && autoSave && CanSaveToGroup())
+        {
+            await SaveToGroupAsync();
+        }
+
+        await SettledAsync();
+    }
+
+    /// <summary>
+    /// One pass of the stack. Returns true only when that pass completed the stack and the pages
+    /// were put into sheet order — the one outcome that may be saved without the operator looking.
+    /// </summary>
+    private async Task<bool> ScanOnePassAsync()
+    {
         var before = Pages.Select(p => p.FilePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
         await ScanAsync();
         var captured = Pages.Where(p => !before.Contains(p.FilePath)).Select(p => p.FilePath).ToList();
@@ -785,8 +820,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
                 : $"The stack was abandoned while the pass was running; its {captured.Count} page(s) "
                     + "are listed here, unpaired.";
             AnnouncedDuplexState();
-            await SettledAsync();
-            return;
+            return false;
         }
 
         // A pass that produced nothing is not a pass. Recording it would move the sequence on and
@@ -800,8 +834,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             }
 
             AnnouncedDuplexState();
-            await SettledAsync();
-            return;
+            return false;
         }
 
         Duplex.RecordPass(captured);
@@ -809,20 +842,21 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         {
             StatusText = DuplexPrompt;
             AnnouncedDuplexState();
-            return;
+            return false;
         }
 
-        ApplyDuplexOrder();
+        var paired = ApplyDuplexOrder();
         AnnouncedDuplexState();
-        await SettledAsync();
+        return paired;
     }
 
     /// <summary>
-    /// Puts the captured stack into sheet order, or says why it will not. A refusal leaves the
-    /// pages exactly as captured — fronts, then backs — so the operator can rescan the backs or
-    /// save them and reorder in Groups. Half an order would be adopted as a whole one.
+    /// Puts the captured stack into sheet order, or says why it will not, and reports which it
+    /// did. A refusal leaves the pages exactly as captured — fronts, then backs — so the operator
+    /// can rescan the backs or save them and reorder in Groups. Half an order would be adopted as
+    /// a whole one.
     /// </summary>
-    private void ApplyDuplexOrder()
+    private bool ApplyDuplexOrder()
     {
         var result = Duplex.Interleave();
         var counted = $"{Duplex.FrontCount} front(s) and {Duplex.BackCount} back(s)";
@@ -836,7 +870,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         if (result.Refused)
         {
             StatusText = result.Refusal!;
-            return;
+            return false;
         }
 
         // The stack is measured against itself, never against the length of the list. The session
@@ -855,7 +889,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             // order missing a page pairs everything after it wrongly.
             StatusText = "The pages changed while the stack was being scanned, so they were left in "
                 + $"the order they were captured ({counted}).";
-            return;
+            return false;
         }
 
         // Pages staged before the stack started are not part of it, so they keep their place ahead
@@ -877,6 +911,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         }
 
         StatusText = $"Both sides scanned — {counted}, paired into {ordered.Count} page(s) in sheet order.";
+        return true;
     }
 
     private bool CanCancelDuplex() => Duplex.IsActive && !IsScanning;
@@ -964,6 +999,20 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanSaveToGroup))]
     private async Task SaveToGroupAsync()
     {
+        // The Save button sits directly under the duplex panel and the Save shortcut fires on
+        // whichever section is showing, so a half-captured stack is one keystroke from the group.
+        // A front whose back was never captured is not half a record on disk: it is adopted as a
+        // whole document and read as one. The guard is here rather than on CanSaveToGroup because
+        // BatchScanAsync calls this method directly, and because a button that goes grey without
+        // saying why sends the operator looking for the fault in the group.
+        if (Duplex.IsActive)
+        {
+            StatusText = "This stack is only half captured. Scan the backs, or abandon the stack, "
+                + "before saving — a front whose back was never captured is adopted as a whole "
+                + "document and read as one.";
+            return;
+        }
+
         var group = _activeGroup.Current!;
         _savesRunning++;
         DeleteSelectedPagesCommand.NotifyCanExecuteChanged();
