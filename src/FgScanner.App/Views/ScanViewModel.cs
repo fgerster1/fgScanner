@@ -209,12 +209,16 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 
     // Every command gated on CanScan, not just ScanCommand: a CanExecute that
     // is never re-evaluated leaves its button dead for the life of the window.
-    // Selecting a device is the moment they all become possible.
+    // Selecting a device is the moment they all become possible. A command left
+    // off this list is unreachable however correct its predicate is, and no test
+    // that calls CanExecute can see it — only one watching CanExecuteChanged can.
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ScanCommand))]
     [NotifyCanExecuteChangedFor(nameof(BatchScanCommand))]
     [NotifyCanExecuteChangedFor(nameof(ScanAnnotatedCommand))]
     [NotifyCanExecuteChangedFor(nameof(ScanNoteFaceCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ScanBothSidesCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CancelDuplexCommand))]
     private ScanDeviceInfo? _selectedDevice;
 
     [ObservableProperty]
@@ -267,6 +271,8 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     [NotifyCanExecuteChangedFor(nameof(CancelAnnotatedCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveToGroupCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeleteSelectedPagesCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ScanBothSidesCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CancelDuplexCommand))]
     private bool _isScanning;
 
     [ObservableProperty]
@@ -336,6 +342,18 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 
     private bool CanScan() => SelectedDevice is not null && !IsScanning;
 
+    /// <summary>
+    /// The ordinary Scan and Batch scan, refused while a two-pass stack is part-captured. Their
+    /// pages would enter the session without entering the sequence: Cancel could not take them
+    /// back, and the pairing would count them as strangers and refuse a correctly fed stack. The
+    /// Scan key is bound on the main window and fires whichever section is showing, so the guard
+    /// has to live on the command rather than on the button.
+    ///
+    /// An annotated sheet is the opposite case and is deliberately not covered: the ordinary Scan
+    /// is how its clean capture is taken (CLAUDE.md).
+    /// </summary>
+    private bool CanScanOrdinary() => CanScan() && !Duplex.IsActive;
+
     private ScanProfileOptions BuildOptions() => new()
     {
         Device = SelectedDevice,
@@ -371,7 +389,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     /// <summary>Raised only after pages have actually landed in the group.</summary>
     public event Action? SavedToGroup;
 
-    [RelayCommand(CanExecute = nameof(CanScan))]
+    [RelayCommand(CanExecute = nameof(CanScanOrdinary))]
     private async Task ScanAsync()
     {
         IsScanning = true;
@@ -423,7 +441,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 
     /// <summary>Batch scanning (PLAN §5.8): several passes with a prompt or delay between them,
     /// then straight into the save-to-group/commit flow.</summary>
-    [RelayCommand(CanExecute = nameof(CanScan))]
+    [RelayCommand(CanExecute = nameof(CanScanOrdinary))]
     private async Task BatchScanAsync()
     {
         var dialog = new Dialogs.BatchDialog { Owner = System.Windows.Application.Current.MainWindow };
@@ -558,6 +576,10 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(AnnotatedPrompt));
         ScanNoteFaceCommand.NotifyCanExecuteChanged();
         CancelAnnotatedCommand.NotifyCanExecuteChanged();
+
+        // The two sequences exclude each other (§16 R4), and an exclusion announced in one
+        // direction only leaves the other button grey after the sheet in its way has gone.
+        ScanBothSidesCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>
@@ -698,6 +720,12 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         ScanBothSidesCommand.NotifyCanExecuteChanged();
         CancelDuplexCommand.NotifyCanExecuteChanged();
         ScanAnnotatedCommand.NotifyCanExecuteChanged();
+
+        // Both are refused while a stack is in hand, so both have to be told when one starts and
+        // when one ends — a Scan button left grey after the stack is finished is as wrong as a
+        // live one during it.
+        ScanCommand.NotifyCanExecuteChanged();
+        BatchScanCommand.NotifyCanExecuteChanged();
     }
 
     private bool CanScanBothSides() => CanScan() && !Annotated.IsActive;
@@ -721,6 +749,21 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         var before = Pages.Select(p => p.FilePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
         await ScanAsync();
         var captured = Pages.Where(p => !before.Contains(p.FilePath)).Select(p => p.FilePath).ToList();
+
+        // The stack can end while this pass is still in the feeder — Cancel, or anything else that
+        // ends the sequence. Recording a pass onto a sequence that is no longer there throws, and
+        // nothing above a command catches it: the app closes with the whole session unsaved. The
+        // pages stay on screen, because they are real captures whatever became of the sequence.
+        if (!Duplex.IsActive)
+        {
+            StatusText = captured.Count == 0
+                ? "The stack was abandoned while the pass was running."
+                : $"The stack was abandoned while the pass was running; its {captured.Count} page(s) "
+                    + "are listed here, unpaired.";
+            AnnouncedDuplexState();
+            await SettledAsync();
+            return;
+        }
 
         // A pass that produced nothing is not a pass. Recording it would move the sequence on and
         // ask the operator to turn over a stack the scanner never took.
@@ -777,11 +820,15 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             .Where(known.Contains)
             .Select((path, i) => new ScannedPage(path, i + 1))
             .ToList();
-        if (ordered.Count != Pages.Count)
+        if (ordered.Count != result.Order.Count || ordered.Count != Pages.Count)
         {
             // Something outside the sequence changed the list mid-stack — a page deleted from the
-            // thumbnails, most likely. Leaving the capture order alone is the safe answer: an
-            // order missing a page pairs everything after it wrongly.
+            // thumbnails, or the fronts adopted into a group between the passes. Leaving the
+            // capture order alone is the safe answer: an order missing a page pairs everything
+            // after it wrongly. Both counts are checked, because the survivors matching the list
+            // is not the same as the order surviving — fronts adopted between the passes leave
+            // exactly as many backs as there are pages, and the backs alone, reversed, would pass
+            // a check against the list length and be announced as a finished pairing.
             StatusText = "The pages changed while the stack was being scanned, so they were left in "
                 + $"the order they were captured ({counted}).";
             return;

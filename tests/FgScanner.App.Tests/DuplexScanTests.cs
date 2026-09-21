@@ -78,12 +78,32 @@ public sealed class DuplexScanTests : IDisposable
         new CaptureTriageService(new TestFactory(_dbPath), new AppSettingsService(new TestFactory(_dbPath))),
         new DuplicateFinder(new TestFactory(_dbPath)));
 
+    /// <summary>
+    /// Keeps the fixture's pages out of the developer's own Recycle Bin, and keeps a refusal from
+    /// raising the shell's modal prompt in a headless run.
+    /// </summary>
+    private sealed class FakeDiscarder : IStagedPageDiscarder
+    {
+        public bool TryDiscard(string sessionFolder, string filePath, out string reason)
+        {
+            reason = "";
+            File.Delete(filePath);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// A view model with no device chosen yet — the state the window opens in, and the only state
+    /// in which a command's wake-up can be observed.
+    /// </summary>
+    private ScanViewModel CreateViewModel(FakeScanService scanner) => new(
+        scanner, _sessionService, _groupService, _indexingService, _activeGroup,
+        new ProfileOcrTrigger(_profileService, new OcrQueueService(new TestFactory(_dbPath))),
+        CreateToolset(), _trashService, new FakeDiscarder());
+
     private async Task<ScanViewModel> CreateScanViewModelAsync(FakeScanService scanner)
     {
-        var scan = new ScanViewModel(
-            scanner, _sessionService, _groupService, _indexingService, _activeGroup,
-            new ProfileOcrTrigger(_profileService, new OcrQueueService(new TestFactory(_dbPath))),
-            CreateToolset(), _trashService);
+        var scan = CreateViewModel(scanner);
         await scan.RefreshDevicesCommand.ExecuteAsync(null);
 
         // A stack scanned in two passes goes through the feeder by definition; the fake hands back
@@ -254,6 +274,122 @@ public sealed class DuplexScanTests : IDisposable
 
         Assert.Equal(order.Count, saved.Count);
         Assert.Equal(saved, saved.OrderBy(n => n, StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// A button asks its command whether it may run once, and then only when the command says to
+    /// ask again. These four tests watch for that signal rather than calling CanExecute, because
+    /// CanExecute answers honestly whether or not anything ever consults it — which is how a
+    /// command that is never announced sits behind a permanently grey button with a green suite.
+    /// </summary>
+    [Fact]
+    public async Task Choosing_a_device_wakes_the_two_pass_button()
+    {
+        var scan = CreateViewModel(new FakeScanService());
+        Assert.False(scan.ScanBothSidesCommand.CanExecute(null));
+
+        var woke = false;
+        scan.ScanBothSidesCommand.CanExecuteChanged += (_, _) => woke = true;
+        await scan.RefreshDevicesCommand.ExecuteAsync(null);
+
+        Assert.True(scan.ScanBothSidesCommand.CanExecute(null));
+        Assert.True(woke);
+    }
+
+    [Fact]
+    public async Task A_running_pass_wakes_the_cancel_control()
+    {
+        var scan = await CreateScanViewModelAsync(new FakeScanService { PageCount = 2 });
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+        Assert.True(scan.CancelDuplexCommand.CanExecute(null));
+
+        var woke = false;
+        scan.CancelDuplexCommand.CanExecuteChanged += (_, _) => woke = true;
+        scan.IsScanning = true;
+
+        // Abandoning a stack while its pass is in the feeder cancels a sequence the pass is about
+        // to report into, so the control has to go grey for as long as paper is moving.
+        Assert.True(woke);
+        Assert.False(scan.CancelDuplexCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task Finishing_an_annotated_sheet_wakes_the_two_pass_button()
+    {
+        var scan = await CreateScanViewModelAsync(new FakeScanService { PageCount = 1 });
+        _activeGroup.Current = await _groupService.CreateGroupAsync(
+            Path.Combine(_root, "groups"), "Notes", null, TestContext.Current.CancellationToken);
+        await scan.ScanAnnotatedCommand.ExecuteAsync(null);
+        Assert.False(scan.ScanBothSidesCommand.CanExecute(null));
+
+        var woke = false;
+        scan.ScanBothSidesCommand.CanExecuteChanged += (_, _) => woke = true;
+        await scan.CancelAnnotatedCommand.ExecuteAsync(null);
+
+        // §16 R4 is a mutual exclusion, so it has to release in both directions.
+        Assert.True(woke);
+        Assert.True(scan.ScanBothSidesCommand.CanExecute(null));
+    }
+
+    /// <summary>
+    /// The sheets already in the feeder keep coming after the stack is abandoned. Recording that
+    /// pass onto a sequence that has ended throws, and nothing above a command catches it: the
+    /// app closes with the operator's pages unsaved.
+    /// </summary>
+    [Fact]
+    public async Task A_pass_that_lands_after_the_stack_was_abandoned_does_not_crash()
+    {
+        var scan = await CreateScanViewModelAsync(
+            new FakeScanService { PageCount = 3, PageDelay = TimeSpan.FromMilliseconds(30) });
+
+        var pass = scan.ScanBothSidesCommand.ExecuteAsync(null);
+        for (var i = 0; i < 100 && !scan.IsScanning; i++)
+        {
+            await Task.Delay(5, TestContext.Current.CancellationToken);
+        }
+
+        scan.Duplex.Cancel();
+        await pass;
+
+        Assert.False(scan.DuplexActive);
+    }
+
+    /// <summary>
+    /// AC-3's guard. The pairing covers both passes, so an order that only half of the list can
+    /// account for is not a pairing at all — it is the backs on their own, in reverse.
+    /// </summary>
+    [Fact]
+    public async Task Backs_alone_are_not_paired_when_the_fronts_left_the_list()
+    {
+        var scan = await CreateScanViewModelAsync(new FakeScanService { PageCount = 3 });
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+
+        // The fronts left between the passes — adopted into a group, or deleted from the
+        // thumbnails. Three backs are not three sheets.
+        scan.Pages.Clear();
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+
+        var names = scan.Pages.Select(p => Path.GetFileName(p.FilePath)).ToList();
+        Assert.Equal(names.OrderBy(n => n, StringComparer.Ordinal), names);
+        Assert.DoesNotContain("in sheet order", scan.StatusText, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The ordinary Scan key is bound on the main window and fires whichever section is showing.
+    /// Its pages would enter the session without entering the sequence: Cancel could not take
+    /// them back, and the pairing would count them as strangers and refuse a good stack.
+    /// </summary>
+    [Fact]
+    public async Task The_ordinary_scan_is_refused_while_a_stack_is_in_hand()
+    {
+        var scan = await CreateScanViewModelAsync(new FakeScanService { PageCount = 2 });
+        Assert.True(scan.ScanCommand.CanExecute(null));
+
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+
+        Assert.False(scan.ScanCommand.CanExecute(null));
+        Assert.False(scan.BatchScanCommand.CanExecute(null));
+        Assert.True(scan.ScanBothSidesCommand.CanExecute(null));
     }
 
     /// <summary>The checkbox exists because the gesture differs; both directions must reach Core.</summary>
