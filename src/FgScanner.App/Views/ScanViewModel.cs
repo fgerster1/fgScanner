@@ -125,7 +125,10 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanOpenPageViewer))]
     private void OpenPageViewer(ScannedPage? page)
     {
-        var ordered = Pages.OrderBy(p => p.SequenceNumber).ToList();
+        // The list itself is the order, not the sequence numbers it carries. They are the numbers
+        // the pages were captured under, and a two-pass stack is deliberately not in capture
+        // order — the thumbnails already count by position, and the viewer has to agree with them.
+        var ordered = Pages.ToList();
         var chosen = page ?? SelectedPages.FirstOrDefault();
         var start = chosen is null ? 0 : Math.Max(0, ordered.IndexOf(chosen));
         var landed = ShowPageViewer([.. ordered.Select(p => p.FilePath)], start);
@@ -901,24 +904,30 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
 
         // Pages staged before the stack started are not part of it, so they keep their place ahead
         // of it rather than being interleaved into it or dropped.
+        var byPath = Pages.ToDictionary(p => p.FilePath, StringComparer.OrdinalIgnoreCase);
         var inStack = result.Order.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var renumbered = Pages
-            .Select(p => p.FilePath)
-            .Where(path => !inStack.Contains(path))
-            .Concat(ordered)
-            .Select((path, i) => new ScannedPage(path, i + 1))
+        var target = Pages
+            .Where(p => !inStack.Contains(p.FilePath))
+            .Concat(ordered.Select(path => byPath[path]))
             .ToList();
 
-        // SaveToGroupAsync hands adoption the pages sorted by sequence number, so the order has to
-        // be written into the numbers, not only into the list the thumbnails read.
-        Pages.Clear();
-        foreach (var page in renumbered)
+        // Moved, never cleared and refilled, and never replaced either. Pages is the ItemsSource
+        // of the thumbnail ListBox, whose SelectionChanged writes straight back into this view
+        // model: clearing it is the hard rule CLAUDE.md states outright, and replacing an item
+        // takes it out of the ListBox's selection just as quietly — the view model would hold a
+        // page that no longer looks selected, and Delete would remove a thumbnail the operator
+        // cannot see is picked. A Move keeps the very same records, so WPF carries the selection
+        // across the reorder by itself. It also spares a hundred-sheet stack a re-decode of every
+        // thumbnail and a quadratic pass through PagePositionConverter on the UI thread.
+        for (var i = 0; i < target.Count; i++)
         {
-            Pages.Add(page);
+            var current = Pages.IndexOf(target[i]);
+            if (current != i)
+            {
+                Pages.Move(current, i);
+            }
         }
 
-        // The rebuild above emptied the list, and the pruning that hangs off it takes the stack's
-        // pages with it. They are back in the list now, so they are marked again.
         MarkStackPages(ordered);
 
         StatusText = $"Both sides scanned — {counted}, paired into {ordered.Count} page(s) in sheet order.";
@@ -935,6 +944,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         _stackPages.UnionWith(paths);
         _stackPages.IntersectWith(Pages.Select(p => p.FilePath));
     }
+
 
     private bool CanCancelDuplex() => Duplex.IsActive && !IsScanning;
 
@@ -1051,7 +1061,10 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             // Recycle Bin — before adoption ever sees them, and adoption would then skip whichever
             // survivors share a checksum. Either alone leaves the stack short and every pairing
             // after the gap shifted.
-            var staged = Pages.OrderBy(p => p.SequenceNumber).Select(p => p.FilePath).ToList();
+            // Adoption numbers documents in the order it is handed them, and the order is the
+            // list on screen — not the sequence numbers, which record what came off the scanner
+            // first and are deliberately not sheet order for a two-pass stack.
+            var staged = Pages.Select(p => p.FilePath).ToList();
             var fromStack = staged.Any(_stackPages.Contains);
             var triage = await _toolset.Triage.TriageAsync(
                 group, staged, keepBlankPages: fromStack);

@@ -362,29 +362,108 @@ public sealed class DuplexScanTests : IDisposable
         Assert.Equal(1, await PagesInAsync(group.Id));
     }
 
+    /// <summary>
+    /// CLAUDE.md, hard rules: never clear an ObservableCollection bound to a Selector. Pages is
+    /// the ItemsSource of the thumbnail ListBox, whose SelectionChanged writes back into this view
+    /// model. A Reset also costs a hundred-sheet stack two hundred Add events, a re-decode of
+    /// every thumbnail and a quadratic run through PagePositionConverter, on the UI thread.
+    /// </summary>
+    [Fact]
+    public async Task The_pairing_does_not_reset_the_bound_page_list()
+    {
+        var scan = await CreateScanViewModelAsync(new FakeScanService { PageCount = 3 });
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+
+        var actions = new List<System.Collections.Specialized.NotifyCollectionChangedAction>();
+        scan.Pages.CollectionChanged += (_, e) => actions.Add(e.Action);
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+
+        Assert.DoesNotContain(System.Collections.Specialized.NotifyCollectionChangedAction.Reset, actions);
+    }
+
+    /// <summary>
+    /// The pairing mints new records, because the sequence numbers are the order adoption reads.
+    /// A page the operator picked between the passes is one of those records, so left alone the
+    /// selection stops matching anything in the list.
+    /// </summary>
+    [Fact]
+    public async Task A_page_picked_between_the_passes_is_still_the_page_selected()
+    {
+        var scan = await CreateScanViewModelAsync(new FakeScanService { PageCount = 2 });
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+
+        // The second front moves from sequence 2 to sequence 3 when the backs are paired in.
+        var chosen = scan.Pages[1].FilePath;
+        scan.SelectedPages.Add(scan.Pages[1]);
+
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+
+        var selected = Assert.Single(scan.SelectedPages);
+        Assert.Equal(chosen, selected.FilePath);
+        Assert.Contains(selected, scan.Pages);
+    }
+
+    /// <summary>
+    /// The visible consequence: Delete is enabled because something is selected, and removes
+    /// nothing because the selection matches no page. The operator is asked to move 0 pages.
+    /// </summary>
+    [Fact]
+    public async Task Delete_after_a_pairing_offers_the_page_that_is_selected()
+    {
+        var scan = await CreateScanViewModelAsync(new FakeScanService { PageCount = 2 });
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+        scan.SelectedPages.Add(scan.Pages[1]);
+
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+
+        string? asked = null;
+        scan.ConfirmDelete = message =>
+        {
+            asked = message;
+            return false;
+        };
+        scan.DeleteSelectedPagesCommand.Execute(null);
+
+        Assert.NotNull(asked);
+        Assert.StartsWith("Move 1 scanned page ", asked, StringComparison.Ordinal);
+    }
+
     /// <summary>A stack saved in sheet order keeps that order in the group's own numbering.</summary>
     [Fact]
     public async Task The_group_receives_the_pages_in_sheet_order()
     {
-        var scan = await CreateScanViewModelAsync(new FakeScanService { PageCount = 2 });
+        var scan = await CreateScanViewModelAsync(new FakeScanService { PageCount = 3 });
         var group = await _groupService.CreateGroupAsync(
             Path.Combine(_root, "groups"), "Ordered", null, TestContext.Current.CancellationToken);
         _activeGroup.Current = group;
 
         await scan.ScanBothSidesCommand.ExecuteAsync(null);
         await scan.ScanBothSidesCommand.ExecuteAsync(null);
-        var order = scan.Pages.Select(p => Path.GetFileName(p.FilePath)).ToList();
+
+        // Worked out from capture order, never from the list the pairing just produced — an
+        // expectation read back off scan.Pages agrees with any pairing at all, including none.
+        // The session names pages from a monotonic counter, so ordinal order is the order they
+        // came off the scanner: three fronts, then three backs, last back first.
+        var captured = scan.Pages
+            .Select(p => p.FilePath)
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToList();
+        var order = new List<string>
+        {
+            Checksum(captured[0]), Checksum(captured[5]),
+            Checksum(captured[1]), Checksum(captured[4]),
+            Checksum(captured[2]), Checksum(captured[3]),
+        };
         await scan.SaveToGroupCommand.ExecuteAsync(null);
 
         await using var db = new FgScannerDbContext(DbBootstrapper.BuildOptions(_dbPath));
         var saved = await db.Documents
             .Where(d => d.GroupId == group.Id)
             .OrderBy(d => d.Sequence)
-            .Select(d => d.Pages.First().FileName)
+            .Select(d => d.Pages.First().Checksum)
             .ToListAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(order.Count, saved.Count);
-        Assert.Equal(saved, saved.OrderBy(n => n, StringComparer.Ordinal));
+        Assert.Equal(order, saved);
     }
 
     /// <summary>
@@ -558,9 +637,21 @@ public sealed class DuplexScanTests : IDisposable
         Assert.Equal([captured[0], captured[3], captured[1], captured[2]], stack);
         Assert.Contains("in sheet order", scan.StatusText, StringComparison.Ordinal);
 
-        // Adoption is handed the pages sorted by sequence number, so the order has to be in the
-        // numbers and not only in the list the thumbnails read.
-        Assert.Equal([1, 2, 3, 4, 5, 6], scan.Pages.Select(p => p.SequenceNumber));
+        // And the order on screen is the order adoption is handed. The pages keep the sequence
+        // numbers they were captured under — a paired stack is deliberately no longer in capture
+        // order — so the list itself has to be what the save reads.
+        var group = await GroupAsync("Order reaches the group");
+        _activeGroup.Current = group;
+        var onScreen = scan.Pages.Select(p => Checksum(p.FilePath)).ToList();
+        await scan.SaveToGroupCommand.ExecuteAsync(null);
+
+        await using var db = new FgScannerDbContext(DbBootstrapper.BuildOptions(_dbPath));
+        var adopted = await db.Documents
+            .Where(d => d.GroupId == group.Id)
+            .OrderBy(d => d.Sequence)
+            .Select(d => d.Pages.First().Checksum)
+            .ToListAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(onScreen, adopted);
     }
 
     /// <summary>
@@ -579,6 +670,17 @@ public sealed class DuplexScanTests : IDisposable
         Assert.False(scan.ScanCommand.CanExecute(null));
         Assert.False(scan.BatchScanCommand.CanExecute(null));
         Assert.True(scan.ScanBothSidesCommand.CanExecute(null));
+    }
+
+    /// <summary>
+    /// Adoption renames every file to scan_NNNNN in the order it is handed them, so the saved
+    /// names are ascending whatever order the pages went in and prove nothing on their own. The
+    /// checksum is what ties a row back to the page it came from.
+    /// </summary>
+    private static string Checksum(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream)).ToLowerInvariant();
     }
 
     private async Task<int> PagesInAsync(Guid groupId)
