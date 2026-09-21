@@ -82,18 +82,61 @@ public sealed class Naps2ScanService : IScanService, IDisposable
         }
 
         var naps2Options = BuildOptions(options);
-        await foreach (var image in _controller.Scan(naps2Options, cancellationToken).ConfigureAwait(false))
+
+        // Enumerated by hand rather than with await foreach: the driver's exceptions have to be
+        // translated into this app's vocabulary before they leave the scanning layer, and a catch
+        // cannot wrap a yield.
+        var pages = _controller.Scan(naps2Options, cancellationToken).GetAsyncEnumerator(cancellationToken);
+        try
         {
-            using (image)
+            while (true)
             {
-                var path = storage.ReserveNextPagePath("jpg");
-                SaveWithCorrectedResolution(image, path, options.Dpi);
-                var page = new ScannedPage(path, ExtractSequence(path));
-                storage.CommitPage(page);
-                yield return page;
+                ProcessedImage image;
+                try
+                {
+                    if (!await pages.MoveNextAsync().ConfigureAwait(false))
+                    {
+                        break;
+                    }
+
+                    image = pages.Current;
+                }
+                catch (Exception ex) when (Translate(ex, options.Source) is { } named)
+                {
+                    throw named;
+                }
+
+                using (image)
+                {
+                    var path = storage.ReserveNextPagePath("jpg");
+                    SaveWithCorrectedResolution(image, path, options.Dpi);
+                    var page = new ScannedPage(path, ExtractSequence(path));
+                    storage.CommitPage(page);
+                    yield return page;
+                }
             }
         }
+        finally
+        {
+            await pages.DisposeAsync().ConfigureAwait(false);
+        }
     }
+
+    /// <summary>
+    /// The driver's word for a failure, in this app's words — or null to leave it alone, which
+    /// sends it to the Scan page's last-resort handler unchanged. Only the failures an operator can
+    /// actually do something about are named; inventing friendly text for the rest would hide the
+    /// detail that makes an unknown fault diagnosable.
+    /// </summary>
+    private static ScanException? Translate(Exception ex, ScanSource source) => ex switch
+    {
+        NAPS2.Scan.Exceptions.NoDuplexSupportException =>
+            new ScanSourceUnavailableException(ScanSource.Duplex, ex),
+        NAPS2.Scan.Exceptions.NoFeederSupportException =>
+            new ScanSourceUnavailableException(ScanSource.Feeder, ex),
+        NAPS2.Scan.Exceptions.DeviceFeederEmptyException => new FeederEmptyException(ex),
+        _ => null,
+    };
 
     /// <summary>
     /// Writes the page, repairing a resolution the driver never set (see
@@ -123,7 +166,12 @@ public sealed class Naps2ScanService : IScanService, IDisposable
         return dash >= 0 && int.TryParse(name[(dash + 1)..], out var n) ? n : 0;
     }
 
-    private static ScanOptions BuildOptions(ScanProfileOptions options) => new()
+    /// <summary>
+    /// The operator's profile as the driver sees it. Internal rather than private so a test can
+    /// assert what a capture actually sends: this is the legal-evidence capture path, and "the
+    /// defaults are unchanged" is a claim worth pinning rather than reviewing by eye.
+    /// </summary>
+    internal static ScanOptions BuildOptions(ScanProfileOptions options) => new()
     {
         Device = new ScanDevice(ToNaps2Driver(options.Device!.Driver), options.Device.Id, options.Device.Name),
         Driver = ToNaps2Driver(options.Device.Driver),
@@ -152,6 +200,10 @@ public sealed class Naps2ScanService : IScanService, IDisposable
         },
         Brightness = options.Brightness,
         Contrast = options.Contrast,
+
+        // Only duplex has backs to turn over. Sending it for a single-sided source would be a
+        // setting the operator cannot see the effect of, waiting to surprise them later.
+        FlipDuplexedPages = options.Source == ScanSource.Duplex && options.FlipDuplexedPages,
     };
 
     private static Driver ToNaps2Driver(ScanDriver driver) => driver switch

@@ -226,8 +226,21 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _sourceWarning = "";
 
-    partial void OnSourceChanged(ScanSource value) =>
+    partial void OnSourceChanged(ScanSource value)
+    {
         SourceWarning = Sources.FirstOrDefault(o => o.Source == value && !o.IsSupported)?.Reason ?? "";
+        OnPropertyChanged(nameof(CanFlipDuplexedPages));
+    }
+
+    /// <summary>
+    /// Corrects backs that a one-pass duplex scanner hands back upside down. Off by default, and
+    /// it reaches the driver only for Duplex: there are no backs to turn over on a source that
+    /// scans one side.
+    /// </summary>
+    [ObservableProperty]
+    private bool _flipDuplexedPages;
+
+    public bool CanFlipDuplexedPages => Source == ScanSource.Duplex;
 
     [ObservableProperty]
     private int _dpi = 300;
@@ -331,6 +344,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         PageSize = PageSize,
         Brightness = Brightness,
         Contrast = Contrast,
+        FlipDuplexedPages = FlipDuplexedPages,
     };
 
     /// <summary>One scanner pass streaming pages into the session; shared by Scan and Batch.</summary>
@@ -381,6 +395,14 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         catch (OperationCanceledException)
         {
             StatusText = "Scan canceled.";
+        }
+        catch (ScanException ex)
+        {
+            // Already in the operator's words, and it says what to do next — so it is shown as
+            // written, without "Scan failed:" in front of an instruction.
+            Log.Warning(ex, "Scan refused by the device");
+            _sessionService.Session.Flush();
+            StatusText = ex.Message;
         }
         catch (Exception ex)
         {

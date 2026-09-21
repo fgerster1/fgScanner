@@ -44,6 +44,13 @@
                 <TextBlock Text="{Binding SourceWarning}" TextWrapping="Wrap" Foreground="IndianRed"
                            Margin="0,0,0,6"
                            Visibility="{Binding SourceWarning, Converter={x:Static views:StringToVisibilityConverter.Instance}}" />
+                <!-- Some one-pass duplex scanners hand the backs back upside down. Off by default
+                     and disabled for the other sources, where there is no back to turn over. -->
+                <CheckBox Content="Turn the backs the right way up"
+                          IsChecked="{Binding FlipDuplexedPages}"
+                          IsEnabled="{Binding CanFlipDuplexedPages}"
+                          ToolTip="For scanners that return the reverse side upside down."
+                          Margin="0,0,0,6" />
                 <TextBlock Text="Resolution (DPI)" Opacity="0.7" />
                 <ComboBox ItemsSource="{Binding DpiChoices}" SelectedItem="{Binding Dpi}" Margin="0,2,0,6" />
                 <TextBlock Text="Bit depth" Opacity="0.7" />

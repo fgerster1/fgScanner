@@ -19,4 +19,10 @@
   <ItemGroup>
     <ProjectReference Include="..\FgScanner.Core\FgScanner.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- So the option mapping can be asserted without making the driver's own types part of this
+         project's public surface. This is the legal-evidence capture path: what a default capture
+         sends to the scanner is pinned by a test, not reviewed by eye. -->
+    <InternalsVisibleTo Include="FgScanner.Scanning.Tests" />
+  </ItemGroup>
 </Project>

@@ -173,6 +173,61 @@ public sealed class DuplexOptionTests : IDisposable
     }
 
     /// <summary>
+    /// The driver's own words for this are "NoDuplexSupportException", which told the operator
+    /// nothing about what to do next. A scanner that cannot do both sides at once can still do
+    /// both sides in two passes, and the message has to say so.
+    /// </summary>
+    [Fact]
+    public async Task A_scanner_that_cannot_do_duplex_says_what_to_do_instead()
+    {
+        var scan = CreateScanViewModel(new FakeScanService
+        {
+            Error = new ScanSourceUnavailableException(ScanSource.Duplex),
+        });
+        await scan.RefreshDevicesCommand.ExecuteAsync(null);
+        scan.Source = ScanSource.Duplex;
+
+        await scan.ScanCommand.ExecuteAsync(null);
+
+        Assert.Contains("both sides", scan.StatusText, StringComparison.OrdinalIgnoreCase);
+
+        // The distinguishing assertion: the generic handler prefixes "Scan failed:", which reads
+        // as a fault when this is an instruction the operator can act on. Without the named catch
+        // the line above passes and this one does not.
+        Assert.DoesNotContain("Scan failed", scan.StatusText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_empty_feeder_says_the_feeder_is_empty()
+    {
+        var scan = CreateScanViewModel(new FakeScanService { Error = new FeederEmptyException() });
+        await scan.RefreshDevicesCommand.ExecuteAsync(null);
+        scan.Source = ScanSource.Feeder;
+
+        await scan.ScanCommand.ExecuteAsync(null);
+
+        Assert.Contains("feeder", scan.StatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Scan failed", scan.StatusText, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The flip checkbox corrects upside-down backs from a one-pass duplex scanner, so it means
+    /// nothing on a source that only ever scans one side.
+    /// </summary>
+    [Fact]
+    public async Task Flipping_backs_is_offered_only_for_one_pass_duplex()
+    {
+        var scan = CreateScanViewModel(new FakeScanService());
+        await scan.RefreshDevicesCommand.ExecuteAsync(null);
+
+        scan.Source = ScanSource.Feeder;
+        Assert.False(scan.CanFlipDuplexedPages);
+
+        scan.Source = ScanSource.Duplex;
+        Assert.True(scan.CanFlipDuplexedPages);
+    }
+
+    /// <summary>
     /// The probe runs when a device is chosen and never on the scan path: asking the driver again
     /// mid-run is a round trip to the hardware for an answer that cannot have changed.
     /// </summary>
