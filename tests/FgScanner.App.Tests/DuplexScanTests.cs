@@ -428,6 +428,43 @@ public sealed class DuplexScanTests : IDisposable
         Assert.StartsWith("Move 1 scanned page ", asked, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// §12 and §16 R6. The pairing lives in this view model's list; the recovery session knows
+    /// only the order the pages came off the scanner, and replays them in it. A stack paired but
+    /// not yet saved when the app dies therefore comes back as fronts-then-backs, looking like an
+    /// ordinary session — so the operator is told, rather than saving a mis-ordered exhibit that
+    /// reads as normal until it is read out in a deposition.
+    /// </summary>
+    [Fact]
+    public async Task Recovered_pages_say_the_pairing_did_not_survive()
+    {
+        var scan = await CreateScanViewModelAsync(new FakeScanService { PageCount = 3 });
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+        Assert.Contains("in sheet order", scan.StatusText, StringComparison.Ordinal);
+
+        // The app dies here, and the next launch builds a view model over the session's pages.
+        var relaunched = CreateViewModel(new FakeScanService());
+
+        // Capture order, not sheet order: the pairing did not survive.
+        var recovered = relaunched.Pages.Select(p => p.FilePath).ToList();
+        Assert.Equal(6, recovered.Count);
+        Assert.Equal(recovered.OrderBy(p => p, StringComparer.Ordinal), recovered);
+
+        Assert.Contains("order they were scanned", relaunched.StatusText, StringComparison.Ordinal);
+        Assert.Contains("two-pass", relaunched.StatusText, StringComparison.Ordinal);
+    }
+
+    /// <summary>A fresh session has nothing in it, so nothing is claimed about an order.</summary>
+    [Fact]
+    public async Task A_session_with_no_recovered_pages_says_nothing_about_order()
+    {
+        var scan = await CreateScanViewModelAsync(new FakeScanService());
+
+        Assert.Empty(scan.Pages);
+        Assert.DoesNotContain("order they were scanned", scan.StatusText, StringComparison.Ordinal);
+    }
+
     /// <summary>A stack saved in sheet order keeps that order in the group's own numbering.</summary>
     [Fact]
     public async Task The_group_receives_the_pages_in_sheet_order()

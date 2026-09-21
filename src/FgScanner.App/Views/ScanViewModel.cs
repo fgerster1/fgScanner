@@ -71,6 +71,19 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         {
             Pages.Add(page);
         }
+
+        // A session that already holds pages is a recovered one — a fresh session starts empty.
+        // The recovery session knows only the order the pages came off the scanner and replays
+        // them in it, because the pairing of a two-pass stack lives in this list and nowhere else
+        // (§16 R6). A recovered stack therefore comes back fronts-then-backs, looking exactly like
+        // an ordinary session, so it is said out loud: a mis-ordered exhibit reads as normal right
+        // up until it is read out in a deposition.
+        if (Pages.Count > 0)
+        {
+            _statusText = $"{Pages.Count} page(s) recovered from a session that ended unexpectedly, "
+                + "in the order they were scanned. If they were a two-pass stack, the pairing was "
+                + "not saved with them — scan the stack again, or put the pages in order in Groups.";
+        }
     }
 
     public string SaveTargetText =>
