@@ -375,6 +375,36 @@ public sealed class DuplexScanTests : IDisposable
     }
 
     /// <summary>
+    /// The session is not empty just because the stack is new: an earlier scan, or a session
+    /// restored from crash recovery, leaves pages staged. They are not part of the stack, so they
+    /// keep their place ahead of it — and their presence must not be read as the stack having
+    /// lost pages, which refuses a correctly fed run.
+    /// </summary>
+    [Fact]
+    public async Task Pages_captured_before_the_stack_keep_their_place()
+    {
+        var scan = await CreateScanViewModelAsync(new FakeScanService { PageCount = 2 });
+        await scan.ScanCommand.ExecuteAsync(null);
+        var earlier = scan.Pages.Select(p => p.FilePath).ToList();
+        Assert.Equal(2, earlier.Count);
+
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+
+        Assert.Equal(6, scan.Pages.Count);
+        Assert.Equal(earlier, scan.Pages.Take(2).Select(p => p.FilePath));
+
+        var stack = scan.Pages.Skip(2).Select(p => p.FilePath).ToList();
+        var captured = stack.OrderBy(p => p, StringComparer.Ordinal).ToList();
+        Assert.Equal([captured[0], captured[3], captured[1], captured[2]], stack);
+        Assert.Contains("in sheet order", scan.StatusText, StringComparison.Ordinal);
+
+        // Adoption is handed the pages sorted by sequence number, so the order has to be in the
+        // numbers and not only in the list the thumbnails read.
+        Assert.Equal([1, 2, 3, 4, 5, 6], scan.Pages.Select(p => p.SequenceNumber));
+    }
+
+    /// <summary>
     /// The ordinary Scan key is bound on the main window and fires whichever section is showing.
     /// Its pages would enter the session without entering the sequence: Cancel could not take
     /// them back, and the pairing would count them as strangers and refuse a good stack.

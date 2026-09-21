@@ -815,29 +815,39 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // The stack is measured against itself, never against the length of the list. The session
+        // is not empty just because the stack is new — an earlier scan, or a session restored from
+        // crash recovery, leaves pages staged — and counting those as missing refuses a correctly
+        // fed run. Counting them as present is the worse half of the same mistake: fronts adopted
+        // into a group between the passes leave exactly as many backs behind as there are pages,
+        // and the backs alone, reversed, would pass a check against the list length and be written
+        // back and announced as a finished pairing.
         var known = Pages.Select(p => p.FilePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var ordered = result.Order
-            .Where(known.Contains)
-            .Select((path, i) => new ScannedPage(path, i + 1))
-            .ToList();
-        if (ordered.Count != result.Order.Count || ordered.Count != Pages.Count)
+        var ordered = result.Order.Where(known.Contains).ToList();
+        if (ordered.Count != result.Order.Count)
         {
-            // Something outside the sequence changed the list mid-stack — a page deleted from the
-            // thumbnails, or the fronts adopted into a group between the passes. Leaving the
-            // capture order alone is the safe answer: an order missing a page pairs everything
-            // after it wrongly. Both counts are checked, because the survivors matching the list
-            // is not the same as the order surviving — fronts adopted between the passes leave
-            // exactly as many backs as there are pages, and the backs alone, reversed, would pass
-            // a check against the list length and be announced as a finished pairing.
+            // A page of the stack itself has gone — deleted from the thumbnails, or adopted into a
+            // group between the passes. Leaving the capture order alone is the safe answer: an
+            // order missing a page pairs everything after it wrongly.
             StatusText = "The pages changed while the stack was being scanned, so they were left in "
                 + $"the order they were captured ({counted}).";
             return;
         }
 
+        // Pages staged before the stack started are not part of it, so they keep their place ahead
+        // of it rather than being interleaved into it or dropped.
+        var inStack = result.Order.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var renumbered = Pages
+            .Select(p => p.FilePath)
+            .Where(path => !inStack.Contains(path))
+            .Concat(ordered)
+            .Select((path, i) => new ScannedPage(path, i + 1))
+            .ToList();
+
         // SaveToGroupAsync hands adoption the pages sorted by sequence number, so the order has to
         // be written into the numbers, not only into the list the thumbnails read.
         Pages.Clear();
-        foreach (var page in ordered)
+        foreach (var page in renumbered)
         {
             Pages.Add(page);
         }
