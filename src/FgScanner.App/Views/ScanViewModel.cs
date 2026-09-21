@@ -225,17 +225,18 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     private ScanSource _source = ScanSource.Flatbed;
 
     /// <summary>
-    /// Why the chosen source cannot be used, shown under the combo. A disabled entry explains
-    /// itself only on hover, and a source chosen before the device was is still the selection.
+    /// Every source this scanner cannot do, and why, shown under the combo. Scoped to the whole
+    /// list rather than to the selection: a disabled entry cannot be selected, so a warning that
+    /// only ever describes the selection is a warning nobody can reach — and WPF suppresses the
+    /// tooltip on a disabled control, which is why §09 asks for a second route in the first place.
     /// </summary>
     [ObservableProperty]
     private string _sourceWarning = "";
 
-    partial void OnSourceChanged(ScanSource value)
-    {
-        SourceWarning = Sources.FirstOrDefault(o => o.Source == value && !o.IsSupported)?.Reason ?? "";
-        OnPropertyChanged(nameof(CanFlipDuplexedPages));
-    }
+    private void RefreshSourceWarning() =>
+        SourceWarning = string.Join(" ", Sources.Where(o => !o.IsSupported).Select(o => o.Reason));
+
+    partial void OnSourceChanged(ScanSource value) => OnPropertyChanged(nameof(CanFlipDuplexedPages));
 
     /// <summary>
     /// Corrects backs that a one-pass duplex scanner hands back upside down. Off by default, and
@@ -309,7 +310,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             option.Apply(capabilities);
         }
 
-        SourceWarning = Sources.FirstOrDefault(o => o.Source == Source && !o.IsSupported)?.Reason ?? "";
+        RefreshSourceWarning();
     }
 
     [RelayCommand]
@@ -739,6 +740,29 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanScanBothSides))]
     private async Task ScanBothSidesAsync()
     {
+        // A stack turned over by hand is a feeder run by definition. On the flatbed each pass is
+        // one sheet, so the stack is a single sheet scanned twice; on a one-pass duplex scanner
+        // each pass already returns both sides, so two passes return four images per sheet and
+        // every sheet is paired with the wrong back — while the counts match and every message on
+        // screen reads as success. It refuses rather than correcting the source, because changing
+        // a control the operator set is a guess, and this one decides what the scanner does.
+        if (Source != ScanSource.Feeder)
+        {
+            var feeder = Sources.First(o => o.Source == ScanSource.Feeder);
+
+            // Sending the operator to an entry the probe has already greyed out is a dead end, so
+            // that case reports what the scanner said instead. It does not claim two passes are
+            // impossible: the probe is a convenience and some drivers answer wrongly (§16 R5).
+            StatusText = !feeder.IsSupported
+                ? $"Two passes need the feeder. {feeder.Reason}"
+                : Duplex.IsActive
+                    ? $"The source is no longer “{feeder.Name}”. Choose it again to scan the backs, "
+                        + "or abandon the stack."
+                    : $"Two passes need the feeder. Choose “{feeder.Name}” as the source, then "
+                        + "press this again.";
+            return;
+        }
+
         if (!Duplex.IsActive)
         {
             Duplex.Start();

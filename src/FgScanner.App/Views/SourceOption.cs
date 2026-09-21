@@ -20,11 +20,22 @@ public sealed partial class SourceOption(ScanSource source, string name) : Obser
     public string Name { get; } = name;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Announcement))]
     private bool _isSupported = true;
 
     /// <summary>Why it cannot be chosen, in the operator's terms. Empty when it can.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Announcement))]
     private string _reason = "";
+
+    /// <summary>
+    /// What a screen reader reads out, which the view binds to AutomationProperties.Name.
+    /// DisplayMemberPath sets what is drawn and not what is exposed, so without this every entry
+    /// announces this class's type name — and the reason a source cannot be chosen reaches nobody
+    /// working by keyboard, which is the second route §09 and AC-1 ask for precisely because WPF
+    /// suppresses a tooltip on a disabled control.
+    /// </summary>
+    public string Announcement => IsSupported ? Name : $"{Name}. {Reason}";
 
     public void Apply(ScanCapabilities capabilities)
     {

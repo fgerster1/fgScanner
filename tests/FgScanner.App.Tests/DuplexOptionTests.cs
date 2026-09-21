@@ -133,6 +133,54 @@ public sealed class DuplexOptionTests : IDisposable
     }
 
     /// <summary>
+    /// AC-1 and §09. A disabled entry cannot be selected, so a reason that only ever covers the
+    /// selection is a reason nobody can reach — and the tooltip WPF suppresses on a disabled
+    /// control is not the second route the spec asks for.
+    /// </summary>
+    [Fact]
+    public async Task Every_unavailable_source_says_why_even_when_it_is_not_the_chosen_one()
+    {
+        var scan = CreateScanViewModel(new FakeScanService
+        {
+            Capabilities = new ScanCapabilities(Flatbed: true, Feeder: false, Duplex: false),
+        });
+
+        await scan.RefreshDevicesCommand.ExecuteAsync(null);
+        scan.Source = ScanSource.Flatbed;
+
+        Assert.Contains("Feeder (one side)", scan.SourceWarning, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Feeder (both sides, one pass)", scan.SourceWarning, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task A_scanner_that_does_everything_leaves_the_warning_empty()
+    {
+        var scan = CreateScanViewModel(new FakeScanService());
+
+        await scan.RefreshDevicesCommand.ExecuteAsync(null);
+
+        Assert.Equal("", scan.SourceWarning);
+    }
+
+    /// <summary>
+    /// What a screen reader announces. DisplayMemberPath sets what is drawn and not what is
+    /// exposed, so without this every entry reads out as the view model's type name and the
+    /// reason a source is unavailable never reaches anyone working by keyboard.
+    /// </summary>
+    [Fact]
+    public void A_source_announces_its_name_and_its_reason()
+    {
+        var option = new SourceOption(ScanSource.Duplex, "Feeder (both sides, one pass)");
+
+        option.Apply(ScanCapabilities.Everything);
+        Assert.Equal("Feeder (both sides, one pass)", option.Announcement);
+
+        option.Apply(new ScanCapabilities(Flatbed: true, Feeder: true, Duplex: false));
+        Assert.StartsWith("Feeder (both sides, one pass)", option.Announcement, StringComparison.Ordinal);
+        Assert.Contains(option.Reason, option.Announcement, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// §16 R5: the probe is a convenience, never a gate. A driver that cannot answer — or answers
     /// wrongly, which some TWAIN drivers do — must not be able to stop a scan the hardware can
     /// actually do. Everything is offered and the scan itself reports what happens.

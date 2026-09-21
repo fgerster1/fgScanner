@@ -375,6 +375,54 @@ public sealed class DuplexScanTests : IDisposable
     }
 
     /// <summary>
+    /// A stack turned over by hand is a feeder run by definition. On the flatbed each pass is one
+    /// sheet, so the "stack" is a single sheet scanned twice; on a one-pass duplex scanner each
+    /// pass already returns both sides, so two passes return 4N images and every sheet is paired
+    /// with the wrong back while the counts match and every message reads as success.
+    ///
+    /// It refuses rather than correcting the source: changing a control the operator set is a
+    /// guess, and this one decides what the scanner does to the evidence.
+    /// </summary>
+    [Theory]
+    [InlineData(ScanSource.Flatbed)]
+    [InlineData(ScanSource.Duplex)]
+    public async Task A_stack_is_refused_unless_the_source_is_the_feeder(ScanSource source)
+    {
+        var scan = await CreateScanViewModelAsync(new FakeScanService { PageCount = 3 });
+        scan.Source = source;
+
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+
+        Assert.False(scan.DuplexActive);
+        Assert.Empty(scan.Pages);
+        Assert.Contains("Feeder (one side)", scan.StatusText, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// On a scanner with no feeder the entry the refusal names is itself greyed out, so sending
+    /// the operator to it is a dead end. The probe can be wrong about this (§16 R5), which is why
+    /// it says what the scanner reported rather than that two passes are impossible.
+    /// </summary>
+    [Fact]
+    public async Task A_scanner_with_no_feeder_is_not_sent_to_choose_one()
+    {
+        var scan = CreateViewModel(new FakeScanService
+        {
+            PageCount = 3,
+            Capabilities = new ScanCapabilities(Flatbed: true, Feeder: false, Duplex: false),
+        });
+        await scan.RefreshDevicesCommand.ExecuteAsync(null);
+        scan.Source = ScanSource.Flatbed;
+
+        await scan.ScanBothSidesCommand.ExecuteAsync(null);
+
+        Assert.False(scan.DuplexActive);
+        Assert.Empty(scan.Pages);
+        Assert.DoesNotContain("Choose", scan.StatusText, StringComparison.Ordinal);
+        Assert.Contains("does not report", scan.StatusText, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The session is not empty just because the stack is new: an earlier scan, or a session
     /// restored from crash recovery, leaves pages staged. They are not part of the stack, so they
     /// keep their place ahead of it — and their presence must not be read as the stack having

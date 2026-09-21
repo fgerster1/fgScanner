@@ -22,22 +22,40 @@
                 <DockPanel Margin="0,0,0,6">
                     <Button DockPanel.Dock="Right" Content="Refresh"
                             Command="{Binding RefreshDevicesCommand}" Margin="6,0,0,0" />
+                    <!-- DisplayMemberPath sets what is drawn, not what is exposed: without an
+                         automation name each entry announces the record's ToString, which reads
+                         out as "ScanDeviceInfo { Driver = Wia, Id = … }". -->
                     <ComboBox ItemsSource="{Binding Devices}"
                               SelectedItem="{Binding SelectedDevice}"
-                              DisplayMemberPath="Name" />
+                              AutomationProperties.Name="Scanner"
+                              DisplayMemberPath="Name">
+                        <ComboBox.ItemContainerStyle>
+                            <Style TargetType="ComboBoxItem">
+                                <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+                            </Style>
+                        </ComboBox.ItemContainerStyle>
+                    </ComboBox>
                 </DockPanel>
 
                 <TextBlock Text="Profile" FontWeight="SemiBold" Margin="0,12,0,4" />
                 <TextBlock Text="Source" Opacity="0.7" />
                 <!-- A source the scanner cannot do stays listed and disabled, with the reason under
                      the box: hiding it sends the operator hunting for a feature printed on the
-                     machine, and a tooltip on a disabled item is not an answer (§05 N1). -->
+                     machine, and a tooltip on a disabled item is not an answer (§05 N1).
+
+                     The reason therefore travels three ways: as the text below, in the automation
+                     name a screen reader announces, and in a tooltip that has to opt in to showing
+                     on a disabled control at all. DisplayMemberPath covers none of them — it sets
+                     what is drawn, and the entries were announcing this class's type name. -->
                 <ComboBox ItemsSource="{Binding Sources}" SelectedValue="{Binding Source}"
-                          SelectedValuePath="Source" DisplayMemberPath="Name" Margin="0,2,0,2">
+                          SelectedValuePath="Source" DisplayMemberPath="Name" Margin="0,2,0,2"
+                          AutomationProperties.Name="Source">
                     <ComboBox.ItemContainerStyle>
                         <Style TargetType="ComboBoxItem">
                             <Setter Property="IsEnabled" Value="{Binding IsSupported}" />
-                            <Setter Property="ToolTip" Value="{Binding Reason}" />
+                            <Setter Property="ToolTip" Value="{Binding Announcement}" />
+                            <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
+                            <Setter Property="AutomationProperties.Name" Value="{Binding Announcement}" />
                         </Style>
                     </ComboBox.ItemContainerStyle>
                 </ComboBox>
