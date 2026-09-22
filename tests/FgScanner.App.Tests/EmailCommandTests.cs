@@ -273,7 +273,13 @@ public sealed class EmailCommandTests : IDisposable
             new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false),
             new FgScanner.Data.AppSettingsService(factory),
             new FgScanner.Data.CaptureTriageService(factory, new FgScanner.Data.AppSettingsService(factory)),
-            new FgScanner.Data.DuplicateFinder(factory));
+            new FgScanner.Data.DuplicateFinder(factory))
+        {
+            // A fake mail path and a builder under this test's own folder: a test that sends must
+            // never read the real registry, open Explorer, or leave PDFs in the real %TEMP%.
+            Email = new EmailSender(
+                Builder(), new FakeShareService(ShareRoute.Explorer), new FgScanner.Data.AppSettingsService(factory)),
+        };
 
         var vm = new GroupDetailViewModel(
             group, groups, profiles, indexing, trash, new ActiveGroupStore(), toolset);
@@ -510,11 +516,68 @@ public sealed class EmailCommandTests : IDisposable
         Assert.Contains("Explorer", line, StringComparison.Ordinal);
 
         // Nothing that could be an address, anywhere in the whole run's output.
-        Assert.All(written, l => Assert.DoesNotContain("@", l, StringComparison.Ordinal));
-        foreach (var word in new[] { "recipient", "mailto", "To:", "Cc" })
+        Assert.All(written, l => Assert.False(LooksLikeAddressing(l), l));
+    }
+
+    /// <summary>
+    /// The markers are whole headers, never bare letters: the log carries GUID folder names, and
+    /// a bare "cc" turns up in random hex often enough to fail about one run in five.
+    /// </summary>
+    private static bool LooksLikeAddressing(string line) =>
+        line.Contains('@', StringComparison.Ordinal)
+        || AddressingMarkers.Any(marker => line.Contains(marker, StringComparison.OrdinalIgnoreCase));
+
+    private static readonly string[] AddressingMarkers = ["recipient", "mailto:", "To:", "Cc:", "Bcc:"];
+
+    /// <summary>
+    /// The check above has to be able to pass. The folder in this line is one a real run logged
+    /// shape-for-shape, with "cc" in its GUID — the case that used to fail the send test at random.
+    /// </summary>
+    [Fact]
+    public void A_folder_guid_is_not_mistaken_for_an_address()
+    {
+        const string line = "[Information] Built 1 attachment(s) (2825 bytes) as Pdf in "
+            + "\"C:\\Temp\\fgscanner-tests\\91b2118a25c541d0912ccc48bc251b53\\temp\\1a33fe6e8820423ca43837674e7290be\"";
+
+        Assert.False(LooksLikeAddressing(line));
+        Assert.True(LooksLikeAddressing("[Information] Cc: someone"));
+        Assert.True(LooksLikeAddressing("[Information] sent to jsmith@firm.com"));
+    }
+
+    /// <summary>
+    /// A toolset built without its email sender wired — every test that is not about email — must
+    /// not be able to reach the shell, the registry or a window. The old default was the real
+    /// share service, so any test that pressed Email opened Explorer and left PDFs in %TEMP%.
+    /// </summary>
+    [Fact]
+    public async Task An_unwired_toolset_cannot_reach_the_shell_or_a_window()
+    {
+        var dbPath = Path.Combine(_root, "unwired.db");
+        using (var db = new FgScanner.Data.FgScannerDbContext(FgScanner.Data.DbBootstrapper.BuildOptions(dbPath)))
         {
-            Assert.All(written, l => Assert.DoesNotContain(word, l, StringComparison.OrdinalIgnoreCase));
+            Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.Migrate(db.Database);
         }
+
+        var factory = new TestFactory(dbPath);
+        var toolset = new PageEditingToolset(
+            new FgScanner.Scanning.Editing.ImageEditor(),
+            new FgScanner.Scanning.Export.PdfExportService(),
+            new FgScanner.Scanning.Export.ImageExportService(),
+            new FgScanner.Scanning.Import.FileImportService(),
+            new FgScanner.Data.ReorderService(factory),
+            new FgScanner.Data.OcrQueueService(factory),
+            new FgScanner.Data.AiQueueService(factory),
+            new FgScanner.Data.RetroProcessService(
+                factory, new FgScanner.Data.GroupService(factory), new FgScanner.Data.TrashService(factory, Path.Combine(_root, "t"))),
+            new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred3"), useCredentialManager: false),
+            new FgScanner.Data.AppSettingsService(factory),
+            new FgScanner.Data.CaptureTriageService(factory, new FgScanner.Data.AppSettingsService(factory)),
+            new FgScanner.Data.DuplicateFinder(factory));
+
+        var message = await toolset.Email.SendAsync(
+            [MakePage("unwired.png")], "Farm Folder", "this page", cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Contains("nothing left the app", message, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class CapturingSink(List<string> lines) : Serilog.Core.ILogEventSink

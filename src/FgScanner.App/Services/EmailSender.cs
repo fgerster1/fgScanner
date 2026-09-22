@@ -83,4 +83,24 @@ public sealed class EmailSender(
             ? $"{counted}. {outcome.Message} {built.Warning}"
             : $"{counted}. {outcome.Message}";
     }
+
+    /// <summary>
+    /// A sender that declines before building anything or showing a window. The toolset's default
+    /// for construction sites that never meant to send — tests, chiefly — which must not reach the
+    /// operator's shell, registry or temp folder by accident.
+    /// </summary>
+    public static EmailSender Unwired(
+        Scanning.Export.PdfExportService pdf,
+        Scanning.Export.ImageExportService images,
+        AppSettingsService settings) =>
+        new(new AttachmentBuilder(pdf, images), new NoMailPath(), settings)
+        {
+            Ask = (_, _, _, _, _) => null,
+        };
+
+    private sealed class NoMailPath : IShareService
+    {
+        public ShareOutcome Open(ShareRequest request) =>
+            new(ShareRoute.None, "Email is not set up here — nothing left the app.");
+    }
 }
