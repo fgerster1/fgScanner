@@ -66,14 +66,21 @@ public sealed class WindowsShareService(
         {
             return new ShareOutcome(
                 ShareRoute.Explorer,
-                $"No mail app was found. {count} in {folder} — attach {pronoun} to your message yourself.");
+                $"No mail app was found. {count} in {folder} — attach {pronoun} to your message yourself. "
+                    + StaysUntilClose);
         }
 
         return new ShareOutcome(
             ShareRoute.None,
             $"No mail app was found, and the folder could not be opened. {count} in {folder} — "
-                + $"attach {pronoun} to your message yourself.");
+                + $"attach {pronoun} to your message yourself. " + StaysUntilClose);
     }
+
+    /// <summary>
+    /// The attachment folder is removed when the app closes (AttachmentBuilder.CleanUp), so the
+    /// operator sent to it is told — or they close FG Scanner and find the file gone.
+    /// </summary>
+    private const string StaysUntilClose = "It stays there until FG Scanner closes.";
 
     /// <summary>
     /// A route that throws is a route that did not work. The reason goes to the log, where it can

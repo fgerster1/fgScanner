@@ -100,9 +100,6 @@ public sealed class AttachmentBuilder(
     private readonly string _tempRoot = tempRoot
         ?? Path.Combine(Path.GetTempPath(), "FGScanner", "email");
 
-    /// <summary>Every folder this instance made, so app exit can take them all (§07).</summary>
-    private readonly List<string> _folders = [];
-
     public async Task<BuiltAttachments> BuildAsync(
         IReadOnlyList<string> pagePaths,
         string subject,
@@ -150,7 +147,6 @@ public sealed class AttachmentBuilder(
 
         var folder = Path.Combine(_tempRoot, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(folder);
-        _folders.Add(folder);
 
         IReadOnlyList<string> built;
         if (format == EmailAttachment.Pdf)
@@ -219,29 +215,34 @@ public sealed class AttachmentBuilder(
     }
 
     /// <summary>
-    /// Removes this session's attachment folders. Called on app exit: the copies are temporary by
-    /// design, and leaving case material in the temp folder after the app has gone is exactly the
-    /// kind of quiet spread §13 is about.
+    /// Removes every attachment folder under the root — this session's and any a crashed session
+    /// left. Called at startup and at exit. The copies are temporary by design, and leaving case
+    /// material in the temp folder after the app has gone is exactly the quiet spread §13 is
+    /// about.
+    ///
+    /// The whole root, not just the folders this instance made: a crash, End Task or power cut
+    /// never reaches exit, and a folder whose delete failed (a PDF still open in the mail client)
+    /// used to be forgotten. That is safe only because FG Scanner is single-instance — the mutex
+    /// is taken before anything is built, so no other session can be using a folder here.
     /// </summary>
     public void CleanUp()
     {
-        foreach (var folder in _folders)
+        if (!Directory.Exists(_tempRoot))
+        {
+            return;
+        }
+
+        foreach (var folder in Directory.EnumerateDirectories(_tempRoot))
         {
             try
             {
-                if (Directory.Exists(folder))
-                {
-                    Directory.Delete(folder, recursive: true);
-                }
+                Directory.Delete(folder, recursive: true);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                // A file still open in the mail client is the ordinary case; the folder is under
-                // the system temp path and Windows clears it eventually.
-                Log.Warning(ex, "Could not remove the attachment folder {Folder}", folder);
+                // Still open in the mail client, usually. The next startup tries again.
+                Log.Warning(ex, "Could not remove the attachment folder {Folder}; retrying next start", folder);
             }
         }
-
-        _folders.Clear();
     }
 }

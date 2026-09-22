@@ -1135,6 +1135,42 @@ public sealed class EmailCommandTests : IDisposable
         Assert.DoesNotContain("Opened in your mail app", message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Attachments are full-resolution copies of case material in the system temp folder. They
+    /// were removed only from this session's own list, and only on a clean exit — so a crash, End
+    /// Task or a power cut left them indefinitely. The app is single-instance, so every folder
+    /// under the attachment root belongs to a session that is over, and a new one takes them all.
+    /// </summary>
+    [Fact]
+    public async Task A_new_session_removes_what_a_crashed_one_left()
+    {
+        var root = Path.Combine(_root, "temp");
+        var crashed = new AttachmentBuilder(new FgScanner.Scanning.Export.PdfExportService(), root);
+        var left = await crashed.BuildAsync(
+            [MakePage("left.png")], "Farm Folder", EmailAttachment.Pdf, TestContext.Current.CancellationToken);
+        Assert.True(File.Exists(left.FilePaths[0]));
+
+        // The crashed session never ran its clean-up; the next one starts with an empty list.
+        new AttachmentBuilder(new FgScanner.Scanning.Export.PdfExportService(), root).CleanUp();
+
+        Assert.Empty(Directory.GetFileSystemEntries(root));
+    }
+
+    /// <summary>
+    /// The Explorer fallback sends the operator to a folder that closing the app deletes. Said, so
+    /// nobody closes FG Scanner between finding the file and attaching it.
+    /// </summary>
+    [Fact]
+    public async Task The_fallback_says_the_folder_goes_when_the_app_closes()
+    {
+        var fallback = new WindowsShareService(
+            shareSheet: _ => false, mapi: _ => false, mapiAvailable: () => false, revealInExplorer: _ => true);
+
+        var message = await SendThroughAsync(fallback, 2, EmailAttachment.Pdf);
+
+        Assert.Contains("until FG Scanner closes", message, StringComparison.Ordinal);
+    }
+
     private string MakeJpeg(string name)
     {
         var path = Path.Combine(_root, name);

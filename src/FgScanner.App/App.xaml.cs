@@ -189,6 +189,10 @@ public partial class App : Application
 
         OfferCrashRecovery(_host.Services.GetRequiredService<ScanSessionService>());
 
+        // Attachment copies a crashed session left in the temp folder. Safe to take them all only
+        // because this is the one instance: the mutex above is already held.
+        _host.Services.GetRequiredService<AttachmentBuilder>().CleanUp();
+
         // Bundled English lands in the writable tessdata dir; then the durable queue drains.
         _host.Services.GetRequiredService<FgScanner.Ocr.LanguageManager>().EnsureBundledData();
         _host.Services.GetRequiredService<OcrWorker>().Start();
