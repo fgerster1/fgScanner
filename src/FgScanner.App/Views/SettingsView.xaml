@@ -245,7 +245,14 @@
             <TextBlock Text="Keyboard shortcuts" FontWeight="SemiBold" Margin="0,0,0,4" />
             <TextBlock Opacity="0.6" FontSize="11" Margin="0,0,0,4"
                        Text="Gestures like Ctrl+Enter, Ctrl+Shift+Left, F5. Clear a box to unbind. Saved with the button below." />
-            <ItemsControl ItemsSource="{Binding Shortcuts}" Margin="0,0,0,4">
+            <ItemsControl ItemsSource="{Binding Shortcuts}" Margin="0,0,0,4"
+                          AutomationProperties.Name="Keyboard shortcuts">
+                <!-- Announced as the action, not as FgScanner.App.Views.ShortcutRow. -->
+                <ItemsControl.ItemContainerStyle>
+                    <Style TargetType="ContentPresenter">
+                        <Setter Property="AutomationProperties.Name" Value="{Binding Action}" />
+                    </Style>
+                </ItemsControl.ItemContainerStyle>
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
                         <WrapPanel />

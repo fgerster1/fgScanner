@@ -36,6 +36,7 @@
                         ToolTip="Register a folder full of images and PDFs as a group (PLAN §5.7)" />
             </StackPanel>
             <ListBox ItemsSource="{Binding Groups}" SelectedItem="{Binding SelectedGroup}"
+                     AutomationProperties.Name="Groups"
                      ContextMenuOpening="OnGroupsContextMenuOpening">
                 <!--
                   Every menu item acts on SelectedGroup, but a right-click does not select in WPF.
@@ -45,6 +46,11 @@
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem">
                         <EventSetter Event="PreviewMouseRightButtonDown" Handler="OnGroupRightClicked" />
+                        <!-- The template draws the name, but drawn text is not what UI Automation
+                             exposes: without this every group is announced as FgScanner.Data.Group.
+                             The folder is the help text, since two groups can share a name. -->
+                        <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+                        <Setter Property="AutomationProperties.HelpText" Value="{Binding DirectoryPath}" />
                     </Style>
                 </ListBox.ItemContainerStyle>
                 <ListBox.ContextMenu>
@@ -111,7 +117,15 @@
                 <Expander Header="Batch values — answered once for this group, stamped on every row"
                           IsExpanded="True" Margin="0,0,0,6"
                           Visibility="{Binding BatchFields.Count, Converter={x:Static views:CountToVisibilityConverter.Instance}}">
-                    <ItemsControl ItemsSource="{Binding BatchFields}" Margin="4">
+                    <ItemsControl ItemsSource="{Binding BatchFields}" Margin="4"
+                                  AutomationProperties.Name="Batch values">
+                        <!-- A screen reader otherwise announces each entry as the type name,
+                             FgScanner.App.Views.PendingFieldEditor. -->
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="AutomationProperties.Name" Value="{Binding Field.Name}" />
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <WrapPanel />
@@ -163,7 +177,15 @@
                 <Expander Header="Index values — applied to the next scan, or to existing rows with the button below"
                           IsExpanded="True" Margin="0,0,0,6"
                           Visibility="{Binding PendingFields.Count, Converter={x:Static views:CountToVisibilityConverter.Instance}}">
-                    <ItemsControl ItemsSource="{Binding PendingFields}" Margin="4">
+                    <ItemsControl ItemsSource="{Binding PendingFields}" Margin="4"
+                                  AutomationProperties.Name="Index values for the next scan">
+                        <!-- A screen reader otherwise announces each entry as the type name,
+                             FgScanner.App.Views.PendingFieldEditor. -->
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="AutomationProperties.Name" Value="{Binding Field.Name}" />
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <WrapPanel />
@@ -294,7 +316,21 @@
                           HeadersVisibility="Column"
                           EnableRowVirtualization="True"
                           SelectionChanged="OnGridSelectionChanged"
-                          SelectionUnit="FullRow" SelectionMode="Extended">
+                          SelectionUnit="FullRow" SelectionMode="Extended"
+                          AutomationProperties.Name="Pages">
+                    <!-- Each row is announced as its page, not as FgScanner.App.Views.DocumentRow. -->
+                    <DataGrid.RowStyle>
+                        <Style TargetType="DataGridRow">
+                            <Setter Property="AutomationProperties.Name">
+                                <Setter.Value>
+                                    <MultiBinding StringFormat="Page {0}, {1}">
+                                        <Binding Path="Sequence" />
+                                        <Binding Path="ImageName" />
+                                    </MultiBinding>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </DataGrid.RowStyle>
                     <DataGrid.InputBindings>
                         <KeyBinding Modifiers="Ctrl" Key="Z" Command="{Binding UndoCommand}" />
                         <KeyBinding Modifiers="Ctrl" Key="Y" Command="{Binding RedoCommand}" />
