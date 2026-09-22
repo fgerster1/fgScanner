@@ -205,8 +205,11 @@ and originals are what make it evidence, and the folder itself is not changed. T
   with the subject filled in, and an Explorer window opens beside it with the file selected.
   **Drag the file from Explorer into the message.** That one drag is the only thing FG Scanner
   cannot do for you: no program can attach a file to a web page. Several images: select them all
-  in the Explorer window and drag them together. If you have more than one Gmail account signed
-  in, the message opens in the browser's first one.
+  in the Explorer window and drag them together.
+- **Gmail account** (optional, beside the list) — with several Google accounts signed in, the
+  browser opens whichever it holds first, which may not be the one you want to write from. Put the
+  address here (or its number in the browser: 0, 1, 2…) and the message opens in that account.
+  Leave it blank for whichever the browser picks.
 
 **What happens next depends on that setting and on what is installed**, and the line under the
 buttons says which:

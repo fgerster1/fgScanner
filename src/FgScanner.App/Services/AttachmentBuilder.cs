@@ -52,6 +52,20 @@ public static class EmailSettings
         FgScanner.Data.AppSettingsService settings, MailPath value, CancellationToken cancellationToken = default) =>
         settings.SetAsync(SendWithKey, value.ToString(), cancellationToken);
 
+    /// <summary>
+    /// Which Gmail account to compose in — an address, or the number the browser gives it. Empty
+    /// means whichever the browser holds first, which is what it did before this existed.
+    /// </summary>
+    public const string WebmailAccountKey = "Email.WebmailAccount";
+
+    public static Task<string> ReadWebmailAccountAsync(
+        FgScanner.Data.AppSettingsService settings, CancellationToken cancellationToken = default) =>
+        settings.GetAsync(WebmailAccountKey, "", cancellationToken);
+
+    public static Task WriteWebmailAccountAsync(
+        FgScanner.Data.AppSettingsService settings, string value, CancellationToken cancellationToken = default) =>
+        settings.SetAsync(WebmailAccountKey, value.Trim(), cancellationToken);
+
     public static async Task<bool> WarningSeenAsync(
         FgScanner.Data.AppSettingsService settings, CancellationToken cancellationToken = default) =>
         string.Equals(

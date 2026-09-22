@@ -194,6 +194,7 @@ recommendation is taken, one `Settings` key for the remembered attachment format
 | `Email.Attachment` | `Pdf` \| `Images` | `Pdf` |
 | `Email.EvidenceWarningSeen` | `true` \| `false` | `false` |
 | `Email.SendWith` *(added 2026-09-22)* | `MailApp` \| `Gmail` \| `Yahoo` | `MailApp` |
+| `Email.WebmailAccount` *(added 2026-09-22)* | a Gmail address, or its browser number (`0`, `1`…) | empty |
 
 Written through `AppSettingsService` like every other setting, and read fresh per send.
 Documented as a doc comment where it is read.

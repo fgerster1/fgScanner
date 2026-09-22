@@ -41,7 +41,11 @@ public enum MailPath
 /// Files to put in front of the operator's mail path, and the subject to suggest. The paths come
 /// from the database and the session, never from anything typed (§13).
 /// </summary>
-public sealed record ShareRequest(IReadOnlyList<string> FilePaths, string Subject, MailPath Via = MailPath.MailApp);
+public sealed record ShareRequest(
+    IReadOnlyList<string> FilePaths,
+    string Subject,
+    MailPath Via = MailPath.MailApp,
+    string Account = "");
 
 /// <summary>
 /// What happened, and the sentence to show. Never an error code (AC-6). <paramref name="Declined"/>

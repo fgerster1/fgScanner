@@ -114,7 +114,8 @@ public sealed class EmailSender(
         }
 
         var via = await EmailSettings.ReadSendWithAsync(settings, cancellationToken);
-        var outcome = share.Open(new ShareRequest(built.FilePaths, chosen.Subject, via));
+        var account = await EmailSettings.ReadWebmailAccountAsync(settings, cancellationToken);
+        var outcome = share.Open(new ShareRequest(built.FilePaths, chosen.Subject, via, account));
 
         // §14: which surface, how many pages, which format, which route. Never the recipient —
         // the app does not know it, and should not start recording who case material went to

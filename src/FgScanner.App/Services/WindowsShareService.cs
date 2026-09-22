@@ -118,8 +118,12 @@ public sealed class WindowsShareService(
     {
         var name = WebmailCompose.Name(request.Via);
         var (folder, count, pronoun) = Location(request);
-        var browser = Try(() => _openInBrowser(WebmailCompose.Url(request.Via, request.Subject)), name);
+        // Explorer first, the message second: whichever opens last takes the foreground, and the
+        // message is the window the operator works in. The other way round, Explorer covered the
+        // compose window and the send looked as though nothing had happened.
         var shown = request.FilePaths.Count > 0 && Try(() => _revealInExplorer(request.FilePaths[0]), "Explorer");
+        var browser = Try(
+            () => _openInBrowser(WebmailCompose.Url(request.Via, request.Subject, request.Account)), name);
         Log.Information(
             "Webmail: {Service} compose opened {Browser}, Explorer opened {Explorer}, {Count} file(s)",
             name, browser, shown, request.FilePaths.Count);

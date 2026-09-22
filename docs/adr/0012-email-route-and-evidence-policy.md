@@ -66,6 +66,12 @@ someone reads their mail. For the webmail choices a send opens the service's com
 subject filled in, and Explorer beside it with the file selected, and the operator drags the file
 in. That drag is the whole of what cannot be automated; everything around it is.
 
+Explorer opens **before** the compose page, because the window opened last takes the foreground:
+the other way round Explorer covered the message and the send looked as though nothing had
+happened (Franz, first real send, 2026-09-22). That send also went to the wrong Google account —
+the bare link opens whichever the browser holds first — so Settings takes an optional
+`Email.WebmailAccount`, an address or its browser number, which goes into the compose link.
+
 The mail-app routes are never tried on a webmail station: the Share sheet would always "work" and
 never contain the service. Neither compose link is an official API — Gmail's
 (`mail.google.com/mail/?view=cm&fs=1&su=`) is long-standing and widely used; Yahoo documents none,

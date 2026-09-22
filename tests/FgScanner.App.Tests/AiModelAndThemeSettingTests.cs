@@ -103,9 +103,11 @@ public sealed class AiModelAndThemeSettingTests : IDisposable
         var settings = await SettingsWithAProfileAsync();
 
         settings.SendWith = FgScanner.Core.Sharing.MailPath.Gmail;
+        settings.WebmailAccount = "fgerster@fgmaker.com";
         await settings.SaveCommand.ExecuteAsync(null);
 
         Assert.Equal(FgScanner.Core.Sharing.MailPath.Gmail, await EmailSettings.ReadSendWithAsync(_appSettings, Ct));
+        Assert.Equal("fgerster@fgmaker.com", await EmailSettings.ReadWebmailAccountAsync(_appSettings, Ct));
     }
 
     [Fact]

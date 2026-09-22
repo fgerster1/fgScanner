@@ -1317,12 +1317,49 @@ public sealed class EmailCommandTests : IDisposable
             new ShareRequest([MakePage("farm.png")], "Farm Folder", MailPath.Gmail));
 
         Assert.Equal(ShareRoute.Webmail, outcome.Route);
+
+        // Explorer first, the message second: whichever opens last takes the foreground, and the
+        // message is what the operator types in. Opened the other way round, Explorer covered the
+        // Gmail window and the send looked like it had done nothing (Franz, 2026-09-22).
         Assert.Equal(
-            ["browser:https://mail.google.com/mail/?view=cm&fs=1&su=Farm%20Folder", "explorer:farm.png"],
+            ["explorer:farm.png", "browser:https://mail.google.com/mail/?view=cm&fs=1&su=Farm%20Folder"],
             order);
         Assert.Contains("Gmail", outcome.Message, StringComparison.Ordinal);
         Assert.Contains("drag", outcome.Message, StringComparison.Ordinal);
         Assert.Contains("until FG Scanner closes", outcome.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// With several Google accounts signed in, the bare link opens whichever Chrome holds first —
+    /// for Franz that was the wrong one. The account named in Settings goes in the path: an
+    /// address, or the number Chrome gives it (0, 1, 2…).
+    /// </summary>
+    [Theory]
+    [InlineData("fgerster@fgmaker.com", "https://mail.google.com/mail/u/fgerster%40fgmaker.com/?view=cm&fs=1&su=Farm%20Folder")]
+    [InlineData("1", "https://mail.google.com/mail/u/1/?view=cm&fs=1&su=Farm%20Folder")]
+    public void A_named_Gmail_account_is_asked_for_by_name(string account, string expected)
+    {
+        Assert.Equal(expected, WebmailCompose.Url(MailPath.Gmail, "Farm Folder", account));
+    }
+
+    [Fact]
+    public void An_account_reaches_the_share_service_from_the_setting()
+    {
+        var order = new List<string>();
+
+        WebmailStation(order).Open(
+            new ShareRequest([MakePage("acct.png")], "Farm Folder", MailPath.Gmail, "1"));
+
+        Assert.Contains("browser:https://mail.google.com/mail/u/1/?view=cm&fs=1&su=Farm%20Folder", order);
+    }
+
+    /// <summary>Yahoo has no account form here; the setting is ignored rather than pasted into its link.</summary>
+    [Fact]
+    public void Yahoos_link_ignores_the_account_setting()
+    {
+        Assert.Equal(
+            WebmailCompose.Url(MailPath.Yahoo, "Farm Folder", ""),
+            WebmailCompose.Url(MailPath.Yahoo, "Farm Folder", "someone@yahoo.com"));
     }
 
     /// <summary>Yahoo documents no compose link; this is the widely used form, to be checked on Jim's station.</summary>
@@ -1395,6 +1432,7 @@ public sealed class EmailCommandTests : IDisposable
         var ct = TestContext.Current.CancellationToken;
         var settings = Settings();
         await EmailSettings.WriteSendWithAsync(settings, MailPath.Yahoo, ct);
+        await EmailSettings.WriteWebmailAccountAsync(settings, "2", ct);
         var share = new FakeShareService(ShareRoute.Webmail);
         var sender = new EmailSender(Builder(), share, settings)
         {
@@ -1404,6 +1442,7 @@ public sealed class EmailCommandTests : IDisposable
         await sender.SendAsync([MakePage("via.png")], "Farm Folder", "this scan", cancellationToken: ct);
 
         Assert.Equal(MailPath.Yahoo, Assert.Single(share.Opened).Via);
+        Assert.Equal("2", share.Opened[0].Account);
     }
 
     /// <summary>

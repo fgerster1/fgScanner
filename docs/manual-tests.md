@@ -579,3 +579,12 @@ Settings → Email → "Send email with" on each station first.
       three and drag them in together.
 - [ ] **The Share sheet on a mail-program station** now also names the file's folder.
 
+**First real Gmail send, 2026-09-22 (Franz's station).** The route worked and looked as though it
+had not: Chrome held a compose window titled "Compose Mail — fgerster@replacepaper.net" with the
+subject "Threats and lies" filled in, **behind** the Explorer window, and in the wrong Google
+account. Both fixed — Explorer now opens first so the message ends in front, and Settings takes an
+optional Gmail account. Still to confirm on the station:
+
+- [ ] The Gmail message opens **in front** of the Explorer window.
+- [ ] With "Gmail account" set to an address, the message opens in that account.
+

@@ -109,6 +109,10 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private FgScanner.Core.Sharing.MailPath _sendWith;
 
+    /// <summary>Which Gmail account to compose in (Email.WebmailAccount); blank is the browser's first.</summary>
+    [ObservableProperty]
+    private string _webmailAccount = "";
+
     /// <summary>Instance property so XAML can bind it.</summary>
 #pragma warning disable CA1822
     public IReadOnlyList<SendWithOption> SendWithChoices => SendWithOption.All;
@@ -123,8 +127,11 @@ public sealed partial class SettingsViewModel : ObservableObject
         RetentionDays = _retentionAsLoaded;
     }
 
-    public async Task LoadSendWithAsync() =>
+    public async Task LoadSendWithAsync()
+    {
         SendWith = await Services.EmailSettings.ReadSendWithAsync(_appSettings);
+        WebmailAccount = await Services.EmailSettings.ReadWebmailAccountAsync(_appSettings);
+    }
 
     public async Task LoadThemeAsync() =>
         Theme = await _appSettings.GetAsync(FgScanner.App.Services.ThemeSetting.Key, "system");
@@ -797,6 +804,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
             await _appSettings.SetAsync(FgScanner.App.Services.ThemeSetting.Key, Theme);
             await Services.EmailSettings.WriteSendWithAsync(_appSettings, SendWith);
+            await Services.EmailSettings.WriteWebmailAccountAsync(_appSettings, WebmailAccount);
             FgScanner.App.Services.ThemeSetting.Apply(Theme);
 
             // Shortening the retention only matters once the purge runs, and that used to happen

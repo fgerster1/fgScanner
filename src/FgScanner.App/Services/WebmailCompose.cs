@@ -17,13 +17,22 @@ namespace FgScanner.App.Services;
 /// </summary>
 public static class WebmailCompose
 {
-    public static string Url(MailPath via, string subject)
+    /// <summary>
+    /// <paramref name="account"/> is Settings' optional "Gmail account": an address, or the number
+    /// Chrome gives it (0, 1, 2…). Without it Gmail opens whichever account the browser holds
+    /// first, which on a machine with several signed in is a coin toss — Franz's first send went
+    /// to the wrong one. Yahoo has no such form, so it ignores this.
+    /// </summary>
+    public static string Url(MailPath via, string subject, string account = "")
     {
         // Escaped, because the subject is free text: an unescaped "&" ends the parameter.
         var escaped = Uri.EscapeDataString(subject);
+        var user = string.IsNullOrWhiteSpace(account)
+            ? ""
+            : $"u/{Uri.EscapeDataString(account.Trim())}/";
         return via switch
         {
-            MailPath.Gmail => $"https://mail.google.com/mail/?view=cm&fs=1&su={escaped}",
+            MailPath.Gmail => $"https://mail.google.com/mail/{user}?view=cm&fs=1&su={escaped}",
             MailPath.Yahoo => $"https://compose.mail.yahoo.com/?subject={escaped}",
             _ => throw new ArgumentOutOfRangeException(nameof(via), via, "A mail program on this PC has no compose page."),
         };
