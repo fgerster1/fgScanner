@@ -570,9 +570,12 @@ gets the Share sheet; a classic-Outlook station gets MAPI first; a station with 
 **Webmail (added 2026-09-22)** — Franz sends from Gmail, Jim from Yahoo, both in a browser. Set
 Settings → Email → "Send email with" on each station first.
 
-- [ ] **Gmail on Franz's station.** A session as PDF: a new Gmail message opens in the browser
-      with the subject filled in, and Explorer beside it with the PDF selected; drag it in, send
-      to yourself, open the attachment. Check a subject with `&` and `,` arrives whole.
+- [x] **Gmail on Franz's station — 2026-09-22, "It all works" (Franz).** Two selected pages as a
+      PDF; the log reads `Email: 2 page(s) from the 2 selected pages as "Pdf" via "Webmail"` at
+      17:06. Gmail opened with the subject filled in, and Explorer beside it with the PDF.
+      **Not exercised:** a subject containing `&` or `,`, and **the "Gmail account" box — no
+      `Email.WebmailAccount` value is stored**, so this send used whichever account Chrome holds
+      first. The wrong-account case is the row below and is still open.
 - [ ] **Yahoo Mail on Jim's station.** The same. **The Yahoo compose link is undocumented** — if
       the subject does not fill in, or the page is not a new message, record what Yahoo shows.
 - [ ] **Three images to Gmail**: the status says 3 files are in the Explorer window; select all
@@ -585,6 +588,8 @@ subject "Threats and lies" filled in, **behind** the Explorer window, and in the
 account. Both fixed — Explorer now opens first so the message ends in front, and Settings takes an
 optional Gmail account. Still to confirm on the station:
 
-- [ ] The Gmail message opens **in front** of the Explorer window.
-- [ ] With "Gmail account" set to an address, the message opens in that account.
+- [x] The Gmail message opens **in front** of the Explorer window — 2026-09-22, Franz.
+- [ ] With "Gmail account" set to an address, the message opens in that account. **Still open:**
+      the setting was never filled in on the station, so the named-account path has run only in
+      tests.
 
