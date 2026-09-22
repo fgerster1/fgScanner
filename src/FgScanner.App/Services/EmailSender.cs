@@ -106,11 +106,22 @@ public sealed class EmailSender(
             "Email: {Count} page(s) from {Source} as {Format} via {Route}",
             pages.Count, source, chosen.Format, outcome.Route);
 
-        var counted = pages.Count == 1 ? "1 page attached" : $"{pages.Count} pages attached";
-        return built.TooLarge
-            ? $"{counted}. {outcome.Message} {built.Warning}"
-            : $"{counted}. {outcome.Message}";
+        // Only a route that took the files may say they were attached. The fallbacks attached
+        // nothing, so they say what was made instead — pages here, files in the share layer's
+        // sentence, since one PDF holds every page.
+        var pagesWord = pages.Count == 1 ? "1 page" : $"{pages.Count} pages";
+        var status = outcome.Route is ShareRoute.ShareSheet or ShareRoute.Mapi
+            ? $"{pagesWord} attached. {outcome.Message}"
+            : $"{pagesWord} {(pages.Count == 1 ? "was" : "were")} made into {Made(chosen.Format, built.FilePaths.Count)}. "
+                + outcome.Message;
+        return built.TooLarge ? $"{status} {built.Warning}" : status;
     }
+
+    private static string Made(EmailAttachment format, int files) => format switch
+    {
+        EmailAttachment.Pdf => "one PDF",
+        _ => files == 1 ? "1 image" : $"{files} images",
+    };
 
     /// <summary>
     /// A sender that declines before building anything or showing a window. The toolset's default

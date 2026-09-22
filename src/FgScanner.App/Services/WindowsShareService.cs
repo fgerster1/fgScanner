@@ -37,34 +37,42 @@ public sealed class WindowsShareService(
 
         if (Try(() => _shareSheet(request), "the Windows Share sheet"))
         {
-            Log.Information("Shared {Count} page(s) via the Share sheet", request.FilePaths.Count);
-            return new ShareOutcome(ShareRoute.ShareSheet, "Opened in your mail app.");
+            Log.Information("Shared {Count} file(s) via the Share sheet", request.FilePaths.Count);
+
+            // The sheet opening is not a message opening: the operator still picks where it goes,
+            // and may close it without choosing anything.
+            return new ShareOutcome(
+                ShareRoute.ShareSheet, "The Windows Share sheet is open — choose your mail app there.");
         }
 
         if (Try(_mapiAvailable, "the MAPI probe") && Try(() => _mapi(request), "Simple MAPI"))
         {
-            Log.Information("Shared {Count} page(s) via Simple MAPI", request.FilePaths.Count);
-            return new ShareOutcome(ShareRoute.Mapi, "Opened in your mail app.");
+            Log.Information("Shared {Count} file(s) via Simple MAPI", request.FilePaths.Count);
+            return new ShareOutcome(ShareRoute.Mapi, "A new message is open in your mail app.");
         }
 
         // Neither mail route worked. The pages exist and the operator is told where, in a sentence
         // — a raw code here would send them looking for a fault in FG Scanner instead of attaching
         // the file (§14, AC-6).
         var folder = Path.GetDirectoryName(request.FilePaths.Count > 0 ? request.FilePaths[0] : "") ?? "";
-        var count = request.FilePaths.Count == 1 ? "1 page is" : $"{request.FilePaths.Count} pages are";
+        // Files, never pages: this layer is handed attachments, and one PDF can hold sixty pages.
+        // Counting them as pages is how "20 pages attached … The 1 page is in" reached the screen.
+        var (count, pronoun) = request.FilePaths.Count == 1
+            ? ("The attachment is", "it")
+            : ($"The {request.FilePaths.Count} attachments are", "them");
         Log.Warning("No mail route was available; falling back to Explorer for {Folder}", folder);
 
         if (request.FilePaths.Count > 0 && Try(() => _revealInExplorer(request.FilePaths[0]), "Explorer"))
         {
             return new ShareOutcome(
                 ShareRoute.Explorer,
-                $"No mail app was found. The {count} in {folder} — attach them to your message yourself.");
+                $"No mail app was found. {count} in {folder} — attach {pronoun} to your message yourself.");
         }
 
         return new ShareOutcome(
             ShareRoute.None,
-            $"No mail app was found, and the folder could not be opened. The {count} in {folder} — "
-                + "attach them to your message yourself.");
+            $"No mail app was found, and the folder could not be opened. {count} in {folder} — "
+                + $"attach {pronoun} to your message yourself.");
     }
 
     /// <summary>

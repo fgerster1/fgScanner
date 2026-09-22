@@ -63,7 +63,9 @@ public static class ShareSheetRoute
             manager.DataRequested -= OnDataRequested;
             var data = args.Request.Data;
             data.Properties.Title = request.Subject;
-            data.Properties.Description = $"{request.FilePaths.Count} scanned page(s) from FG Scanner";
+            // No count: the request carries files, and "1 scanned page(s)" for a sixty-page PDF
+            // was the same miscount the status line made.
+            data.Properties.Description = "Scanned pages from FG Scanner";
 
             var deferral = args.Request.GetDeferral();
             try

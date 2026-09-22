@@ -621,7 +621,7 @@ public sealed class EmailCommandTests : IDisposable
 
         Assert.Single(scan.Pages);
         Assert.True(File.Exists(staged), "the save moved the page while its attachment was building");
-        Assert.Contains("1 page attached", message, StringComparison.Ordinal);
+        Assert.Contains("1 page was made into one PDF", message, StringComparison.Ordinal);
     }
 
     private static async Task<string> Record(ScanViewModel scan)
@@ -1073,6 +1073,66 @@ public sealed class EmailCommandTests : IDisposable
         Assert.Contains("20 MB", over, StringComparison.Ordinal);
         Assert.Contains("21", over, StringComparison.Ordinal);
         Assert.Equal("", AttachmentBuilder.SizeWarning(19L * 1024 * 1024));
+    }
+
+    private async Task<string> SendThroughAsync(WindowsShareService share, int pages, EmailAttachment format)
+    {
+        var sender = new EmailSender(Builder(), share, Settings())
+        {
+            Ask = (_, _, subject, _, _) => (format, subject, false),
+        };
+        var files = Enumerable.Range(1, pages).Select(i => MakeJpeg($"status-{i}.jpg")).ToList();
+        return await sender.SendAsync(files, "Farm Folder", "this scan", cancellationToken: TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>
+    /// The status line said "3 pages attached. No mail app was found. The 1 page is in …" — two
+    /// claims that were false and a count that contradicted the first. Nothing was attached to
+    /// anything, and the "1 page" was one PDF holding three. The share layer sees files, not
+    /// pages, so it speaks of attachments; the sender, which knows both, says what was made.
+    /// </summary>
+    [Fact]
+    public async Task A_send_that_opened_no_message_says_what_was_made_and_where()
+    {
+        var fallback = new WindowsShareService(
+            shareSheet: _ => false, mapi: _ => false, mapiAvailable: () => false, revealInExplorer: _ => true);
+
+        var message = await SendThroughAsync(fallback, 3, EmailAttachment.Pdf);
+
+        Assert.DoesNotContain("attached", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("1 page", message, StringComparison.Ordinal);
+        Assert.Contains("3 pages", message, StringComparison.Ordinal);
+        Assert.Contains("one PDF", message, StringComparison.Ordinal);
+        Assert.Contains("attach it", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Images_that_opened_no_message_are_counted_as_files()
+    {
+        var fallback = new WindowsShareService(
+            shareSheet: _ => false, mapi: _ => false, mapiAvailable: () => false, revealInExplorer: _ => true);
+
+        var message = await SendThroughAsync(fallback, 3, EmailAttachment.Images);
+
+        Assert.Contains("3 images", message, StringComparison.Ordinal);
+        Assert.Contains("attach them", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The Share sheet opening is not a message opening: the operator still chooses where it goes,
+    /// and may close it. "Opened in your mail app" said otherwise.
+    /// </summary>
+    [Fact]
+    public async Task The_share_sheet_is_named_for_what_it_is()
+    {
+        var sheet = new WindowsShareService(
+            shareSheet: _ => true, mapi: _ => false, mapiAvailable: () => false, revealInExplorer: _ => true);
+
+        var message = await SendThroughAsync(sheet, 3, EmailAttachment.Pdf);
+
+        Assert.StartsWith("3 pages attached", message, StringComparison.Ordinal);
+        Assert.Contains("Share sheet", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Opened in your mail app", message, StringComparison.Ordinal);
     }
 
     private string MakeJpeg(string name)
