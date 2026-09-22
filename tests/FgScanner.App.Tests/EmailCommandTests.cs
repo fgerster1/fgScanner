@@ -590,6 +590,104 @@ public sealed class EmailCommandTests : IDisposable
         return scan.StatusText;
     }
 
+    // ---- the Share sheet can actually be reached ----
+
+    private static T OnStaThread<T>(Func<T> work)
+    {
+        T result = default!;
+        Exception? error = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                result = work();
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (error is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The Share sheet's manager is looked up for a window. The hand-written interop asked for it
+    /// by the projected class's GUID — a name hash, not the interface's IID — so every lookup
+    /// threw, the route's wrapper swallowed it, and every send fell through to Explorer. The
+    /// window is real and never shown; nothing here opens the sheet.
+    /// </summary>
+    [Fact]
+    public void The_share_sheet_finds_its_manager_for_a_real_window()
+    {
+        var found = OnStaThread(() =>
+        {
+            var window = new System.Windows.Window { ShowInTaskbar = false };
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(window).EnsureHandle();
+            try
+            {
+                return ShareSheetRoute.ManagerFor(hwnd) is not null;
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+
+        Assert.True(found);
+    }
+
+    private sealed class ThreadRecordingShare : IShareService
+    {
+        public int? OpenedOn { get; private set; }
+
+        public ShareOutcome Open(ShareRequest request)
+        {
+            OpenedOn = Environment.CurrentManagedThreadId;
+            return new ShareOutcome(ShareRoute.Explorer, "recorded");
+        }
+    }
+
+    /// <summary>
+    /// The Share sheet needs the app's window and MAPI needs a parent for its modal draft, and
+    /// both live on the UI thread. The send awaited with ConfigureAwait(false) and the export
+    /// finishes on the pool, so the mail route ran on a pool thread with no window at all — the
+    /// sheet was skipped with nothing logged. Run here under a WPF dispatcher, the way both
+    /// buttons run it.
+    /// </summary>
+    [Fact]
+    public void The_mail_route_is_opened_on_the_thread_that_asked()
+    {
+        var settings = Settings();
+        var pages = Enumerable.Range(1, 4).Select(i => MakePage($"ui-{i}.png")).ToList();
+        var share = new ThreadRecordingShare();
+        var sender = new EmailSender(Builder(), share, settings)
+        {
+            Ask = (_, _, subject, format, _) => (format, subject, false),
+        };
+
+        var asked = OnStaThread(() =>
+        {
+            SynchronizationContext.SetSynchronizationContext(
+                new System.Windows.Threading.DispatcherSynchronizationContext());
+            var frame = new System.Windows.Threading.DispatcherFrame();
+            var send = sender.SendAsync(pages, "Farm Folder", "this scan");
+            send.ContinueWith(_ => frame.Continue = false, TaskScheduler.Default);
+            System.Windows.Threading.Dispatcher.PushFrame(frame);
+            send.GetAwaiter().GetResult();
+            return Environment.CurrentManagedThreadId;
+        });
+
+        Assert.Equal(asked, share.OpenedOn);
+    }
+
     // ---- the one-time evidence warning (§05 Q2b) ----
 
     /// <summary>

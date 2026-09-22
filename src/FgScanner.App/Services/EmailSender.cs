@@ -38,14 +38,19 @@ public sealed class EmailSender(
             return "There are no pages to email.";
         }
 
+        // No ConfigureAwait(false) in this class: the mail route has to run on the UI thread,
+        // where the Share sheet finds the app's window and MAPI's modal draft finds its parent.
+        // The services it awaits may leave the UI thread inside themselves; these awaits bring the
+        // send back. The export finishing on the pool used to carry the rest of the send there
+        // with it, and the sheet was skipped with nothing on screen or in the log.
+        //
         // Nothing above this catches: both callers are async commands, and an exception out of
         // one closes the app (§12, "named message; no crash"). A page that passes the existence
         // check and then will not decode, a full temp folder, a page locked by another program —
         // each is a send that did not happen, and the operator needs to be told that in a sentence.
         try
         {
-            return await SendCoreAsync(pages, subject, source, evidenceRecord, cancellationToken)
-                .ConfigureAwait(false);
+            return await SendCoreAsync(pages, subject, source, evidenceRecord, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -63,12 +68,12 @@ public sealed class EmailSender(
     {
         // Read per send, never captured once: a format chosen in Settings reaches the next send
         // without a restart (ADR-0010).
-        var remembered = await EmailSettings.ReadAsync(settings, cancellationToken).ConfigureAwait(false);
+        var remembered = await EmailSettings.ReadAsync(settings, cancellationToken);
 
         // §05 Q2b: allowed, but said once. The warning rides inside the dialog the operator was
         // going to see anyway — it is not a second confirmation and it cannot stop a send.
         var warn = evidenceRecord
-            && !await EmailSettings.WarningSeenAsync(settings, cancellationToken).ConfigureAwait(false);
+            && !await EmailSettings.WarningSeenAsync(settings, cancellationToken);
 
         if (Ask(pages.Count, source, subject, remembered, warn) is not { } chosen)
         {
@@ -77,16 +82,16 @@ public sealed class EmailSender(
 
         if (warn && chosen.DontWarnAgain)
         {
-            await EmailSettings.MarkWarningSeenAsync(settings, cancellationToken).ConfigureAwait(false);
+            await EmailSettings.MarkWarningSeenAsync(settings, cancellationToken);
         }
 
         if (chosen.Format != remembered)
         {
-            await EmailSettings.WriteAsync(settings, chosen.Format, cancellationToken).ConfigureAwait(false);
+            await EmailSettings.WriteAsync(settings, chosen.Format, cancellationToken);
         }
 
         var built = await attachments
-            .BuildAsync(pages, chosen.Subject, chosen.Format, cancellationToken).ConfigureAwait(false);
+            .BuildAsync(pages, chosen.Subject, chosen.Format, cancellationToken);
         if (!built.Ok)
         {
             return built.Message;

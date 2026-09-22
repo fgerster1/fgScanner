@@ -1,5 +1,7 @@
-using System.Runtime.InteropServices;
+using System.Windows;
+using System.Windows.Interop;
 using FgScanner.Core.Sharing;
+using Serilog;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 
@@ -10,29 +12,48 @@ namespace FgScanner.App.Services;
 /// carries real file attachments rather than a `mailto:` that cannot (RFC 6068).
 ///
 /// `DataTransferManager` is written for packaged apps and finds its window from the app's own
-/// view, which an unpackaged WPF app does not have. `IDataTransferManagerInterop` is the
-/// supported way across that gap: it takes an HWND. The activation factory is obtained through
-/// `RoGetActivationFactory`, following the P/Invoke style of `SHFileOperationW` in
-/// <see cref="RecycleBinDiscarder"/>.
+/// view, which an unpackaged WPF app does not have. The Windows SDK projection's
+/// `DataTransferManagerInterop` is the supported way across that gap: it takes an HWND. A
+/// hand-declared `IDataTransferManagerInterop` came first and could never work — it asked for the
+/// manager by the projected class's GUID, which is a hash of its name rather than the interface's
+/// IID, and a raw COM object cannot be cast to a projected class in any case.
+///
+/// The window is the app's main window, read on the UI thread. `GetActiveWindow` answered for
+/// whichever thread asked — a pool thread has none — and for the UI thread only while FG Scanner
+/// happened to be in front, which it need not be after a long build.
 ///
 /// The sheet is shown and this returns. Whether anything is sent is the operator's decision in
 /// whichever target they pick (AC-5).
 /// </summary>
-internal static class ShareSheetRoute
+public static class ShareSheetRoute
 {
-    private const string ClassId = "Windows.ApplicationModel.DataTransfer.DataTransferManager";
-
     public static bool TryOpen(ShareRequest request)
     {
-        var window = GetActiveWindow();
-        if (window == IntPtr.Zero)
+        if (Application.Current?.Dispatcher is not { } dispatcher)
         {
+            Log.Warning("The Share sheet was not tried: there is no application window to attach it to");
             return false;
         }
 
-        var interop = GetInterop();
-        var managerId = typeof(DataTransferManager).GUID;
-        var manager = interop.GetForWindow(window, ref managerId);
+        return dispatcher.CheckAccess()
+            ? OpenOnUiThread(request)
+            : dispatcher.Invoke(() => OpenOnUiThread(request));
+    }
+
+    public static DataTransferManager ManagerFor(IntPtr window) =>
+        DataTransferManagerInterop.GetForWindow(window);
+
+    private static bool OpenOnUiThread(ShareRequest request)
+    {
+        var owner = Application.Current.MainWindow;
+        var window = owner is null ? IntPtr.Zero : new WindowInteropHelper(owner).Handle;
+        if (window == IntPtr.Zero)
+        {
+            Log.Warning("The Share sheet was not tried: the main window has no handle yet");
+            return false;
+        }
+
+        var manager = ManagerFor(window);
 
         // The files are read when the sheet asks for them, not now: the handler runs on the UI
         // thread while the sheet is open, and a deferral is what keeps it alive across the
@@ -62,53 +83,7 @@ internal static class ShareSheetRoute
         }
 
         manager.DataRequested += OnDataRequested;
-        interop.ShowShareUIForWindow(window);
+        DataTransferManagerInterop.ShowShareUIForWindow(window);
         return true;
     }
-
-    private static IDataTransferManagerInterop GetInterop()
-    {
-        var iid = typeof(IDataTransferManagerInterop).GUID;
-        WindowsCreateString(ClassId, ClassId.Length, out var classId);
-        try
-        {
-            RoGetActivationFactory(classId, ref iid, out var factory);
-            try
-            {
-                return (IDataTransferManagerInterop)Marshal.GetObjectForIUnknown(factory);
-            }
-            finally
-            {
-                Marshal.Release(factory);
-            }
-        }
-        finally
-        {
-            WindowsDeleteString(classId);
-        }
-    }
-
-    [ComImport]
-    [Guid("3A3DCD6C-3EAB-43DC-BCDE-45671CE800C8")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IDataTransferManagerInterop
-    {
-        DataTransferManager GetForWindow([In] IntPtr appWindow, [In] ref Guid riid);
-
-        void ShowShareUIForWindow([In] IntPtr appWindow);
-    }
-
-    [DllImport("user32")]
-    private static extern IntPtr GetActiveWindow();
-
-    [DllImport("combase", CharSet = CharSet.Unicode, PreserveSig = false)]
-    private static extern void WindowsCreateString(
-        [MarshalAs(UnmanagedType.LPWStr)] string sourceString, int length, out IntPtr hstring);
-
-    [DllImport("combase", PreserveSig = false)]
-    private static extern void WindowsDeleteString(IntPtr hstring);
-
-    [DllImport("combase", PreserveSig = false)]
-    private static extern void RoGetActivationFactory(
-        IntPtr activatableClassId, [In] ref Guid iid, out IntPtr factory);
 }

@@ -53,7 +53,13 @@ internal static class SimpleMapiRoute
                 Files = files,
             };
 
-            var result = MAPISendMail(IntPtr.Zero, IntPtr.Zero, ref message, MapiDialog | MapiLogonUi, 0);
+            // The main window is the draft's parent, so the modal compose window sits over FG Scanner
+            // rather than wherever Windows puts an ownerless one. EmailSender keeps the send on the UI
+            // thread, which is the only thread that may read the handle.
+            var owner = System.Windows.Application.Current?.MainWindow is { } main
+                ? new System.Windows.Interop.WindowInteropHelper(main).Handle
+                : IntPtr.Zero;
+            var result = MAPISendMail(IntPtr.Zero, owner, ref message, MapiDialog | MapiLogonUi, 0);
             return result is SuccessSuccess or MapiUserAbort;
         }
         finally
