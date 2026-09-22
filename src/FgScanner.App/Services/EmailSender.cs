@@ -38,6 +38,29 @@ public sealed class EmailSender(
             return "There are no pages to email.";
         }
 
+        // Nothing above this catches: both callers are async commands, and an exception out of
+        // one closes the app (§12, "named message; no crash"). A page that passes the existence
+        // check and then will not decode, a full temp folder, a page locked by another program —
+        // each is a send that did not happen, and the operator needs to be told that in a sentence.
+        try
+        {
+            return await SendCoreAsync(pages, subject, source, evidenceRecord, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.Error(ex, "Email from {Source} failed while building or opening the message", source);
+            return $"The attachment could not be built, so nothing left the app. ({ex.Message})";
+        }
+    }
+
+    private async Task<string> SendCoreAsync(
+        IReadOnlyList<string> pages,
+        string subject,
+        string source,
+        bool evidenceRecord,
+        CancellationToken cancellationToken)
+    {
         // Read per send, never captured once: a format chosen in Settings reaches the next send
         // without a restart (ADR-0010).
         var remembered = await EmailSettings.ReadAsync(settings, cancellationToken).ConfigureAwait(false);

@@ -90,6 +90,8 @@ public sealed class AttachmentBuilder(
     /// <summary>§15: most mail servers reject above about 25 MB, and a 300 DPI colour page is roughly 2 MB.</summary>
     private const long WarnAboveBytes = 20L * 1024 * 1024;
 
+    private const int MaxBaseNameLength = 100;
+
     private readonly string _tempRoot = tempRoot
         ?? Path.Combine(Path.GetTempPath(), "FGScanner", "email");
 
@@ -127,6 +129,15 @@ public sealed class AttachmentBuilder(
         // The subject reaches a file name, so it goes through the same sanitisation the export
         // dialogs use rather than being trusted (§13).
         var baseName = NamingEngine.Sanitize(subject);
+
+        // The sanitiser does not shorten, and the operator can paste a paragraph into the subject.
+        // Capped well inside the 255-character name limit, leaving room for the exporter's
+        // ".pdf.tmp" and page-number suffixes.
+        if (baseName.Length > MaxBaseNameLength)
+        {
+            baseName = baseName[..MaxBaseNameLength].TrimEnd(' ', '.', '-');
+        }
+
         if (string.IsNullOrWhiteSpace(baseName))
         {
             baseName = "scan";

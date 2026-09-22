@@ -57,6 +57,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         {
             SaveToGroupCommand.NotifyCanExecuteChanged();
             OpenPageViewerCommand.NotifyCanExecuteChanged();
+            EmailCommand.NotifyCanExecuteChanged();
 
             // One place covers every way a page can leave — saved, deleted from the thumbnails,
             // abandoned with its stack, or dropped by a path written after this one.
@@ -168,6 +169,14 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     private bool CanEmail() => Pages.Count > 0 && !IsScanning && _savesRunning == 0;
 
     /// <summary>
+    /// Set while a send is building its attachment from the staged files. Save moves those files
+    /// into the group and Delete recycles them, so either one mid-build pulls the pages out from
+    /// under the exporter. Only one send runs at a time — the command refuses a second while the
+    /// first is in hand — so a flag is enough here, where the saves need a count.
+    /// </summary>
+    private bool _sending;
+
+    /// <summary>
     /// Opens a message with everything staged on this page attached. The pages have not been
     /// saved to a group yet, so what leaves is a copy of a capture that is still only in the scan
     /// session — the session itself is untouched and the pages stay on screen.
@@ -176,7 +185,23 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     private async Task EmailAsync()
     {
         var subject = _activeGroup.Current is { } group ? group.Name : "Scanned pages";
-        StatusText = await _toolset.Email.SendAsync(EmailImagePaths, subject, "this scan");
+        _sending = true;
+        AnnouncedSendingState();
+        try
+        {
+            StatusText = await _toolset.Email.SendAsync(EmailImagePaths, subject, "this scan");
+        }
+        finally
+        {
+            _sending = false;
+            AnnouncedSendingState();
+        }
+    }
+
+    private void AnnouncedSendingState()
+    {
+        SaveToGroupCommand.NotifyCanExecuteChanged();
+        DeleteSelectedPagesCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>Asks before deleting, with Cancel as the default answer. Replaceable so tests show no dialog.</summary>
@@ -197,7 +222,8 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     /// </summary>
     private int _savesRunning;
 
-    private bool CanDeleteSelectedPages() => SelectedPages.Count > 0 && !IsScanning && _savesRunning == 0;
+    private bool CanDeleteSelectedPages() =>
+        SelectedPages.Count > 0 && !IsScanning && _savesRunning == 0 && !_sending;
 
     /// <summary>
     /// Deletes the selected pages before they reach a group, to the Recycle Bin so a mis-click can be
@@ -321,6 +347,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     [NotifyCanExecuteChangedFor(nameof(DeleteSelectedPagesCommand))]
     [NotifyCanExecuteChangedFor(nameof(ScanBothSidesCommand))]
     [NotifyCanExecuteChangedFor(nameof(CancelDuplexCommand))]
+    [NotifyCanExecuteChangedFor(nameof(EmailCommand))]
     private bool _isScanning;
 
     [ObservableProperty]
@@ -1067,7 +1094,8 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     /// </summary>
     private readonly HashSet<string> _stackPages = new(StringComparer.OrdinalIgnoreCase);
 
-    private bool CanSaveToGroup() => _activeGroup.Current is not null && Pages.Count > 0 && !IsScanning;
+    private bool CanSaveToGroup() =>
+        _activeGroup.Current is not null && Pages.Count > 0 && !IsScanning && !_sending;
 
     /// <summary>Moves the session's pages into the active group (files + DB rows), then resets the session.</summary>
     [RelayCommand(CanExecute = nameof(CanSaveToGroup))]
@@ -1087,9 +1115,19 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // A batch scan can start while a send is building and ends by calling this directly. The
+        // pages stay staged and on screen; saving them once the attachment is built loses nothing.
+        if (_sending)
+        {
+            StatusText = "An email attachment is still being built from these pages. Save them to "
+                + "the group once it is done.";
+            return;
+        }
+
         var group = _activeGroup.Current!;
         _savesRunning++;
         DeleteSelectedPagesCommand.NotifyCanExecuteChanged();
+        EmailCommand.NotifyCanExecuteChanged();
         try
         {
             // Asked of the pages actually going in, so a retry after a partial save is still
@@ -1170,6 +1208,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         {
             _savesRunning--;
             DeleteSelectedPagesCommand.NotifyCanExecuteChanged();
+            EmailCommand.NotifyCanExecuteChanged();
         }
 
         // An annotated sheet ends HERE, not at the end of a scan: the clean capture is taken with

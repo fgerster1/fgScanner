@@ -293,8 +293,6 @@ public sealed partial class GroupDetailViewModel
         .Select(r => r.ImagePath)
         .ToList();
 
-    private bool CanEmail() => Rows.Count > 0;
-
     /// <summary>
     /// Opens a message with the chosen pages attached. This app never sends: the operator presses
     /// Send in their own mail client, having seen the message (AC-5).
@@ -302,8 +300,13 @@ public sealed partial class GroupDetailViewModel
     /// The pages leave the group folder here — the folder's checksums and its `originals\`
     /// archive stay exactly as they were, and what goes is a copy built by the same exporters the
     /// export buttons use.
+    ///
+    /// Always pressable, like the export buttons beside it. Rows are refilled by scans, imports
+    /// and background OCR, and a CanExecute on them has to be re-asked after every one of those —
+    /// a group opened empty kept a grey button however many pages arrived. An empty group gets a
+    /// sentence instead.
     /// </summary>
-    [RelayCommand(CanExecute = nameof(CanEmail))]
+    [RelayCommand]
     private async Task EmailAsync()
     {
         var pages = EmailImagePaths;

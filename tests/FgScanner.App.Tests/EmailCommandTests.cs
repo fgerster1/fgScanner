@@ -349,7 +349,10 @@ public sealed class EmailCommandTests : IDisposable
         Assert.Equal(scan.Pages.Select(p => p.FilePath), scan.EmailImagePaths);
     }
 
-    private ScanViewModel ScanViewModelFor(IReadOnlyList<FgScanner.Scanning.ScannedPage> pages)
+    private ScanViewModel ScanViewModelFor(
+        IReadOnlyList<FgScanner.Scanning.ScannedPage> pages,
+        Func<FgScanner.Data.AppSettingsService, EmailSender>? email = null,
+        ActiveGroupStore? activeGroup = null)
     {
         var dbPath = Path.Combine(_root, "scan.db");
         using (var db = new FgScanner.Data.FgScannerDbContext(FgScanner.Data.DbBootstrapper.BuildOptions(dbPath)))
@@ -366,7 +369,7 @@ public sealed class EmailCommandTests : IDisposable
             new ScanSessionService(Path.Combine(_root, "recovery")),
             groups,
             new FgScanner.Data.IndexingService(factory, profiles, new FgScanner.Core.Index.IndexExporter()),
-            new ActiveGroupStore(),
+            activeGroup ?? new ActiveGroupStore(),
             new ProfileOcrTrigger(profiles, new FgScanner.Data.OcrQueueService(factory)),
             new PageEditingToolset(
                 new FgScanner.Scanning.Editing.ImageEditor(),
@@ -380,7 +383,14 @@ public sealed class EmailCommandTests : IDisposable
                 new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred2"), useCredentialManager: false),
                 new FgScanner.Data.AppSettingsService(factory),
                 new FgScanner.Data.CaptureTriageService(factory, new FgScanner.Data.AppSettingsService(factory)),
-                new FgScanner.Data.DuplicateFinder(factory)),
+                new FgScanner.Data.DuplicateFinder(factory))
+            {
+                Email = email?.Invoke(new FgScanner.Data.AppSettingsService(factory))
+                    ?? EmailSender.Unwired(
+                        new FgScanner.Scanning.Export.PdfExportService(),
+                        new FgScanner.Scanning.Export.ImageExportService(),
+                        new FgScanner.Data.AppSettingsService(factory)),
+            },
             trash);
         foreach (var page in pages)
         {
@@ -388,6 +398,196 @@ public sealed class EmailCommandTests : IDisposable
         }
 
         return scan;
+    }
+
+    // ---- the buttons turn on and off with what is on screen ----
+
+    /// <summary>
+    /// The Scan page is built once, with nothing staged, so its Email button binds disabled. A
+    /// CommunityToolkit command is never re-asked unless someone raises CanExecuteChanged — the
+    /// button stayed grey through any number of scans. Watched through the event, because
+    /// CanExecute answers honestly whether or not anything ever consults it again.
+    /// </summary>
+    [Fact]
+    public void The_scan_page_email_button_turns_on_when_a_page_arrives_and_off_when_it_goes()
+    {
+        var scan = ScanViewModelFor([]);
+        Assert.False(scan.EmailCommand.CanExecute(null));
+        var raised = 0;
+        scan.EmailCommand.CanExecuteChanged += (_, _) => raised++;
+
+        var page = new FgScanner.Scanning.ScannedPage(MakePage("arrives.png"), 1);
+        scan.Pages.Add(page);
+        Assert.True(raised > 0, "adding a page never re-asked the Email button");
+        Assert.True(scan.EmailCommand.CanExecute(null));
+
+        raised = 0;
+        scan.Pages.Remove(page);
+        Assert.True(raised > 0, "removing the last page never re-asked the Email button");
+        Assert.False(scan.EmailCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void The_scan_page_email_button_follows_scanning()
+    {
+        var scan = ScanViewModelFor([new FgScanner.Scanning.ScannedPage(MakePage("s.png"), 1)]);
+        var raised = 0;
+        scan.EmailCommand.CanExecuteChanged += (_, _) => raised++;
+
+        scan.IsScanning = true;
+        Assert.True(raised > 0, "starting a scan never re-asked the Email button");
+        Assert.False(scan.EmailCommand.CanExecute(null));
+
+        raised = 0;
+        scan.IsScanning = false;
+        Assert.True(raised > 0, "finishing a scan never re-asked the Email button");
+        Assert.True(scan.EmailCommand.CanExecute(null));
+    }
+
+    /// <summary>
+    /// A group is usually opened empty — right after it is created — and filled by Scan into group
+    /// or Import. Its Email button kept the grey it had when the group was opened.
+    /// </summary>
+    [Fact]
+    public async Task A_group_opened_empty_can_email_once_pages_arrive()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var vm = await GroupOfAsync(0);
+        var boundEnabled = vm.EmailCommand.CanExecute(null);
+        var raised = 0;
+        vm.EmailCommand.CanExecuteChanged += (_, _) => raised++;
+
+        var groups = new FgScanner.Data.GroupService(new TestFactory(Path.Combine(_root, "group-False-False.db")));
+        var arriving = Path.Combine(_root, "arriving");
+        Directory.CreateDirectory(arriving);
+        await groups.AdoptPagesAsync(vm.Group.Id, [MakePageIn(arriving, "late.png")], null, false, ct);
+        await vm.ReloadRowsAsync();
+
+        Assert.Single(vm.Rows);
+        Assert.True(vm.EmailCommand.CanExecute(null));
+        Assert.True(boundEnabled || raised > 0, "the button bound grey and nothing ever re-asked it");
+    }
+
+    // ---- a send that goes wrong says so, and nothing moves its pages mid-build ----
+
+    private EmailSender SenderThatContinues(FgScanner.Data.AppSettingsService settings, string? subject = null) =>
+        new(Builder(), new FakeShareService(ShareRoute.Explorer), settings)
+        {
+            Ask = (_, _, s, format, _) => (format, subject ?? s, false),
+        };
+
+    /// <summary>
+    /// §12: "named message; no crash". A page that passes File.Exists and then will not decode is
+    /// the ordinary way a build fails; nothing on the path caught it, and an exception out of an
+    /// async command closes the app.
+    /// </summary>
+    [Fact]
+    public async Task A_page_that_will_not_decode_is_a_sentence_and_not_a_crash()
+    {
+        var corrupt = Path.Combine(_root, "corrupt.jpg");
+        await File.WriteAllBytesAsync(corrupt, [0xFF, 0xD8, 0xFF, 0xE0, 0x00], TestContext.Current.CancellationToken);
+        var sender = SenderThatContinues(Settings());
+
+        var message = await sender.SendAsync(
+            [corrupt], "Farm Folder", "this page", cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Contains("nothing", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Exception", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The subject becomes the file name, and the export sanitiser does not shorten. A subject the
+    /// operator pasted a paragraph into made a name past the 255-character limit.
+    /// </summary>
+    [Fact]
+    public async Task A_very_long_subject_still_builds()
+    {
+        var sender = SenderThatContinues(Settings(), subject: new string('x', 400));
+
+        var message = await sender.SendAsync(
+            [MakePage("long.png")], "Farm Folder", "this page", cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Contains("1 page", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Save moves the staged files into the group and Delete recycles them; either one mid-build
+    /// pulls the pages out from under the exporter. Both are held for the length of the send and
+    /// re-asked at each end of it, so the buttons actually go grey and come back.
+    /// </summary>
+    [Fact]
+    public async Task Save_and_delete_are_held_while_a_send_is_building()
+    {
+        var store = new ActiveGroupStore { Current = new FgScanner.Data.Group { Name = "Farm Folder", DirectoryPath = Path.Combine(_root, "farm") } };
+        bool? saveDuring = null, deleteDuring = null;
+        ScanViewModel? scan = null;
+        scan = ScanViewModelFor(
+            [new FgScanner.Scanning.ScannedPage(MakePage("held.png"), 1)],
+            settings => new EmailSender(Builder(), new FakeShareService(ShareRoute.Explorer), settings)
+            {
+                Ask = (_, _, subject, format, _) =>
+                {
+                    saveDuring = scan!.SaveToGroupCommand.CanExecute(null);
+                    deleteDuring = scan.DeleteSelectedPagesCommand.CanExecute(null);
+                    return (format, subject, false);
+                },
+            },
+            store);
+        scan.SelectedPages.Add(scan.Pages[0]);
+        Assert.True(scan.SaveToGroupCommand.CanExecute(null));
+        Assert.True(scan.DeleteSelectedPagesCommand.CanExecute(null));
+        var saveRaised = 0;
+        var deleteRaised = 0;
+        scan.SaveToGroupCommand.CanExecuteChanged += (_, _) => saveRaised++;
+        scan.DeleteSelectedPagesCommand.CanExecuteChanged += (_, _) => deleteRaised++;
+
+        await scan.EmailCommand.ExecuteAsync(null);
+
+        Assert.False(saveDuring);
+        Assert.False(deleteDuring);
+        Assert.True(saveRaised >= 2, "Save was never re-asked around the send");
+        Assert.True(deleteRaised >= 2, "Delete was never re-asked around the send");
+        Assert.True(scan.SaveToGroupCommand.CanExecute(null));
+        Assert.True(scan.DeleteSelectedPagesCommand.CanExecute(null));
+    }
+
+    /// <summary>
+    /// A batch scan ends by calling the save directly, past the button's CanExecute — so the save
+    /// itself has to refuse while a send is building, or the batch moves the pages away mid-build.
+    /// Run against a real group, so a save that was not refused would genuinely take the page.
+    /// </summary>
+    [Fact]
+    public async Task A_save_that_bypasses_the_button_still_waits_for_the_send()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var store = new ActiveGroupStore();
+        ScanViewModel? scan = null;
+        scan = ScanViewModelFor(
+            [new FgScanner.Scanning.ScannedPage(MakePage("batch.png"), 1)],
+            settings => new EmailSender(Builder(), new FakeShareService(ShareRoute.Explorer), settings)
+            {
+                Ask = (_, _, subject, format, _) =>
+                {
+                    scan!.SaveToGroupCommand.ExecuteAsync(null).GetAwaiter().GetResult();
+                    return (format, subject, false);
+                },
+            },
+            store);
+        var groups = new FgScanner.Data.GroupService(new TestFactory(Path.Combine(_root, "scan.db")));
+        store.Current = await groups.CreateGroupAsync(Path.Combine(_root, "batch-groups"), "Batch", null, ct);
+        var staged = scan.Pages[0].FilePath;
+
+        var message = await Record(scan);
+
+        Assert.Single(scan.Pages);
+        Assert.True(File.Exists(staged), "the save moved the page while its attachment was building");
+        Assert.Contains("1 page attached", message, StringComparison.Ordinal);
+    }
+
+    private static async Task<string> Record(ScanViewModel scan)
+    {
+        await scan.EmailCommand.ExecuteAsync(null);
+        return scan.StatusText;
     }
 
     // ---- the one-time evidence warning (§05 Q2b) ----
