@@ -52,6 +52,27 @@ real draft. Franz moved MAPI first on 2026-09-22, gated on the probe. A station 
 client — new Outlook, and this station — never calls MAPI and still gets the Share sheet first, so
 for it nothing changed.
 
+### Webmail (added 2026-09-22)
+
+Franz sends from Gmail and Jim from Yahoo, both in a browser. **No Windows mechanism can hand a
+file to a webmail service**: it is not a MAPI client, it is not a share target, and `mailto:`
+cannot carry an attachment. As built, the Share sheet opened on both stations with neither
+service in it, and closing it left the operator with no idea where the file was.
+
+So the station says how it sends mail — **Settings → "Send email with"** (`Email.SendWith`): a
+mail program on this PC (the three routes above, and the default), Gmail in the browser, or
+Yahoo Mail in the browser. It is chosen, not detected, because nothing on Windows records where
+someone reads their mail. For the webmail choices a send opens the service's compose page with the
+subject filled in, and Explorer beside it with the file selected, and the operator drags the file
+in. That drag is the whole of what cannot be automated; everything around it is.
+
+The mail-app routes are never tried on a webmail station: the Share sheet would always "work" and
+never contain the service. Neither compose link is an official API — Gmail's
+(`mail.google.com/mail/?view=cm&fs=1&su=`) is long-standing and widely used; Yahoo documents none,
+and `compose.mail.yahoo.com/?subject=` is the form in common use. If either stops honouring the
+subject the operator still gets a blank message. The subject now also reaches the browser's
+address bar and history — the operator's own browser, but a place it did not reach before.
+
 **Why not the Share sheet only.** It cannot report what happened: it returns as soon as it is
 shown, and the operator may close it without choosing anything. The status line says so —
 *"The Windows Share sheet is open — choose your mail app there"* — rather than claiming a message

@@ -197,14 +197,27 @@ a committed evidence record"*: what you send is a copy, it leaves the folder who
 and originals are what make it evidence, and the folder itself is not changed. Tick **"I understand
 — don't show this again"** and it will not come back. It never stops you sending.
 
-**What happens next depends on the mail app installed**, and the line under the buttons says
-which:
+**First, tell FG Scanner how you send mail** — **Settings → Email → "Send email with"**, then
+**Save**:
+
+- **A mail program on this PC** (Outlook, Thunderbird…) — the pages are attached for you.
+- **Gmail in the browser** or **Yahoo Mail in the browser** — a new message opens in your browser
+  with the subject filled in, and an Explorer window opens beside it with the file selected.
+  **Drag the file from Explorer into the message.** That one drag is the only thing FG Scanner
+  cannot do for you: no program can attach a file to a web page. Several images: select them all
+  in the Explorer window and drag them together. If you have more than one Gmail account signed
+  in, the message opens in the browser's first one.
+
+**What happens next depends on that setting and on what is installed**, and the line under the
+buttons says which:
 
 | You see | What it means |
 |---|---|
 | *"3 pages attached. Your mail app reports the message as sent."* | Your mail app (classic Outlook, for example) opened a new message with the pages attached, and you sent it. |
 | *"You closed the message without sending it — nothing left the app."* | The same, but you closed the message instead of sending it. |
-| *"3 pages attached. The Windows Share sheet is open — choose your mail app there."* | Windows' Share panel is open with the pages in it. Pick your mail app — new Outlook, for example — and send from there. Closing the panel sends nothing. |
+| *"3 pages were made into one PDF. A new Gmail message is open in your browser, and the file is selected in the Explorer window beside it — drag it into the message. It stays there until FG Scanner closes."* | Gmail or Yahoo Mail is set. Drag the file into the message, then send it. **Attach it before closing FG Scanner.** |
+| *"Gmail could not be opened in your browser. The attachment is in … — start a new Gmail message and drag it in."* | The browser did not open. Open Gmail yourself; the Explorer window with the file is already there. |
+| *"3 pages attached. The Windows Share sheet is open — choose your mail app there. The attachment is in … as well, if your mail is in a browser."* | Windows' Share panel is open with the pages in it. Pick your mail app — new Outlook, for example — and send from there. Closing the panel sends nothing. If your mail is Gmail or Yahoo, close it, choose that in Settings, and the file is in the folder named. |
 | *"3 pages were made into one PDF. No mail app was found. The attachment is in C:\…\ — attach it to your message yourself. It stays there until FG Scanner closes."* | No mail app could be reached. An Explorer window opens with the file selected: start a message yourself and attach it. **Attach it before closing FG Scanner** — closing the app removes it. |
 | *"Attached to a message these are about 28 MB. Mail servers often refuse anything over 20 MB, so this may bounce — send fewer pages at a time."* | Shown after the message opens. It may still go through; the limit is the recipient's server. |
 | *"The page scan_00007.jpg is no longer on disk, so nothing was attached."* | A page's file is missing. Nothing is sent rather than a message one page short. Use **Reconcile** on the group to find out what happened. |

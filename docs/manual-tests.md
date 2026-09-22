@@ -566,3 +566,16 @@ gets the Share sheet; a classic-Outlook station gets MAPI first; a station with 
 
 **Known and not fixed here:** at the 800×560 minimum window the Scan page's Email… button, like
 **Scan** itself and every Groups toolbar button, is below the fold (§16 R7, app-wide).
+
+**Webmail (added 2026-09-22)** — Franz sends from Gmail, Jim from Yahoo, both in a browser. Set
+Settings → Email → "Send email with" on each station first.
+
+- [ ] **Gmail on Franz's station.** A session as PDF: a new Gmail message opens in the browser
+      with the subject filled in, and Explorer beside it with the PDF selected; drag it in, send
+      to yourself, open the attachment. Check a subject with `&` and `,` arrives whole.
+- [ ] **Yahoo Mail on Jim's station.** The same. **The Yahoo compose link is undocumented** — if
+      the subject does not fill in, or the page is not a new message, record what Yahoo shows.
+- [ ] **Three images to Gmail**: the status says 3 files are in the Explorer window; select all
+      three and drag them in together.
+- [ ] **The Share sheet on a mail-program station** now also names the file's folder.
+

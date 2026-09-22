@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Approved |
-| **Revision** | C — amended 2026-09-22 after the code review; see the notes marked **Amended** |
+| **Revision** | D — amended 2026-09-22 after the code review, then for webmail; see the notes marked **Amended** |
 | **Tier** | Feature |
 | **Author** | Claude, for Franz Gerster |
 | **Date** | 2026-09-20 |
@@ -193,6 +193,7 @@ recommendation is taken, one `Settings` key for the remembered attachment format
 |---|---|---|
 | `Email.Attachment` | `Pdf` \| `Images` | `Pdf` |
 | `Email.EvidenceWarningSeen` | `true` \| `false` | `false` |
+| `Email.SendWith` *(added 2026-09-22)* | `MailApp` \| `Gmail` \| `Yahoo` | `MailApp` |
 
 Written through `AppSettingsService` like every other setting, and read fresh per send.
 Documented as a doc comment where it is read.
@@ -231,6 +232,17 @@ interface; the same reasoning applies to shell UI).
 > hand-declared `IDataTransferManagerInterop`, which could never work (finding #1): it uses the SDK
 > projection's `DataTransferManagerInterop`, parented to the main window on the UI thread
 > (finding #2). ADR-0012 records the whole decision.
+
+> **Amended 2026-09-22 (Franz): webmail.** Franz sends from Gmail and Jim from Yahoo, both in a
+> browser — and a browser page is neither a MAPI client nor a share target, so as built the Share
+> sheet opened with no Gmail in it and closing it stranded the operator. Settings gains **"Send
+> email with"** (`Email.SendWith`): *a mail program on this PC* (the routes above, and the
+> default), *Gmail in the browser* or *Yahoo Mail in the browser*. For webmail a send opens the
+> service's compose page with the subject filled in, and Explorer beside it with the file
+> selected, to be dragged in — the one step no desktop app can take for a webmail service. The
+> mail-app routes are never tried on a webmail station. Neither compose link is an official API;
+> Yahoo documents none at all, so its link is checked on Jim's station before this is Done.
+> Whichever the station, the Share sheet's status now also says where the file is.
 
 1. **Windows Share sheet** — `DataTransferManager` via `IDataTransferManagerInterop.GetForWindow`,
    which is supported for unpackaged WPF. Real file attachments, and new Outlook is a
@@ -342,6 +354,15 @@ The app's own WPF Fluent theme governs.
 > warning; once dismissed it does not return, and a non-evidence group never shows it.
 > *Proven by:* `tests/FgScanner.App.Tests/EmailCommandTests.cs` → "the evidence warning
 > is shown once and only for committed evidence groups"
+
+> **AC-12** *(added 2026-09-22)* — On a station set to Gmail or Yahoo Mail, a send opens that
+> service's compose page with the subject filled in and escaped, and Explorer with the file
+> selected; MAPI and the Share sheet are never tried; if the browser cannot be opened the file is
+> still shown and the status says so.
+> *Proven by:* `EmailCommandTests.cs` → "Gmail opens a compose page beside the file and never tries
+> the mail app routes", "the subject is escaped", "a browser that will not open…", and
+> `AiModelAndThemeSettingTests.cs` → the two "send with" cases; `manual` — Gmail on Franz's
+> station, Yahoo on Jim's
 
 ## 11 · Test strategy
 
