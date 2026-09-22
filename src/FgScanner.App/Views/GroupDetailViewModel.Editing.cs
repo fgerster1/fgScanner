@@ -9,6 +9,7 @@ using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.Input;
 using FgScanner.App.Services;
 using FgScanner.App.Views.Dialogs;
+using FgScanner.Core.Evidence;
 using FgScanner.Core.Naming;
 using FgScanner.Data;
 using FgScanner.Scanning;
@@ -319,30 +320,27 @@ public sealed partial class GroupDetailViewModel
         var source = SelectedRows.Count > 0
             ? (SelectedRows.Count == 1 ? "the selected page" : $"the {SelectedRows.Count} selected pages")
             : $"\"{Group.Name}\"";
-        StatusText = await _toolset.Email.SendAsync(pages, Group.Name, source, await IsEvidenceRecordAsync());
+        StatusText = await _toolset.Email.SendAsync(pages, Group.Name, source, IsEvidenceRecord());
     }
 
     /// <summary>
-    /// Whether this group is a finished evidence record — committed, on the Evidence profile.
-    /// Only then is a send leaving a folder whose index, checksums and `originals\` archive are
-    /// its integrity, which is what §05 Q2b's one-time warning is about.
+    /// Whether this group is a finished evidence record — committed, and carrying the evidence
+    /// field contract. Only then is a send leaving a folder whose index, checksums and
+    /// `originals\` archive are its integrity, which is what §05 Q2b's one-time warning is about.
     ///
-    /// Identified by the profile's name, because that is how the app itself creates and repairs
-    /// it (`ProfileService.EnsureEvidenceProfileAsync`). A profile renamed by hand would stop
-    /// matching and the warning would not appear — it is a nudge and not a gate, so that is a
-    /// missed reminder rather than a hole, but it is the first thing to fix if it ever matters.
+    /// Recognised by its fields, never by the profile's name: the importer reads field names, and
+    /// a name matched only the profile the app builds itself. The hand-built "JimsStuff Evidence"
+    /// of the pre-0.4.0 walkthrough, a renamed profile, and an imported "Evidence (2)" all missed.
+    /// The test is the fields the contract makes required — DocNo and Box — read off
+    /// EvidenceProfile rather than listed again here; the hand-built profile, which predates the
+    /// sticky-note fields, already had both. A stray profile that happens to have both only costs
+    /// one extra reading of a warning that never blocks.
     /// </summary>
-    private async Task<bool> IsEvidenceRecordAsync()
-    {
-        if (Group.State != GroupState.Committed || Group.ProfileId is not { } profileId)
-        {
-            return false;
-        }
-
-        var profiles = await _profileService.ListAsync();
-        return profiles.Any(p => p.Id == profileId
-            && string.Equals(p.Name, ProfileService.EvidenceProfileName, StringComparison.Ordinal));
-    }
+    private bool IsEvidenceRecord() =>
+        Group.State == GroupState.Committed
+        && EvidenceProfile.Fields
+            .Where(f => f.Required)
+            .All(required => Fields.Any(f => string.Equals(f.Name, required.Name, StringComparison.Ordinal)));
 
     /// <summary>Selection of 2+ exports just those pages; otherwise the whole group.</summary>
     private IReadOnlyList<string> ExportImagePaths =>

@@ -207,7 +207,10 @@ public sealed class EmailCommandTests : IDisposable
     // ---- which pages a send actually takes ----
 
     private async Task<GroupDetailViewModel> GroupOfAsync(
-        int pages, bool evidenceProfile = false, bool committed = false)
+        int pages,
+        bool evidenceProfile = false,
+        bool committed = false,
+        Func<FgScanner.Data.ProfileService, Task<FgScanner.Data.Profile>>? profile = null)
     {
         var ct = TestContext.Current.CancellationToken;
         var dbPath = Path.Combine(_root, $"group-{evidenceProfile}-{committed}.db");
@@ -227,7 +230,12 @@ public sealed class EmailCommandTests : IDisposable
         Directory.CreateDirectory(incoming);
 
         (Guid, int)? profileRef = null;
-        if (evidenceProfile)
+        if (profile is not null)
+        {
+            var built = await profile(profiles);
+            profileRef = (built.Id, (await profiles.GetLatestSchemaAsync(built.Id, ct)).Version);
+        }
+        else if (evidenceProfile)
         {
             var evidence = await profiles.EnsureEvidenceProfileAsync(ct);
             profileRef = (evidence.Id, (await profiles.GetLatestSchemaAsync(evidence.Id, ct)).Version);
@@ -317,6 +325,39 @@ public sealed class EmailCommandTests : IDisposable
 
         // The export rule is the one that widens to the group, and it stays that way.
         Assert.Equal(6, vm.Rows.Count);
+    }
+
+    /// <summary>
+    /// Every OCR or AI batch that finishes reloads the rows as new instances. The grid drops its
+    /// selection when its items reset — mimicked here, since no headless test has a grid — and
+    /// nothing put it back, so "no selection" quietly meant the whole group: pick three, mail
+    /// sixty. The selection is the operator's, and a background reload must not take it away.
+    /// </summary>
+    [Fact]
+    public async Task A_background_reload_keeps_the_pages_the_operator_selected()
+    {
+        var vm = await GroupOfAsync(6);
+        vm.Rows.CollectionChanged += (_, e) =>
+        {
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset)
+            {
+                vm.SelectedRows.Clear();
+            }
+        };
+        var chosen = new[] { vm.Rows[1], vm.Rows[3], vm.Rows[4] };
+        foreach (var row in chosen)
+        {
+            vm.SelectedRows.Add(row);
+        }
+
+        vm.SelectedRow = vm.Rows[3];
+        var expected = chosen.Select(r => r.ImagePath).ToList();
+
+        await vm.ReloadRowsAsync();
+
+        Assert.Equal(expected, vm.EmailImagePaths);
+        Assert.All(vm.SelectedRows, r => Assert.Contains(r, vm.Rows));
+        Assert.Same(vm.Rows[3], vm.SelectedRow);
     }
 
     [Fact]
@@ -744,6 +785,53 @@ public sealed class EmailCommandTests : IDisposable
         Assert.Equal([true, false], ask.WarningShown);
     }
 
+    /// <summary>
+    /// Evidence is what the importer reads, and the importer reads field names — not the profile's
+    /// name. The walkthrough before 0.4.0 built "JimsStuff Evidence" by hand, with the nine fields
+    /// that preceded the sticky-note ones, and Jim's runbook says to pick it.
+    /// </summary>
+    private static readonly string[] PreContractEvidenceFields =
+        ["DocNo", "DocDate", "DocType", "Title", "Parties", "Operator", "Redact", "Box", "Notes"];
+
+    [Fact]
+    public async Task A_committed_group_on_the_hand_built_evidence_profile_is_warned_about()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var vm = await GroupOfAsync(2, committed: true, profile: async profiles =>
+        {
+            var handBuilt = await profiles.CreateAsync("JimsStuff Evidence", ct);
+            await profiles.SaveSchemaAsync(
+                handBuilt.Id,
+                [.. PreContractEvidenceFields.Select((name, i) => new FgScanner.Data.FieldDefinition { Name = name, Order = i })],
+                ct);
+            return handBuilt;
+        });
+        var ask = new RecordingAsk();
+        vm.Email.Ask = ask.Ask;
+
+        await vm.EmailCommand.ExecuteAsync(null);
+
+        Assert.Equal([true], ask.WarningShown);
+    }
+
+    [Fact]
+    public async Task A_renamed_evidence_profile_is_still_evidence()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var vm = await GroupOfAsync(2, committed: true, profile: async profiles =>
+        {
+            var evidence = await profiles.EnsureEvidenceProfileAsync(ct);
+            await profiles.RenameAsync(evidence.Id, "Portage County box scans", ct);
+            return evidence;
+        });
+        var ask = new RecordingAsk();
+        vm.Email.Ask = ask.Ask;
+
+        await vm.EmailCommand.ExecuteAsync(null);
+
+        Assert.Equal([true], ask.WarningShown);
+    }
+
     /// <summary>Not every group is evidence; a warning shown everywhere is a warning nobody reads.</summary>
     [Fact]
     public async Task A_group_on_an_ordinary_profile_is_never_warned_about()
@@ -876,6 +964,42 @@ public sealed class EmailCommandTests : IDisposable
             [MakePage("unwired.png")], "Farm Folder", "this page", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Contains("nothing left the app", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// §14 again, through the real share service rather than the fake. The subject is the
+    /// operator's free text, and "Box 14 deeds for jsmith@firm.com" is an ordinary thing to type
+    /// — logged, it kept a recipient in the 14-day log. The routes are stubbed; the logging is not.
+    /// </summary>
+    [Fact]
+    public void The_share_service_never_logs_the_subject()
+    {
+        const string subject = "Box 14 deeds for jsmith@firm.com";
+        var written = new List<string>();
+        var previous = Serilog.Log.Logger;
+        Serilog.Log.Logger = new Serilog.LoggerConfiguration()
+            .MinimumLevel.Verbose()
+            .WriteTo.Sink(new CapturingSink(written))
+            .CreateLogger();
+        try
+        {
+            var service = new WindowsShareService(
+                shareSheet: _ => false,
+                mapi: _ => false,
+                mapiAvailable: () => true,
+                revealInExplorer: _ => true);
+
+            service.Open(new ShareRequest([MakePage("subject.png")], subject));
+        }
+        finally
+        {
+            (Serilog.Log.Logger as IDisposable)?.Dispose();
+            Serilog.Log.Logger = previous;
+        }
+
+        Assert.NotEmpty(written);
+        Assert.All(written, l => Assert.DoesNotContain("jsmith", l, StringComparison.OrdinalIgnoreCase));
+        Assert.All(written, l => Assert.False(LooksLikeAddressing(l), l));
     }
 
     private sealed class CapturingSink(List<string> lines) : Serilog.Core.ILogEventSink

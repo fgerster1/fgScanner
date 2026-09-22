@@ -213,6 +213,12 @@ public sealed partial class GroupDetailViewModel : ObservableObject
 
     public async Task ReloadRowsAsync()
     {
+        // Captured before the clear: the grid drops its selection the moment its items reset, and
+        // WPF writes that back into SelectedRow and SelectedRows. Background OCR and AI batches
+        // reload on completion, so without this a Ctrl-selection vanished mid-task and the next
+        // Email — where no selection means the whole group — sent every page.
+        var selectedPages = SelectedRows.Select(r => r.PageId).ToHashSet();
+        var focusedPage = SelectedRow?.PageId;
         Rows.Clear();
         var pages = await _groupService.GetPagesAsync(Group.Id);
         // Read stored values straight from the documents, keyed by id. Sourcing them from the
@@ -253,7 +259,35 @@ public sealed partial class GroupDetailViewModel : ObservableObject
             Rows.Add(documentRow);
         }
 
+        RestoreSelection(selectedPages, focusedPage);
         StatusText = $"{Rows.Count} page(s). State: {Group.State}.";
+    }
+
+    /// <summary>
+    /// Raised after a reload with the rows that were selected before it, now as the new instances,
+    /// so the view can put them back into the grid's multi-selection. SelectedRow is set first,
+    /// because setting a selector's SelectedItem replaces the whole selection.
+    /// </summary>
+    public event Action<IReadOnlyList<DocumentRow>>? SelectionRestored;
+
+    private void RestoreSelection(HashSet<Guid> selectedPages, Guid? focusedPage)
+    {
+        var restored = Rows.Where(r => selectedPages.Contains(r.PageId)).ToList();
+        if (focusedPage is { } focused && Rows.FirstOrDefault(r => r.PageId == focused) is { } row)
+        {
+            SelectedRow = row;
+        }
+
+        SelectedRows.Clear();
+        foreach (var kept in restored)
+        {
+            SelectedRows.Add(kept);
+        }
+
+        if (restored.Count > 0)
+        {
+            SelectionRestored?.Invoke(restored);
+        }
     }
 
     /// <summary>

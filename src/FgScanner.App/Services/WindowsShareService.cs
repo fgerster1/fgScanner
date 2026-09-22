@@ -31,9 +31,9 @@ public sealed class WindowsShareService(
     public ShareOutcome Open(ShareRequest request)
     {
         // Logged before any route is invoked, so a send that ends up attaching nothing still left
-        // a record of what was asked for (§14).
-        Log.Information(
-            "Sharing {Count} page(s) with the subject {Subject}", request.FilePaths.Count, request.Subject);
+        // a record of what was asked for (§14). Never the subject: it is the operator's free text,
+        // and naming who a message is for is an ordinary thing to type into it.
+        Log.Information("Sharing {Count} file(s)", request.FilePaths.Count);
 
         if (Try(() => _shareSheet(request), "the Windows Share sheet"))
         {

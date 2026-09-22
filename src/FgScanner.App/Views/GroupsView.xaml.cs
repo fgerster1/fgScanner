@@ -339,6 +339,7 @@ public partial class GroupsView : UserControl
         if (_detail is not null)
         {
             _detail.SchemaLoaded -= RebuildColumns;
+            _detail.SelectionRestored -= ReselectRows;
         }
 
         if (!ReferenceEquals(detail, _detail))
@@ -352,7 +353,23 @@ public partial class GroupsView : UserControl
         if (_detail is not null)
         {
             _detail.SchemaLoaded += RebuildColumns;
+            _detail.SelectionRestored += ReselectRows;
             RebuildColumns();
+        }
+    }
+
+    /// <summary>
+    /// Puts a reload's selection back into the grid. Each add re-mirrors the grid into
+    /// SelectedRows through OnGridSelectionChanged, so the two agree once the last one is in.
+    /// </summary>
+    private void ReselectRows(IReadOnlyList<DocumentRow> rows)
+    {
+        foreach (var row in rows)
+        {
+            if (!EntryGrid.SelectedItems.Contains(row))
+            {
+                EntryGrid.SelectedItems.Add(row);
+            }
         }
     }
 
