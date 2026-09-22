@@ -119,9 +119,8 @@ public sealed class EmailSender(
     /// </summary>
     public static EmailSender Unwired(
         Scanning.Export.PdfExportService pdf,
-        Scanning.Export.ImageExportService images,
         AppSettingsService settings) =>
-        new(new AttachmentBuilder(pdf, images), new NoMailPath(), settings)
+        new(new AttachmentBuilder(pdf), new NoMailPath(), settings)
         {
             Ask = (_, _, _, _, _) => null,
         };

@@ -40,7 +40,7 @@
                     <ComboBoxItem Content="Separate images" />
                 </ComboBox>
                 <TextBlock Opacity="0.6" FontSize="11" TextWrapping="Wrap"
-                           Text="A PDF is one file and opens anywhere. Separate images are easier for a recipient to look at one at a time, and often smaller." />
+                           Text="A PDF is one file and opens anywhere. Separate images are the page files exactly as scanned, easier for a recipient to look at one at a time." />
             </StackPanel>
         </ScrollViewer>
         <!-- After the body, so Tab reaches the fields before the buttons. -->

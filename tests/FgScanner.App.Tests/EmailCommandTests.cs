@@ -429,7 +429,6 @@ public sealed class EmailCommandTests : IDisposable
                 Email = email?.Invoke(new FgScanner.Data.AppSettingsService(factory))
                     ?? EmailSender.Unwired(
                         new FgScanner.Scanning.Export.PdfExportService(),
-                        new FgScanner.Scanning.Export.ImageExportService(),
                         new FgScanner.Data.AppSettingsService(factory)),
             },
             trash);
@@ -1014,7 +1013,6 @@ public sealed class EmailCommandTests : IDisposable
 
     private AttachmentBuilder Builder() => new(
         new FgScanner.Scanning.Export.PdfExportService(),
-        new FgScanner.Scanning.Export.ImageExportService(),
         Path.Combine(_root, "temp"));
 
     /// <summary>
@@ -1075,6 +1073,67 @@ public sealed class EmailCommandTests : IDisposable
         Assert.Contains("20 MB", over, StringComparison.Ordinal);
         Assert.Contains("21", over, StringComparison.Ordinal);
         Assert.Equal("", AttachmentBuilder.SizeWarning(19L * 1024 * 1024));
+    }
+
+    private string MakeJpeg(string name)
+    {
+        var path = Path.Combine(_root, name);
+        using var bitmap = new System.Drawing.Bitmap(200, 260);
+        using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
+        {
+            graphics.Clear(System.Drawing.Color.White);
+            using var font = new System.Drawing.Font(System.Drawing.FontFamily.GenericSansSerif, 10);
+            graphics.DrawString(name, font, System.Drawing.Brushes.Black, 6, 40);
+        }
+
+        bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Jpeg);
+        return path;
+    }
+
+    /// <summary>
+    /// "Separate images" attaches the page files themselves. Re-encoding the scanner's JPEGs as
+    /// PNG made them two and a half to four times larger than the PDF of the same pages — and a
+    /// byte-identical copy is the better thing to send from an evidence record anyway: its
+    /// checksum is the one in index.json, so a recipient can check it against the record.
+    /// </summary>
+    [Fact]
+    public async Task Images_are_attached_exactly_as_scanned()
+    {
+        var pages = new[] { MakeJpeg("front.jpg"), MakeJpeg("back.jpg") };
+
+        var built = await Builder().BuildAsync(pages, "Farm Folder", EmailAttachment.Images, TestContext.Current.CancellationToken);
+
+        Assert.True(built.Ok, built.Message);
+        Assert.Equal(["Farm Folder_001.jpg", "Farm Folder_002.jpg"], built.FilePaths.Select(Path.GetFileName));
+        for (var i = 0; i < pages.Length; i++)
+        {
+            Assert.Equal(
+                await File.ReadAllBytesAsync(pages[i], TestContext.Current.CancellationToken),
+                await File.ReadAllBytesAsync(built.FilePaths[i], TestContext.Current.CancellationToken));
+        }
+    }
+
+    [Fact]
+    public async Task One_image_is_named_after_the_subject_alone()
+    {
+        var built = await Builder().BuildAsync(
+            [MakeJpeg("only.jpg")], "Farm Folder", EmailAttachment.Images, TestContext.Current.CancellationToken);
+
+        Assert.Equal(["Farm Folder.jpg"], built.FilePaths.Select(Path.GetFileName));
+    }
+
+    /// <summary>
+    /// The warning used to advise attaching images instead of a PDF. The PDF carries the scanner's
+    /// JPEGs through unchanged, so the images are no smaller — following that advice sent the
+    /// same bytes, or before this fix three times as many, and bounced again.
+    /// </summary>
+    [Fact]
+    public void The_size_warning_does_not_send_the_operator_to_images()
+    {
+        var over = AttachmentBuilder.SizeWarning(30L * 1024 * 1024);
+
+        Assert.DoesNotContain("image", over, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("fewer pages", over, StringComparison.Ordinal);
     }
 
     /// <summary>

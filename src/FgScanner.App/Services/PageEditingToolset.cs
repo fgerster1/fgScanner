@@ -30,5 +30,5 @@ public sealed record PageEditingToolset(
     /// Email read the registry, opened Explorer and left PDFs in %TEMP%; a construction site that
     /// wants to send has to say so.
     /// </summary>
-    public EmailSender Email { get; init; } = EmailSender.Unwired(PdfExport, ImageExport, Settings);
+    public EmailSender Email { get; init; } = EmailSender.Unwired(PdfExport, Settings);
 }

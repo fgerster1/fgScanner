@@ -73,9 +73,15 @@ public sealed record BuiltAttachments(
 }
 
 /// <summary>
-/// Turns pages into something to attach, using the very same exporters the export buttons use —
-/// so an emailed PDF is byte-for-byte the file an exported PDF would have been, and nobody has to
-/// wonder whether the thing that left the building was made differently.
+/// Turns pages into something to attach. A PDF is built by the very exporter the Export PDF button
+/// uses — so an emailed PDF is byte-for-byte the file an exported PDF would have been, and nobody
+/// has to wonder whether the thing that left the building was made differently.
+///
+/// Images are the page files themselves, copied byte for byte, not run through the image
+/// exporter. Its default re-encoded the scanner's JPEGs as PNG, two and a half to four times the
+/// size of the PDF of the same pages; and an untouched copy is the better thing to send from an
+/// evidence record, because its checksum is the one index.json holds and a recipient can check
+/// it against the record. This departs from the spec's first wording (§07), by Franz's decision.
 ///
 /// **Nothing is written into the group folder.** The folder's checksums and its `originals\`
 /// archive are what make it evidence (ADR-0003, CLAUDE.md); a send produces a copy somewhere else
@@ -84,7 +90,6 @@ public sealed record BuiltAttachments(
 /// </summary>
 public sealed class AttachmentBuilder(
     PdfExportService pdf,
-    ImageExportService images,
     string? tempRoot = null)
 {
     /// <summary>§15: most mail servers reject above about 25 MB, and a 300 DPI colour page is roughly 2 MB.</summary>
@@ -157,9 +162,7 @@ public sealed class AttachmentBuilder(
         }
         else
         {
-            built = await images
-                .ExportAsync(pagePaths, folder, baseName, new ImageExportOptions(), cancellationToken)
-                .ConfigureAwait(false);
+            built = await CopyPagesAsync(pagePaths, folder, baseName, cancellationToken).ConfigureAwait(false);
         }
 
         var bytes = built.Sum(p => new FileInfo(p).Length);
@@ -168,6 +171,32 @@ public sealed class AttachmentBuilder(
             built.Count, bytes, format, folder);
 
         return new BuiltAttachments(true, built, "", SizeWarning(bytes), bytes);
+    }
+
+    /// <summary>
+    /// Named the way the image exporter names them — the subject, then _001, _002… when there is
+    /// more than one — each keeping its own file's extension, since a copy is whatever the page is.
+    /// </summary>
+    private static async Task<IReadOnlyList<string>> CopyPagesAsync(
+        IReadOnlyList<string> pagePaths, string folder, string baseName, CancellationToken cancellationToken)
+    {
+        var copied = new List<string>(pagePaths.Count);
+        for (var i = 0; i < pagePaths.Count; i++)
+        {
+            var suffix = pagePaths.Count == 1 ? "" : "_" + (i + 1).ToString("000", CultureInfo.InvariantCulture);
+            var target = Path.Combine(
+                folder, baseName + suffix + Path.GetExtension(pagePaths[i]).ToLowerInvariant());
+
+            // Asynchronous, because a send runs on the UI thread and a page is a couple of MB.
+            await using var source = new FileStream(
+                pagePaths[i], FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
+            await using var destination = new FileStream(
+                target, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true);
+            await source.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+            copied.Add(target);
+        }
+
+        return copied;
     }
 
     /// <summary>
@@ -183,8 +212,10 @@ public sealed class AttachmentBuilder(
         }
 
         var mb = (bytes / (1024.0 * 1024.0)).ToString("0", CultureInfo.InvariantCulture);
+        // Never "attach images instead": the PDF carries the scanner's JPEGs through unchanged,
+        // so the images are no smaller and that advice sent the same message back to bounce.
         return $"These attachments are about {mb} MB. Mail servers often refuse anything over "
-            + "20 MB, so this may bounce — send fewer pages, or attach images instead of a PDF.";
+            + "20 MB, so this may bounce — send fewer pages at a time.";
     }
 
     /// <summary>

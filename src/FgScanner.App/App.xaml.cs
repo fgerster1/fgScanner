@@ -117,8 +117,7 @@ public partial class App : Application
                 // Sharing: one builder for the session so every temp folder it makes is known to
                 // OnExit, and one share service so both call sites take the same interface.
                 services.AddSingleton(_ => new AttachmentBuilder(
-                    new FgScanner.Scanning.Export.PdfExportService(),
-                    new FgScanner.Scanning.Export.ImageExportService()));
+                    new FgScanner.Scanning.Export.PdfExportService()));
                 services.AddSingleton<FgScanner.Core.Sharing.IShareService>(_ => new WindowsShareService());
                 services.AddSingleton<EmailSender>();
                 services.AddSingleton<OcrQueueService>();
