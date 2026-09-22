@@ -142,28 +142,62 @@ public sealed class EmailCommandTests : IDisposable
         Assert.Contains(_root, outcome.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>The routes are tried in the order §08 fixed, and the first that works wins.</summary>
+    private static WindowsShareService Recording(
+        List<string> order, bool sheet, bool mapi, bool mapiAvailable) => new(
+        shareSheet: _ => { order.Add("sheet"); return sheet; },
+        mapi: _ => { order.Add("mapi"); return mapi; },
+        mapiAvailable: () => mapiAvailable,
+        revealInExplorer: _ => { order.Add("explorer"); return true; });
+
+    /// <summary>
+    /// The Share sheet opens on every Windows 10 and 11 machine, so with it first MAPI was never
+    /// reached — and classic Outlook is not a share target, so a classic-Outlook station got a
+    /// sheet with no Outlook in it. When the probe finds a registered MAPI client, that client's
+    /// own draft comes first (Franz's decision, amending §08's order).
+    /// </summary>
     [Fact]
-    public void The_share_sheet_is_tried_before_mapi_and_mapi_before_explorer()
+    public void A_station_with_a_mapi_client_gets_its_draft_first()
     {
         var order = new List<string>();
 
-        var sheetWins = new WindowsShareService(
-            shareSheet: _ => { order.Add("sheet"); return true; },
-            mapi: _ => { order.Add("mapi"); return true; },
-            mapiAvailable: () => true,
-            revealInExplorer: _ => { order.Add("explorer"); return true; });
-        Assert.Equal(ShareRoute.ShareSheet, sheetWins.Open(Request()).Route);
-        Assert.Equal(["sheet"], order);
+        var outcome = Recording(order, sheet: true, mapi: true, mapiAvailable: true).Open(Request());
 
-        order.Clear();
-        var mapiWins = new WindowsShareService(
-            shareSheet: _ => { order.Add("sheet"); return false; },
-            mapi: _ => { order.Add("mapi"); return true; },
-            mapiAvailable: () => true,
-            revealInExplorer: _ => { order.Add("explorer"); return true; });
-        Assert.Equal(ShareRoute.Mapi, mapiWins.Open(Request()).Route);
-        Assert.Equal(["sheet", "mapi"], order);
+        Assert.Equal(ShareRoute.Mapi, outcome.Route);
+        Assert.Equal(["mapi"], order);
+    }
+
+    [Fact]
+    public void A_mapi_client_that_fails_falls_back_to_the_share_sheet()
+    {
+        var order = new List<string>();
+
+        var outcome = Recording(order, sheet: true, mapi: false, mapiAvailable: true).Open(Request());
+
+        Assert.Equal(ShareRoute.ShareSheet, outcome.Route);
+        Assert.Equal(["mapi", "sheet"], order);
+    }
+
+    /// <summary>New Outlook and most other clients register no MAPI: the Share sheet is theirs.</summary>
+    [Fact]
+    public void Without_a_mapi_client_the_share_sheet_comes_first_and_mapi_is_never_called()
+    {
+        var order = new List<string>();
+
+        var outcome = Recording(order, sheet: true, mapi: true, mapiAvailable: false).Open(Request());
+
+        Assert.Equal(ShareRoute.ShareSheet, outcome.Route);
+        Assert.Equal(["sheet"], order);
+    }
+
+    [Fact]
+    public void Every_mail_route_failing_ends_in_explorer_after_both()
+    {
+        var order = new List<string>();
+
+        var outcome = Recording(order, sheet: false, mapi: false, mapiAvailable: true).Open(Request());
+
+        Assert.Equal(ShareRoute.Explorer, outcome.Route);
+        Assert.Equal(["mapi", "sheet", "explorer"], order);
     }
 
     private sealed class TestFactory(string dbPath)

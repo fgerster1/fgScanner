@@ -6,9 +6,14 @@ using Serilog;
 namespace FgScanner.App.Services;
 
 /// <summary>
-/// Puts files in front of the operator's mail path, trying the three routes SPEC-2026-007 §08
-/// fixed, in that order, and reporting which one opened. It never sends (AC-5) — see
-/// <see cref="IShareService"/> for why that is a rule rather than an omission.
+/// Puts files in front of the operator's mail path and reports which route opened. It never
+/// sends (AC-5) — see <see cref="IShareService"/> for why that is a rule rather than an omission.
+///
+/// The order: a registered MAPI client's own draft when the probe finds one, then the Share
+/// sheet, then Explorer. §08 first put the Share sheet ahead of MAPI, but the sheet opens on every
+/// Windows 10 and 11 machine, so MAPI was unreachable — and classic Outlook is not a share target,
+/// so a classic-Outlook station got a sheet without Outlook in it. Franz moved MAPI first, gated
+/// on the probe, so a station without a MAPI client (new Outlook, most others) is unaffected.
 ///
 /// Each route is injectable so the chain can be tested without a window, a mail client or the
 /// shell, the way <c>IScanService</c> keeps hardware out of the suite. The defaults are the real
@@ -35,6 +40,14 @@ public sealed class WindowsShareService(
         // and naming who a message is for is an ordinary thing to type into it.
         Log.Information("Sharing {Count} file(s)", request.FilePaths.Count);
 
+        // The probe only reads the registry; MAPI itself is never called on a station without a
+        // registered client (AC-7).
+        if (Try(_mapiAvailable, "the MAPI probe") && Try(() => _mapi(request), "Simple MAPI"))
+        {
+            Log.Information("Shared {Count} file(s) via Simple MAPI", request.FilePaths.Count);
+            return new ShareOutcome(ShareRoute.Mapi, "A new message is open in your mail app.");
+        }
+
         if (Try(() => _shareSheet(request), "the Windows Share sheet"))
         {
             Log.Information("Shared {Count} file(s) via the Share sheet", request.FilePaths.Count);
@@ -43,12 +56,6 @@ public sealed class WindowsShareService(
             // and may close it without choosing anything.
             return new ShareOutcome(
                 ShareRoute.ShareSheet, "The Windows Share sheet is open — choose your mail app there.");
-        }
-
-        if (Try(_mapiAvailable, "the MAPI probe") && Try(() => _mapi(request), "Simple MAPI"))
-        {
-            Log.Information("Shared {Count} file(s) via Simple MAPI", request.FilePaths.Count);
-            return new ShareOutcome(ShareRoute.Mapi, "A new message is open in your mail app.");
         }
 
         // Neither mail route worked. The pages exist and the operator is told where, in a sentence
