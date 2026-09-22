@@ -170,6 +170,51 @@ full-size viewer (double-click the preview). 100% is the page at its actual pape
 keeps fitting as you resize the panel until you zoom with + or −; press Fit to go back. On a small
 screen every section and dialog scrolls, and dialog buttons always stay visible.
 
+## Emailing pages
+
+**FG Scanner never sends anything itself.** It puts the pages into a message in your own mail
+app, and you press Send there, from your own account. Nothing is sent until you do.
+
+**From the Scan page.** **Email…** sends every page on the page, in the order they are shown. The
+button turns on once there is a page to send. While a message is being prepared, **Save to group**
+and **Delete** wait, because they would move or remove the files it is reading.
+
+**From a group.** **Email…** on the toolbar sends the rows you have selected (Ctrl/Shift for
+several), in page order. **With nothing selected it sends the whole group.** One selected row
+sends that one page. (Export works differently: it treats a single selected row as the whole
+group. Email does not, so choosing one page never sends sixty.)
+
+**The dialog.** It says how many pages will go and asks two things:
+
+- **Subject** — starts as the group's name. It also names the attachment file.
+- **Attach as** — **One PDF** (one file, opens anywhere) or **Separate images** (the page files
+  exactly as scanned, one attachment per page). Your choice is remembered for next time.
+
+Press **Continue** to go on, or **Cancel** to stop, and nothing leaves the app.
+
+**The first time you email from a committed evidence group**, the dialog also says *"This group is
+a committed evidence record"*: what you send is a copy, it leaves the folder whose index, checksums
+and originals are what make it evidence, and the folder itself is not changed. Tick **"I understand
+— don't show this again"** and it will not come back. It never stops you sending.
+
+**What happens next depends on the mail app installed**, and the line under the buttons says
+which:
+
+| You see | What it means |
+|---|---|
+| *"3 pages attached. Your mail app reports the message as sent."* | Your mail app (classic Outlook, for example) opened a new message with the pages attached, and you sent it. |
+| *"You closed the message without sending it — nothing left the app."* | The same, but you closed the message instead of sending it. |
+| *"3 pages attached. The Windows Share sheet is open — choose your mail app there."* | Windows' Share panel is open with the pages in it. Pick your mail app — new Outlook, for example — and send from there. Closing the panel sends nothing. |
+| *"3 pages were made into one PDF. No mail app was found. The attachment is in C:\…\ — attach it to your message yourself. It stays there until FG Scanner closes."* | No mail app could be reached. An Explorer window opens with the file selected: start a message yourself and attach it. **Attach it before closing FG Scanner** — closing the app removes it. |
+| *"Attached to a message these are about 28 MB. Mail servers often refuse anything over 20 MB, so this may bounce — send fewer pages at a time."* | Shown after the message opens. It may still go through; the limit is the recipient's server. |
+| *"The page scan_00007.jpg is no longer on disk, so nothing was attached."* | A page's file is missing. Nothing is sent rather than a message one page short. Use **Reconcile** on the group to find out what happened. |
+| *"The attachment could not be built, so nothing left the app. (…)"* | Something stopped the attachment being made — a damaged page file, or a full disk. The reason is in brackets. |
+
+**What is kept.** Each send is written to the log (`%LOCALAPPDATA%\FGScanner\logs`) with where it
+came from, how many pages, the format and the route. The log never records who you sent it to, or
+the subject. The attachment copies are temporary: they are deleted when FG Scanner closes, or the
+next time it starts if it closed unexpectedly.
+
 ## OCR
 
 "OCR pages" recognizes text (English out of the box; add languages in

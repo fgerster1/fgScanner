@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Approved |
-| **Revision** | B |
+| **Revision** | C — amended 2026-09-22 after the code review; see the notes marked **Amended** |
 | **Tier** | Feature |
 | **Author** | Claude, for Franz Gerster |
 | **Date** | 2026-09-20 |
@@ -52,10 +52,12 @@
 - The route order already decided on 2026-09-13: Windows Share sheet first; Simple MAPI
   only where a MAPI client is genuinely present; otherwise open the containing folder with
   the file selected and say so plainly.
+  > **Amended 2026-09-22 (Franz):** MAPI comes **first** when the probe finds a client — see §08.
 - **A one-time warning** before the first send from a committed group on an evidence
   profile, saying the copy leaves the folder whose checksums are its integrity (§05 Q2b).
   Dismissed with "don't show again", stored in `Settings`; every send is logged either way.
 - Attachments produced by the existing export services — a PDF, or one or more images.
+  > **Amended 2026-09-22 (Franz):** images are the page files copied byte for byte — see §07.
 - A spike, before any of it, proving the target-framework change is safe.
 
 **Non-goals**
@@ -198,6 +200,18 @@ Documented as a doc comment where it is read.
 Attachments themselves are temporary files, not records: written under the system temp
 path in a per-send folder, and not registered in the database.
 
+> **Amended 2026-09-22 (Franz), after code review finding #8.** "Separate images" attaches **the
+> page files themselves, copied byte for byte**, each keeping its own extension
+> (`<subject>_001.jpg`…), rather than running them through `ImageExportService`. That exporter's
+> default re-encoded the scanner's JPEGs as PNG — on real station scans the median page went from
+> 1.04 MB to 3.38 MB, against 1.02 MB inside a PDF — and the size warning then advised switching
+> to images. A byte-for-byte copy is also the better thing to send from an evidence record: its
+> checksum is the one `index.json` holds. The PDF still comes from `PdfExportService`, as §08 says.
+>
+> The temp folders are removed **all of them, at startup as well as exit** (finding #10): a crash
+> never reached exit, and the per-session list forgot any folder whose delete failed. Safe because
+> the app is single-instance.
+
 ## 08 · Architecture and approach
 
 **A service in Core behind an interface, routes in App.** `IShareService` with one
@@ -208,6 +222,15 @@ same shape `IScanService` uses for hardware (CLAUDE.md: hardware access only thr
 interface; the same reasoning applies to shell UI).
 
 **Route order, exactly as decided:**
+
+> **Amended 2026-09-22 (Franz), after code review finding #11.** The order is now **MAPI first when
+> the probe finds a client, then the Share sheet, then Explorer.** With the Share sheet working it
+> opened on every Windows 10 and 11 machine, so route 2 was unreachable — and classic Outlook is
+> not a share target, so a classic-Outlook station got a sheet without Outlook in it. A station
+> with no MAPI client (new Outlook; this station) is unaffected. Route 1 is also no longer the
+> hand-declared `IDataTransferManagerInterop`, which could never work (finding #1): it uses the SDK
+> projection's `DataTransferManagerInterop`, parented to the main window on the UI thread
+> (finding #2). ADR-0012 records the whole decision.
 
 1. **Windows Share sheet** — `DataTransferManager` via `IDataTransferManagerInterop.GetForWindow`,
    which is supported for unpackaged WPF. Real file attachments, and new Outlook is a
@@ -354,13 +377,16 @@ no test touches the real registry. Existing in-memory fixtures for groups and ro
 | Case | Expected behaviour | Where handled |
 |---|---|---|
 | No pages in the session | Email disabled, with the reason | `CanExecute` |
-| Group with zero rows | Email disabled | `CanExecute` |
+| Group with zero rows | *"There are no pages to email."* — the Groups button has no `CanExecute`, like the export buttons beside it, because one tied to rows went stale when rows refilled *(amended 2026-09-22, finding #3)* | command |
 | A page file missing from disk | Named message identifying the page; nothing sent | attachment build |
 | Share sheet dismissed without sending | Nothing sent, no error, temp files cleaned | route 1 result |
+| MAPI draft closed without sending | *"You closed the message without sending it — nothing left the app."*; the Share sheet is not tried next *(added 2026-09-22)* | route 2 result |
 | Mail client not installed at all | Route 3, plain sentence | AC-6 |
 | Very large selection (200 pages) | A warning above a threshold, since mail servers reject large attachments; operator may continue | §15 |
 | PDF export fails mid-build | The export error surfaces; nothing is shared | existing export error path |
-| Temp folder not writable | Named message; no crash | attachment build |
+| Temp folder not writable | Named message; no crash | attachment build — every failure on the send path is caught in `EmailSender` *(finding #4)* |
+| Save or Delete pressed mid-build on the Scan page | Held for the length of the send, including the save a batch scan makes directly *(finding #5)* | `ScanViewModel._sending` |
+| A background OCR/AI reload mid-selection | The selection survives the reload, so "no selection = whole group" cannot trigger by accident *(finding #6)* | `GroupDetailViewModel.RestoreSelection` |
 | Send pressed twice quickly | Second press is ignored while the first is building | `CanExecute` guard |
 | Sending during an annotated sheet or a duplex sequence | Allowed — sending copies, it does not move or alter pages | — |
 
@@ -401,6 +427,10 @@ moves case material **out** of the app.
   fallback used.
 - **Surfaced to the operator**: the status line names the route in plain words — "opened
   in your mail app", or "no mail app found — the scan is in this folder".
+  > **Amended 2026-09-22.** "Opened in your mail app" was not true of the Share sheet, and the
+  > fallback said "attached" and counted files as pages (finding #9). The wording that shipped is
+  > in `docs/user-guide.md` → "Emailing pages". The subject is **not** logged either (finding #12):
+  > it is free text, and a recipient named in it would otherwise sit in the 14-day log.
 - **A silent failure** would be a Send that quietly attaches nothing. What makes it
   non-silent: the attachment count is logged and shown before the route is invoked, and
   AC-5's fake proves the service never claims to have sent.
@@ -417,6 +447,9 @@ Attachment size is the real limit, and it is external: most mail servers reject 
 about 25 MB, and a 300 DPI colour page is roughly 2 MB. So the practical ceiling is around
 a dozen images or a compressed PDF of a few dozen pages. Warn above 20 MB rather than
 fail; the operator decides. Revisit if anyone routinely sends whole boxes.
+
+> **Amended 2026-09-22.** The 20 MB is measured on the **message**, not the files: attachments
+> travel base64-encoded, a third larger, so the warning now starts at about 15 MB of files.
 
 ## 16 · Regression risk
 
@@ -487,13 +520,24 @@ fail; the operator decides. Revisit if anyone routinely sends whole boxes.
 
 ## 21 · Definition of done
 
-- [ ] All acceptance criteria met
-- [ ] Failing tests written first, now passing
-- [ ] Full suite green (≥ 692)
-- [ ] `/code-review max` run, findings resolved or accepted in writing
-- [ ] Security review run against §13 — P/Invoke surface, data exposure, the new TFM
-- [ ] Documentation updated per §18, including the SPEC-003 amendment
-- [ ] Spike checklist recorded (AC-8)
+- [ ] All acceptance criteria met — **AC-2..AC-11 are proven by tests** (AC-8 by the spike);
+      **AC-1's manual half is open**: the Share sheet opened with the session's PDF attached on
+      2026-09-22 but was dismissed, so no send has yet reached a mail app. See `docs/manual-tests.md`
+      → SPEC-2026-007.
+- [x] Failing tests written first, now passing — each watched red before its fix, including every
+      code-review fix.
+- [x] Full suite green (≥ 692) — **849 of 849**, `dotnet test -c Release`, 2026-09-22.
+- [x] `/code-review max` run, findings resolved or accepted in writing — 2026-09-22, 15 findings
+      and 4 smaller ones, **all fixed** (commits `156e2f8` … `24b334e`). Two review claims were
+      corrected on the evidence: #7's "no warning on Jim's station" (all 18 of his groups are on the
+      profile named "Evidence"; the fix stands for renamed and imported profiles), and #11's route
+      order, which Franz changed rather than kept.
+- [ ] Security review run against §13 — **not run as a separate pass.** The code review covered
+      part of it: the P/Invoke calls (the interop defect, #1), data exposure (temp copies, #10; the
+      subject in the log, #12) and the new TFM (the lost analyzer floor, #15). A dedicated
+      security review has not been done.
+- [x] Documentation updated per §18, including the SPEC-003 amendment — 2026-09-22.
+- [x] Spike checklist recorded (AC-8) — §22 below.
 - [ ] Rollback tested or explicitly waived by Franz
 
 ## 22 · Sign-off
@@ -502,7 +546,7 @@ fail; the operator decides. Revisit if anyone routinely sends whole boxes.
 |---|---|
 | **Review round answered** | ☑ 2026-09-20 — [Round A, part 3 of 3](https://claude.ai/artifact/XkzFVnPicnfjNrc4C1ZwPV) · db doc `review/SPEC-2026-007-rA-p3`, with Q2 corrected to (b) in the terminal |
 | **Franz approved** | ☑ 2026-09-20 (verdict `approve`) |
-| **Built** | ☐ date: |
+| **Built** | ☑ 2026-09-22 — branch `phase-26-email`, 16 commits from `979d641` (the spike) to `24b334e`, then the documentation; not yet merged to `main`, no release cut |
 | **Verified in production** | ☐ date: |
 
 ### Phase 1 spike — result: **GO**, 2026-09-21

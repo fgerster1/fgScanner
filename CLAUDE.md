@@ -124,6 +124,14 @@ the JimsStuff portal (`JimsStuff/pipeline/import_fgscanner.py`) parses committed
   back of an evidence page is evidence that the back is blank, and a page removed shifts every
   pairing after it. That suppression belongs to the pages and lasts exactly as long as they are
   staged: it must survive a save that could not take every page, and must not outlive them.
+- **Pages can leave the station by email** (SPEC-2026-007, ADR-0012), from the Scan page and from
+  a group. `IShareService` opens a message and has no way to send — the operator presses Send in
+  their own client; never add a send path, SMTP or a stored credential. What leaves is a copy built
+  under `%TEMP%\FGScanner\email` (never in the group folder), swept at startup and exit. **Each send
+  is logged with surface, page count, format and route — never a recipient and never the subject.**
+  The first send from a committed evidence group shows a one-time warning inside the dialog;
+  "evidence" is recognised by the contract's required fields, never by the profile's name. Routes:
+  MAPI when the registry probe finds a client, then the Share sheet, then Explorer.
 - `Feature.PreserveOriginals` stays ON for evidence groups (ADR-0003); the `originals\`
   subfolder and its checksums are part of the folder's evidentiary integrity.
 - **A field's length and memo flag are layout and validation settings, never part of the export

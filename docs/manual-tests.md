@@ -509,3 +509,60 @@ station is a different machine, so a row passed on one proves nothing about the 
 - [ ] A real feeder failure — a jam or a double feed part-way through a pass — and what the Scan
       page says. Only three NAPS2 exceptions are translated into plain words; a jam is not yet one
       of them, so it currently reads "Scan failed: …".
+
+## SPEC-2026-007 — email (phase 26)
+
+**Which route a station gets depends on what is installed on it**, so a send proves nothing about
+a different kind of station. Name the station and its mail app on every row. The dev station has
+**new Outlook only and no MAPI client** (all three probe values empty, checked 2026-09-22), so it
+gets the Share sheet; a classic-Outlook station gets MAPI first; a station with neither gets Explorer.
+
+**Phase 1 spike (AC-8)** — performed 2026-09-21, recorded in full in the spec's §22:
+
+- [x] `dotnet build -c Release` green after the target-framework change — 0 warnings, 0 errors.
+- [x] `dotnet test -c Release` green — 793 of 793, unchanged.
+- [x] `dotnet publish -p:PublishProfile=win-x64` still non-single-file and non-trimmed — nine
+      NAPS2 assemblies separate, 329 DLLs, `FgScanner.exe` 0.16 MB.
+- [x] Installer built, installed and run — `fgscanner-0.5.1-win-x64.exe`, exit 0, 94.8 → 104.1 MB,
+      the installed copy scanned on the fake scanner.
+
+**The four sends:**
+
+- [~] **A session as PDF.** 2026-09-22, dev station, `--fake-scanner`, active group "Defamation
+      Folder": Email… → Continue opened the **Windows Share sheet** reading *"You are sharing
+      Defamation Folder. 1 scanned page(s) from FG Scanner"* with `Defamation Folder.pdf` (3.5 KB)
+      attached and Outlook for Windows among the targets; status *"1 page attached. Opened in your
+      mail app."* (both since corrected: the sheet no longer counts files as pages, and the status no longer claims a message opened). The log read `Email: 1 page(s) from this scan as
+      "Pdf" via "ShareSheet"`. **The sheet was dismissed with Escape — no target was chosen and
+      nothing was sent**, so the rest of the row is open: pick Outlook, send to yourself, open the
+      PDF.
+- [ ] **Three selected pages as images** from a group: exactly those three arrive, in page order,
+      as the original files — compare one attachment's SHA-256 with that page's `checksum` in the
+      group's `index.json`.
+- [ ] **New Outlook receives the attachments** through the Share sheet: pick Outlook, and the draft
+      has the file attached (not an empty message).
+- [ ] **The forced fallback**: on a station with no mail app, or with the Share sheet unavailable,
+      the status reads *"… No mail app was found. The attachment is in … — attach it to your
+      message yourself. It stays there until FG Scanner closes."* and Explorer opens with the file
+      selected.
+
+**Added by the code review (2026-09-22):**
+
+- [ ] **Classic Outlook gets its own draft first** — on a station where the probe finds a MAPI
+      client: the Outlook compose window opens over FG Scanner, not the Share sheet. Send it: the
+      status reads *"… Your mail app reports the message as sent."* Repeat and close the draft
+      instead: *"You closed the message without sending it — nothing left the app."*, and no Share
+      sheet follows. **Never seen on hardware** — the dev station has no MAPI client.
+- [~] **A comma in the path.** 2026-09-22, dev station, on the shell directly rather than through
+      the app: for a file `…\comma-test\Smith,John.pdf`, the old argument form opened the Desktop
+      with Documents selected; the new always-quoted form opened `comma-test` with
+      `Smith,John.pdf` selected. Still to do through the app: a subject "Smith,John" on the
+      fallback, and "Open containing folder" on a group whose folder name holds a comma.
+- [ ] **The evidence warning** on a committed group on the Evidence profile: shown on the first
+      send; tick "don't show this again" and press **Cancel** — the next send does not show it.
+- [ ] **A crash leaves nothing behind**: send once, end FG Scanner from Task Manager, relaunch —
+      `%TEMP%\FGScanner\email` is empty after startup. (Seen once 2026-09-22 on a harness-killed
+      session: 17 folders before launch, 0 after.)
+
+**Known and not fixed here:** at the 800×560 minimum window the Scan page's Email… button, like
+**Scan** itself and every Groups toolbar button, is below the fold (§16 R7, app-wide).
