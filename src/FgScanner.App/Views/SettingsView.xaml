@@ -200,6 +200,16 @@
                 <TextBlock Text="Applies when you save." VerticalAlignment="Center" Opacity="0.7" Margin="8,0,0,0" />
             </WrapPanel>
 
+            <TextBlock Text="Email" FontWeight="SemiBold" Margin="0,0,0,4" />
+            <WrapPanel Margin="0,0,0,4">
+                <TextBlock Text="Send email with" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <ComboBox Width="220" ItemsSource="{Binding SendWithChoices}"
+                          SelectedValuePath="Value" SelectedValue="{Binding SendWith}"
+                          DisplayMemberPath="Label" AutomationProperties.Name="Send email with" />
+            </WrapPanel>
+            <TextBlock Opacity="0.6" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"
+                       Text="A mail program on this PC gets the pages attached for you. Gmail and Yahoo Mail open a new message in your browser with the file selected in Explorer beside it — drag it into the message. Saved with the button below." />
+
             <TextBlock Text="Trash" FontWeight="SemiBold" Margin="0,0,0,4" />
             <WrapPanel Margin="0,0,0,12">
                 <TextBlock Text="Keep deleted pages for" VerticalAlignment="Center" Margin="0,0,6,0" />

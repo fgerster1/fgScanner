@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO;
 using FgScanner.Core.Naming;
+using FgScanner.Core.Sharing;
 using FgScanner.Scanning.Export;
 using Serilog;
 
@@ -28,6 +29,28 @@ public static class EmailSettings
     /// that appears on every send is a warning nobody reads — and this one is worth reading.
     /// </summary>
     public const string EvidenceWarningSeenKey = "Email.EvidenceWarningSeen";
+
+    /// <summary>
+    /// How this station sends mail: a mail program on the PC, or Gmail or Yahoo Mail in the
+    /// browser. Chosen in Settings, never detected — nothing on Windows says where someone reads
+    /// their mail. Read fresh per send, and an unknown value is the mail-program path, which is
+    /// what every station did before the choice existed.
+    /// </summary>
+    public const string SendWithKey = "Email.SendWith";
+
+    public static async Task<MailPath> ReadSendWithAsync(
+        FgScanner.Data.AppSettingsService settings, CancellationToken cancellationToken = default)
+    {
+        var stored = await settings.GetAsync(SendWithKey, nameof(MailPath.MailApp), cancellationToken)
+            .ConfigureAwait(false);
+        return Enum.TryParse<MailPath>(stored, ignoreCase: true, out var value) && Enum.IsDefined(value)
+            ? value
+            : MailPath.MailApp;
+    }
+
+    public static Task WriteSendWithAsync(
+        FgScanner.Data.AppSettingsService settings, MailPath value, CancellationToken cancellationToken = default) =>
+        settings.SetAsync(SendWithKey, value.ToString(), cancellationToken);
 
     public static async Task<bool> WarningSeenAsync(
         FgScanner.Data.AppSettingsService settings, CancellationToken cancellationToken = default) =>

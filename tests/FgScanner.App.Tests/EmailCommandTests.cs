@@ -1291,6 +1291,139 @@ public sealed class EmailCommandTests : IDisposable
         Assert.Contains("about 25 MB", AttachmentBuilder.SizeWarning(19L * 1024 * 1024), StringComparison.Ordinal);
     }
 
+    // ---- webmail: Franz sends from Gmail, Jim from Yahoo (2026-09-22) ----
+
+    private static WindowsShareService WebmailStation(List<string> order, bool browser = true, bool explorer = true) => new(
+        shareSheet: _ => { order.Add("sheet"); return true; },
+        mapi: _ => { order.Add("mapi"); return MapiDraft.Sent; },
+        mapiAvailable: () => true,
+        revealInExplorer: p => { order.Add("explorer:" + Path.GetFileName(p)); return explorer; },
+        openInBrowser: url => { order.Add("browser:" + url); return browser; });
+
+    /// <summary>
+    /// No Windows mechanism can hand a file to a mail service running in a browser: it is neither
+    /// a MAPI client nor a share target, and mailto: cannot carry an attachment. So on a station
+    /// set to Gmail the compose page opens in the browser, Explorer opens beside it with the file
+    /// selected, and the operator drags it in — one drag, which is the best there is. The mail-app
+    /// routes are never tried: on Franz's PC the Share sheet opened every time and Gmail was never
+    /// in it.
+    /// </summary>
+    [Fact]
+    public void Gmail_opens_a_compose_page_beside_the_file_and_never_tries_the_mail_app_routes()
+    {
+        var order = new List<string>();
+
+        var outcome = WebmailStation(order).Open(
+            new ShareRequest([MakePage("farm.png")], "Farm Folder", MailPath.Gmail));
+
+        Assert.Equal(ShareRoute.Webmail, outcome.Route);
+        Assert.Equal(
+            ["browser:https://mail.google.com/mail/?view=cm&fs=1&su=Farm%20Folder", "explorer:farm.png"],
+            order);
+        Assert.Contains("Gmail", outcome.Message, StringComparison.Ordinal);
+        Assert.Contains("drag", outcome.Message, StringComparison.Ordinal);
+        Assert.Contains("until FG Scanner closes", outcome.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Yahoo documents no compose link; this is the widely used form, to be checked on Jim's station.</summary>
+    [Fact]
+    public void Yahoo_opens_its_own_compose_page()
+    {
+        Assert.Equal(
+            "https://compose.mail.yahoo.com/?subject=Farm%20Folder",
+            WebmailCompose.Url(MailPath.Yahoo, "Farm Folder"));
+    }
+
+    /// <summary>
+    /// The subject is free text and lands in a URL. Unescaped, "&amp;" would end the parameter and
+    /// the rest of the subject would become parameters of its own.
+    /// </summary>
+    [Fact]
+    public void The_subject_is_escaped_in_the_compose_link()
+    {
+        Assert.Equal(
+            "https://mail.google.com/mail/?view=cm&fs=1&su=Smith%20%26%20Jones%2C%20box%204%3F",
+            WebmailCompose.Url(MailPath.Gmail, "Smith & Jones, box 4?"));
+    }
+
+    [Fact]
+    public void A_browser_that_will_not_open_still_leaves_the_file_in_front_of_the_operator()
+    {
+        var order = new List<string>();
+
+        var outcome = WebmailStation(order, browser: false).Open(
+            new ShareRequest([MakePage("farm.png")], "Farm Folder", MailPath.Gmail));
+
+        Assert.Equal(ShareRoute.Explorer, outcome.Route);
+        Assert.Contains("explorer:farm.png", order);
+        Assert.Contains("Gmail could not be opened", outcome.Message, StringComparison.Ordinal);
+        Assert.Contains(_root, outcome.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Several images: Explorer can select only one file, so the sentence says where they all are.</summary>
+    [Fact]
+    public void Several_images_for_webmail_are_named_as_several()
+    {
+        var order = new List<string>();
+
+        var outcome = WebmailStation(order).Open(
+            new ShareRequest([MakePage("a.png"), MakePage("b.png"), MakePage("c.png")], "Farm Folder", MailPath.Yahoo));
+
+        Assert.Contains("Yahoo Mail", outcome.Message, StringComparison.Ordinal);
+        Assert.Contains("3 files", outcome.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Read per send (ADR-0010), and an unknown stored value is the mail-app path, never an error.</summary>
+    [Fact]
+    public async Task The_send_with_setting_is_read_fresh_and_falls_back_to_a_mail_app()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var settings = Settings();
+
+        Assert.Equal(MailPath.MailApp, await EmailSettings.ReadSendWithAsync(settings, ct));
+
+        await EmailSettings.WriteSendWithAsync(settings, MailPath.Gmail, ct);
+        Assert.Equal(MailPath.Gmail, await EmailSettings.ReadSendWithAsync(settings, ct));
+
+        await settings.SetAsync(EmailSettings.SendWithKey, "Hotmail", ct);
+        Assert.Equal(MailPath.MailApp, await EmailSettings.ReadSendWithAsync(settings, ct));
+    }
+
+    [Fact]
+    public async Task The_sender_hands_on_the_stations_choice()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var settings = Settings();
+        await EmailSettings.WriteSendWithAsync(settings, MailPath.Yahoo, ct);
+        var share = new FakeShareService(ShareRoute.Webmail);
+        var sender = new EmailSender(Builder(), share, settings)
+        {
+            Ask = (_, _, subject, format, _) => EmailChoice.Go(format, subject),
+        };
+
+        await sender.SendAsync([MakePage("via.png")], "Farm Folder", "this scan", cancellationToken: ct);
+
+        Assert.Equal(MailPath.Yahoo, Assert.Single(share.Opened).Via);
+    }
+
+    /// <summary>
+    /// The Share sheet opened and the status said only "choose your mail app there" — so on a
+    /// station whose mail is in a browser, closing the sheet stranded the operator with no idea
+    /// where the file was. It now says, whichever station it is.
+    /// </summary>
+    [Fact]
+    public void The_share_sheet_also_says_where_the_file_is()
+    {
+        var service = new WindowsShareService(
+            shareSheet: _ => true, mapi: _ => MapiDraft.Failed, mapiAvailable: () => false, revealInExplorer: _ => true);
+
+        var outcome = service.Open(Request());
+
+        Assert.Equal(ShareRoute.ShareSheet, outcome.Route);
+        Assert.Contains(_root, outcome.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("until FG Scanner closes", outcome.Message, StringComparison.Ordinal);
+    }
+
     private string MakeJpeg(string name)
     {
         var path = Path.Combine(_root, name);

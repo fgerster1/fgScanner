@@ -24,7 +24,8 @@ public sealed class WindowsShareService(
     Func<ShareRequest, bool>? shareSheet = null,
     Func<ShareRequest, MapiDraft>? mapi = null,
     Func<bool>? mapiAvailable = null,
-    Func<string, bool>? revealInExplorer = null) : IShareService
+    Func<string, bool>? revealInExplorer = null,
+    Func<string, bool>? openInBrowser = null) : IShareService
 {
     private readonly Func<ShareRequest, bool> _shareSheet = shareSheet ?? ShareSheetRoute.TryOpen;
     private readonly Func<ShareRequest, MapiDraft> _mapi = mapi ?? SimpleMapiRoute.TryOpen;
@@ -32,6 +33,7 @@ public sealed class WindowsShareService(
         mapiAvailable ?? (() => new MapiProbe(new WindowsRegistryReader()).IsAvailable());
 
     private readonly Func<string, bool> _revealInExplorer = revealInExplorer ?? ExplorerSelect.Reveal;
+    private readonly Func<string, bool> _openInBrowser = openInBrowser ?? OpenInBrowser;
 
     public ShareOutcome Open(ShareRequest request)
     {
@@ -39,6 +41,13 @@ public sealed class WindowsShareService(
         // a record of what was asked for (§14). Never the subject: it is the operator's free text,
         // and naming who a message is for is an ordinary thing to type into it.
         Log.Information("Sharing {Count} file(s)", request.FilePaths.Count);
+
+        // A station whose mail is in a browser never tries the mail-app routes: the Share sheet
+        // opens on every Windows machine, so it would always "work", and Gmail is never in it.
+        if (request.Via != MailPath.MailApp)
+        {
+            return OpenWebmail(request);
+        }
 
         // The probe only reads the registry; MAPI itself is never called on a station without a
         // registered client (AC-7).
@@ -70,19 +79,19 @@ public sealed class WindowsShareService(
 
             // The sheet opening is not a message opening: the operator still picks where it goes,
             // and may close it without choosing anything.
+            // Where the file is, too: the sheet lists installed apps only, so an operator whose
+            // mail is in a browser closes it and would otherwise have no idea where to look.
+            var (sheetFolder, sheetCount, _) = Location(request);
             return new ShareOutcome(
-                ShareRoute.ShareSheet, "The Windows Share sheet is open — choose your mail app there.");
+                ShareRoute.ShareSheet,
+                "The Windows Share sheet is open — choose your mail app there. "
+                    + $"{sheetCount} in {sheetFolder} as well, if your mail is in a browser. {StaysUntilClose}");
         }
 
         // Neither mail route worked. The pages exist and the operator is told where, in a sentence
         // — a raw code here would send them looking for a fault in FG Scanner instead of attaching
         // the file (§14, AC-6).
-        var folder = Path.GetDirectoryName(request.FilePaths.Count > 0 ? request.FilePaths[0] : "") ?? "";
-        // Files, never pages: this layer is handed attachments, and one PDF can hold sixty pages.
-        // Counting them as pages is how "20 pages attached … The 1 page is in" reached the screen.
-        var (count, pronoun) = request.FilePaths.Count == 1
-            ? ("The attachment is", "it")
-            : ($"The {request.FilePaths.Count} attachments are", "them");
+        var (folder, count, pronoun) = Location(request);
         Log.Warning("No mail route was available; falling back to Explorer for {Folder}", folder);
 
         if (request.FilePaths.Count > 0 && Try(() => _revealInExplorer(request.FilePaths[0]), "Explorer"))
@@ -97,6 +106,74 @@ public sealed class WindowsShareService(
             ShareRoute.None,
             $"No mail app was found, and the folder could not be opened. {count} in {folder} — "
                 + $"attach {pronoun} to your message yourself. " + StaysUntilClose);
+    }
+
+    /// <summary>
+    /// Gmail or Yahoo Mail: a new message in the browser with the subject filled in, and Explorer
+    /// beside it with the file selected, to be dragged in. That drag is the one step no desktop app
+    /// can take for a webmail service. Either half failing still leaves the operator told where
+    /// the file is.
+    /// </summary>
+    private ShareOutcome OpenWebmail(ShareRequest request)
+    {
+        var name = WebmailCompose.Name(request.Via);
+        var (folder, count, pronoun) = Location(request);
+        var browser = Try(() => _openInBrowser(WebmailCompose.Url(request.Via, request.Subject)), name);
+        var shown = request.FilePaths.Count > 0 && Try(() => _revealInExplorer(request.FilePaths[0]), "Explorer");
+        Log.Information(
+            "Webmail: {Service} compose opened {Browser}, Explorer opened {Explorer}, {Count} file(s)",
+            name, browser, shown, request.FilePaths.Count);
+
+        if (browser && shown)
+        {
+            // Explorer can select one file only, so several are named as being in the window.
+            var drag = request.FilePaths.Count == 1
+                ? "the file is selected in the Explorer window beside it — drag it into the message."
+                : $"the {request.FilePaths.Count} files are in the Explorer window beside it — select them all "
+                    + "and drag them into the message.";
+            return new ShareOutcome(
+                ShareRoute.Webmail, $"A new {name} message is open in your browser, and {drag} {StaysUntilClose}");
+        }
+
+        if (browser)
+        {
+            return new ShareOutcome(
+                ShareRoute.Webmail,
+                $"A new {name} message is open in your browser. {count} in {folder} — attach {pronoun} to "
+                    + $"the message. {StaysUntilClose}");
+        }
+
+        if (shown)
+        {
+            return new ShareOutcome(
+                ShareRoute.Explorer,
+                $"{name} could not be opened in your browser. {count} in {folder}, in the Explorer window "
+                    + $"that opened — start a new {name} message and drag {pronoun} in. {StaysUntilClose}");
+        }
+
+        return new ShareOutcome(
+            ShareRoute.None,
+            $"{name} could not be opened, and neither could the folder. {count} in {folder} — attach "
+                + $"{pronoun} to a new message yourself. {StaysUntilClose}");
+    }
+
+    /// <summary>
+    /// Files, never pages: this layer is handed attachments, and one PDF can hold sixty pages.
+    /// Counting them as pages is how "20 pages attached … The 1 page is in" reached the screen.
+    /// </summary>
+    private static (string Folder, string Count, string Pronoun) Location(ShareRequest request)
+    {
+        var folder = Path.GetDirectoryName(request.FilePaths.Count > 0 ? request.FilePaths[0] : "") ?? "";
+        return request.FilePaths.Count == 1
+            ? (folder, "The attachment is", "it")
+            : (folder, $"The {request.FilePaths.Count} attachments are", "them");
+    }
+
+    private static bool OpenInBrowser(string url)
+    {
+        // The default browser, through the shell — the same way the separator-sheet PDF opens.
+        using var started = Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        return true;
     }
 
     /// <summary>

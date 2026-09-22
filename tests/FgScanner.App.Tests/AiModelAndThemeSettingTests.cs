@@ -96,6 +96,30 @@ public sealed class AiModelAndThemeSettingTests : IDisposable
         Assert.Equal("dark", await _appSettings.GetAsync(ThemeSetting.Key, "system", Ct));
     }
 
+    /// <summary>How this station sends mail — Gmail on Franz's, Yahoo on Jim's (SPEC-2026-007, amended 2026-09-22).</summary>
+    [Fact]
+    public async Task The_send_with_choice_is_stored_by_the_Save_button()
+    {
+        var settings = await SettingsWithAProfileAsync();
+
+        settings.SendWith = FgScanner.Core.Sharing.MailPath.Gmail;
+        await settings.SaveCommand.ExecuteAsync(null);
+
+        Assert.Equal(FgScanner.Core.Sharing.MailPath.Gmail, await EmailSettings.ReadSendWithAsync(_appSettings, Ct));
+    }
+
+    [Fact]
+    public async Task The_stored_send_with_choice_is_shown_when_Settings_opens()
+    {
+        await EmailSettings.WriteSendWithAsync(_appSettings, FgScanner.Core.Sharing.MailPath.Yahoo, Ct);
+        await _appSettings.SetAsync(EmailSettings.SendWithKey, "Yahoo", Ct);
+
+        var settings = CreateSettings();
+        await settings.LoadSendWithAsync();
+
+        Assert.Equal(FgScanner.Core.Sharing.MailPath.Yahoo, settings.SendWith);
+    }
+
     [Fact]
     public async Task The_stored_theme_is_shown_when_Settings_opens()
     {

@@ -14,13 +14,34 @@ public enum ShareRoute
 
     /// <summary>Explorer, with the first file selected, and a sentence asking the operator to attach it.</summary>
     Explorer,
+
+    /// <summary>
+    /// A webmail compose page in the browser, beside Explorer with the file selected. Added
+    /// 2026-09-22: Franz sends from Gmail and Jim from Yahoo, and neither can be reached by MAPI
+    /// or the Share sheet.
+    /// </summary>
+    Webmail,
+}
+
+/// <summary>
+/// How this station sends mail — stored as <c>Email.SendWith</c>. A webmail service cannot be
+/// handed a file by any Windows mechanism, so it is chosen rather than detected.
+/// </summary>
+public enum MailPath
+{
+    /// <summary>A mail program on this PC: MAPI when probed, then the Share sheet, then Explorer.</summary>
+    MailApp,
+
+    Gmail,
+
+    Yahoo,
 }
 
 /// <summary>
 /// Files to put in front of the operator's mail path, and the subject to suggest. The paths come
 /// from the database and the session, never from anything typed (§13).
 /// </summary>
-public sealed record ShareRequest(IReadOnlyList<string> FilePaths, string Subject);
+public sealed record ShareRequest(IReadOnlyList<string> FilePaths, string Subject, MailPath Via = MailPath.MailApp);
 
 /// <summary>
 /// What happened, and the sentence to show. Never an error code (AC-6). <paramref name="Declined"/>
