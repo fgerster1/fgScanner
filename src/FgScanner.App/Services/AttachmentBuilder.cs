@@ -202,15 +202,19 @@ public sealed class AttachmentBuilder(
     /// </summary>
     public static string SizeWarning(long bytes)
     {
-        if (bytes <= WarnAboveBytes)
+        // The server's limit applies to the message, and attachments travel base64-encoded: four
+        // bytes for every three. Measured on the files alone, a 19 MB PDF — a 25 MB message — was
+        // never warned about.
+        var encoded = bytes * 4 / 3;
+        if (encoded <= WarnAboveBytes)
         {
             return "";
         }
 
-        var mb = (bytes / (1024.0 * 1024.0)).ToString("0", CultureInfo.InvariantCulture);
+        var mb = (encoded / (1024.0 * 1024.0)).ToString("0", CultureInfo.InvariantCulture);
         // Never "attach images instead": the PDF carries the scanner's JPEGs through unchanged,
         // so the images are no smaller and that advice sent the same message back to bounce.
-        return $"These attachments are about {mb} MB. Mail servers often refuse anything over "
+        return $"Attached to a message these are about {mb} MB. Mail servers often refuse anything over "
             + "20 MB, so this may bounce — send fewer pages at a time.";
     }
 

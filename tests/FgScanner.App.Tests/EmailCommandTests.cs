@@ -105,7 +105,7 @@ public sealed class EmailCommandTests : IDisposable
         var revealed = new List<string>();
         var service = new WindowsShareService(
             shareSheet: _ => false,
-            mapi: _ => false,
+            mapi: _ => MapiDraft.Failed,
             mapiAvailable: () => false,
             revealInExplorer: path => { revealed.Add(path); return true; });
 
@@ -145,7 +145,7 @@ public sealed class EmailCommandTests : IDisposable
     private static WindowsShareService Recording(
         List<string> order, bool sheet, bool mapi, bool mapiAvailable) => new(
         shareSheet: _ => { order.Add("sheet"); return sheet; },
-        mapi: _ => { order.Add("mapi"); return mapi; },
+        mapi: _ => { order.Add("mapi"); return mapi ? MapiDraft.Sent : MapiDraft.Failed; },
         mapiAvailable: () => mapiAvailable,
         revealInExplorer: _ => { order.Add("explorer"); return true; });
 
@@ -547,7 +547,7 @@ public sealed class EmailCommandTests : IDisposable
     private EmailSender SenderThatContinues(FgScanner.Data.AppSettingsService settings, string? subject = null) =>
         new(Builder(), new FakeShareService(ShareRoute.Explorer), settings)
         {
-            Ask = (_, _, s, format, _) => (format, subject ?? s, false),
+            Ask = (_, _, s, format, _) => EmailChoice.Go(format, subject ?? s),
         };
 
     /// <summary>
@@ -603,7 +603,7 @@ public sealed class EmailCommandTests : IDisposable
                 {
                     saveDuring = scan!.SaveToGroupCommand.CanExecute(null);
                     deleteDuring = scan.DeleteSelectedPagesCommand.CanExecute(null);
-                    return (format, subject, false);
+                    return EmailChoice.Go(format, subject);
                 },
             },
             store);
@@ -643,7 +643,7 @@ public sealed class EmailCommandTests : IDisposable
                 Ask = (_, _, subject, format, _) =>
                 {
                     scan!.SaveToGroupCommand.ExecuteAsync(null).GetAwaiter().GetResult();
-                    return (format, subject, false);
+                    return EmailChoice.Go(format, subject);
                 },
             },
             store);
@@ -744,7 +744,7 @@ public sealed class EmailCommandTests : IDisposable
         var share = new ThreadRecordingShare();
         var sender = new EmailSender(Builder(), share, settings)
         {
-            Ask = (_, _, subject, format, _) => (format, subject, false),
+            Ask = (_, _, subject, format, _) => EmailChoice.Go(format, subject),
         };
 
         var asked = OnStaThread(() =>
@@ -774,11 +774,16 @@ public sealed class EmailCommandTests : IDisposable
 
         public bool Dismiss { get; set; }
 
-        public (EmailAttachment Format, string Subject, bool DontWarnAgain)? Ask(
+        /// <summary>Cancel the first dialog — with the tick as <see cref="Dismiss"/> says.</summary>
+        public bool CancelFirst { get; set; }
+
+        public EmailChoice Ask(
             int pageCount, string source, string subject, EmailAttachment format, bool warn)
         {
             WarningShown.Add(warn);
-            return (format, subject, Dismiss);
+            return CancelFirst && WarningShown.Count == 1
+                ? EmailChoice.Cancel(Dismiss)
+                : EmailChoice.Go(format, subject, Dismiss);
         }
     }
 
@@ -865,6 +870,23 @@ public sealed class EmailCommandTests : IDisposable
         Assert.Equal([true], ask.WarningShown);
     }
 
+    /// <summary>
+    /// Ticking "don't show this again" and then pressing Cancel is still having read the warning.
+    /// The tick was lost with the rest of the cancelled dialog, so it came back on the next send.
+    /// </summary>
+    [Fact]
+    public async Task A_dismissed_warning_stays_dismissed_when_that_send_is_cancelled()
+    {
+        var (vm, ask) = await EvidenceGroupAsync();
+        ask.Dismiss = true;
+        ask.CancelFirst = true;
+
+        await vm.EmailCommand.ExecuteAsync(null);
+        await vm.EmailCommand.ExecuteAsync(null);
+
+        Assert.Equal([true, false], ask.WarningShown);
+    }
+
     /// <summary>Not every group is evidence; a warning shown everywhere is a warning nobody reads.</summary>
     [Fact]
     public async Task A_group_on_an_ordinary_profile_is_never_warned_about()
@@ -912,7 +934,7 @@ public sealed class EmailCommandTests : IDisposable
             var share = new FakeShareService(ShareRoute.Explorer);
             var sender = new EmailSender(Builder(), share, Settings())
             {
-                Ask = (_, _, subject, format, _) => (format, subject, false),
+                Ask = (_, _, subject, format, _) => EmailChoice.Go(format, subject),
             };
 
             await sender.SendAsync(
@@ -1018,7 +1040,7 @@ public sealed class EmailCommandTests : IDisposable
         {
             var service = new WindowsShareService(
                 shareSheet: _ => false,
-                mapi: _ => false,
+                mapi: _ => MapiDraft.Failed,
                 mapiAvailable: () => true,
                 revealInExplorer: _ => true);
 
@@ -1105,15 +1127,15 @@ public sealed class EmailCommandTests : IDisposable
 
         var over = AttachmentBuilder.SizeWarning(21L * 1024 * 1024);
         Assert.Contains("20 MB", over, StringComparison.Ordinal);
-        Assert.Contains("21", over, StringComparison.Ordinal);
-        Assert.Equal("", AttachmentBuilder.SizeWarning(19L * 1024 * 1024));
+        Assert.Contains("28", over, StringComparison.Ordinal);
+        Assert.Equal("", AttachmentBuilder.SizeWarning(14L * 1024 * 1024));
     }
 
     private async Task<string> SendThroughAsync(WindowsShareService share, int pages, EmailAttachment format)
     {
         var sender = new EmailSender(Builder(), share, Settings())
         {
-            Ask = (_, _, subject, _, _) => (format, subject, false),
+            Ask = (_, _, subject, _, _) => EmailChoice.Go(format, subject),
         };
         var files = Enumerable.Range(1, pages).Select(i => MakeJpeg($"status-{i}.jpg")).ToList();
         return await sender.SendAsync(files, "Farm Folder", "this scan", cancellationToken: TestContext.Current.CancellationToken);
@@ -1129,7 +1151,7 @@ public sealed class EmailCommandTests : IDisposable
     public async Task A_send_that_opened_no_message_says_what_was_made_and_where()
     {
         var fallback = new WindowsShareService(
-            shareSheet: _ => false, mapi: _ => false, mapiAvailable: () => false, revealInExplorer: _ => true);
+            shareSheet: _ => false, mapi: _ => MapiDraft.Failed, mapiAvailable: () => false, revealInExplorer: _ => true);
 
         var message = await SendThroughAsync(fallback, 3, EmailAttachment.Pdf);
 
@@ -1144,7 +1166,7 @@ public sealed class EmailCommandTests : IDisposable
     public async Task Images_that_opened_no_message_are_counted_as_files()
     {
         var fallback = new WindowsShareService(
-            shareSheet: _ => false, mapi: _ => false, mapiAvailable: () => false, revealInExplorer: _ => true);
+            shareSheet: _ => false, mapi: _ => MapiDraft.Failed, mapiAvailable: () => false, revealInExplorer: _ => true);
 
         var message = await SendThroughAsync(fallback, 3, EmailAttachment.Images);
 
@@ -1160,7 +1182,7 @@ public sealed class EmailCommandTests : IDisposable
     public async Task The_share_sheet_is_named_for_what_it_is()
     {
         var sheet = new WindowsShareService(
-            shareSheet: _ => true, mapi: _ => false, mapiAvailable: () => false, revealInExplorer: _ => true);
+            shareSheet: _ => true, mapi: _ => MapiDraft.Failed, mapiAvailable: () => false, revealInExplorer: _ => true);
 
         var message = await SendThroughAsync(sheet, 3, EmailAttachment.Pdf);
 
@@ -1198,11 +1220,75 @@ public sealed class EmailCommandTests : IDisposable
     public async Task The_fallback_says_the_folder_goes_when_the_app_closes()
     {
         var fallback = new WindowsShareService(
-            shareSheet: _ => false, mapi: _ => false, mapiAvailable: () => false, revealInExplorer: _ => true);
+            shareSheet: _ => false, mapi: _ => MapiDraft.Failed, mapiAvailable: () => false, revealInExplorer: _ => true);
 
         var message = await SendThroughAsync(fallback, 2, EmailAttachment.Pdf);
 
         Assert.Contains("until FG Scanner closes", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// MAPI_DIALOG is modal: MAPISendMail returns only when the compose window closes, and
+    /// MAPI_USER_ABORT means "no message was sent". That was counted as opened, so a draft the
+    /// operator threw away read "attached … open in your mail app" — and with MAPI now first, a
+    /// cancelled draft is the ordinary way to change one's mind. It must not fall through to the
+    /// Share sheet either: closing the draft was the answer.
+    /// </summary>
+    [Fact]
+    public async Task A_mapi_draft_closed_without_sending_says_nothing_left()
+    {
+        var sheetTried = false;
+        var share = new WindowsShareService(
+            shareSheet: _ => { sheetTried = true; return true; },
+            mapi: _ => MapiDraft.Cancelled,
+            mapiAvailable: () => true,
+            revealInExplorer: _ => true);
+
+        var message = await SendThroughAsync(share, 2, EmailAttachment.Pdf);
+
+        Assert.False(sheetTried);
+        Assert.DoesNotContain("attached", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("without sending", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>By the time MAPISendMail returns success the operator has pressed Send — the draft is not "open".</summary>
+    [Fact]
+    public async Task A_sent_mapi_draft_is_not_described_as_open()
+    {
+        var share = new WindowsShareService(
+            shareSheet: _ => true, mapi: _ => MapiDraft.Sent, mapiAvailable: () => true, revealInExplorer: _ => true);
+
+        var message = await SendThroughAsync(share, 2, EmailAttachment.Pdf);
+
+        Assert.DoesNotContain("is open", message, StringComparison.Ordinal);
+        Assert.Contains("sent", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Explorer splits /select's argument on commas. The file is named after the subject, and
+    /// "Smith, John deeds" is an ordinary subject — the old argument list passed that path
+    /// unquoted when it had no spaces, and Explorer opened the wrong place or none. A group folder
+    /// named with a comma broke the Groups page's "Open containing folder" the same way.
+    /// </summary>
+    [Theory]
+    [InlineData(@"C:\Temp\email\1a2b\Smith,John.pdf")]
+    [InlineData(@"D:\Evidence-Scans\Smith, John\scan_00001.jpg")]
+    public void The_explorer_argument_quotes_the_path_so_a_comma_stays_in_it(string path)
+    {
+        Assert.Equal($"/select,\"{path}\"", ExplorerSelect.Arguments(path));
+    }
+
+    /// <summary>
+    /// §15's limit is the mail server's, and it measures the message, not the files: attachments
+    /// travel base64-encoded, a third larger. A 19 MB PDF is a 25 MB message, and it was not warned
+    /// about.
+    /// </summary>
+    [Fact]
+    public void The_size_warning_counts_what_the_message_will_weigh()
+    {
+        Assert.NotEqual("", AttachmentBuilder.SizeWarning(16L * 1024 * 1024));
+        Assert.Equal("", AttachmentBuilder.SizeWarning(14L * 1024 * 1024));
+        Assert.Contains("about 25 MB", AttachmentBuilder.SizeWarning(19L * 1024 * 1024), StringComparison.Ordinal);
     }
 
     private string MakeJpeg(string name)
@@ -1276,7 +1362,7 @@ public sealed class EmailCommandTests : IDisposable
         var reached = false;
         var service = new WindowsShareService(
             shareSheet: _ => false,
-            mapi: _ => { reached = true; return true; },
+            mapi: _ => { reached = true; return MapiDraft.Sent; },
             mapiAvailable: () => false,
             revealInExplorer: _ => true);
 

@@ -22,8 +22,12 @@ public enum ShareRoute
 /// </summary>
 public sealed record ShareRequest(IReadOnlyList<string> FilePaths, string Subject);
 
-/// <summary>What happened, and the sentence to show. Never an error code (AC-6).</summary>
-public sealed record ShareOutcome(ShareRoute Route, string Message);
+/// <summary>
+/// What happened, and the sentence to show. Never an error code (AC-6). <paramref name="Declined"/>
+/// is a route that opened and was then closed by the operator without sending — nothing left, and
+/// the next route is not tried, because closing it was the answer.
+/// </summary>
+public sealed record ShareOutcome(ShareRoute Route, string Message, bool Declined = false);
 
 /// <summary>
 /// Hands files to whatever mail path this station has, and returns.

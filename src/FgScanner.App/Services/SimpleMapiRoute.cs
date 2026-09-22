@@ -5,6 +5,17 @@ using FgScanner.Core.Sharing;
 namespace FgScanner.App.Services;
 
 /// <summary>
+/// How a MAPI draft ended. MAPI_DIALOG is modal: MAPISendMail returns only once the compose
+/// window closes, so the answer is already known — sent, or closed without sending.
+/// </summary>
+public enum MapiDraft
+{
+    Failed,
+    Sent,
+    Cancelled,
+}
+
+/// <summary>
 /// Route 2: Simple MAPI. Opens a message in the station's registered mail client with the pages
 /// attached, and stops there — `MAPI_DIALOG` is what makes the client show the message rather
 /// than send it, and it is not optional here (AC-5).
@@ -21,10 +32,10 @@ internal static class SimpleMapiRoute
     private const uint MapiLogonUi = 0x00000001;
     private const uint SuccessSuccess = 0;
 
-    /// <summary>The operator closed the message without sending. It still opened, which is all this route promises.</summary>
+    /// <summary>"No message was sent" — the operator closed the draft. Not a failure, and not a send.</summary>
     private const uint MapiUserAbort = 1;
 
-    public static bool TryOpen(ShareRequest request)
+    public static MapiDraft TryOpen(ShareRequest request)
     {
         var descriptorSize = Marshal.SizeOf<MapiFileDescriptor>();
         var files = Marshal.AllocHGlobal(descriptorSize * request.FilePaths.Count);
@@ -60,7 +71,12 @@ internal static class SimpleMapiRoute
                 ? new System.Windows.Interop.WindowInteropHelper(main).Handle
                 : IntPtr.Zero;
             var result = MAPISendMail(IntPtr.Zero, owner, ref message, MapiDialog | MapiLogonUi, 0);
-            return result is SuccessSuccess or MapiUserAbort;
+            return result switch
+            {
+                SuccessSuccess => MapiDraft.Sent,
+                MapiUserAbort => MapiDraft.Cancelled,
+                _ => MapiDraft.Failed,
+            };
         }
         finally
         {

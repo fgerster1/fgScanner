@@ -519,12 +519,7 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         try
         {
             // /select, highlights the file itself rather than just opening the folder.
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = "explorer.exe",
-                ArgumentList = { "/select,", row.ImagePath },
-                UseShellExecute = false,
-            });
+            ExplorerSelect.Reveal(row.ImagePath);
         }
         catch (Exception ex)
         {

@@ -5,6 +5,20 @@ using Serilog;
 namespace FgScanner.App.Services;
 
 /// <summary>
+/// What the operator answered in the attachment dialog. A value rather than a nullable tuple so
+/// that Cancel can still carry the "don't show this again" tick — ticking it and then cancelling
+/// is still having read the warning.
+/// </summary>
+public readonly record struct EmailChoice(bool Continue, EmailAttachment Format, string Subject, bool DontWarnAgain)
+{
+    public static EmailChoice Go(EmailAttachment format, string subject, bool dontWarnAgain = false) =>
+        new(true, format, subject, dontWarnAgain);
+
+    public static EmailChoice Cancel(bool dontWarnAgain = false) =>
+        new(false, EmailAttachment.Pdf, "", dontWarnAgain);
+}
+
+/// <summary>
 /// One send, end to end: ask what to attach, build it, hand it to the operator's mail path, and
 /// come back with the sentence to show. Both call sites — the Scan page and a group — use this,
 /// so they cannot drift apart on what a send means.
@@ -21,9 +35,7 @@ public sealed class EmailSender(
     /// Asks the operator what to attach. Replaceable so a send can be walked in a test without a
     /// window, the way <c>ConfirmDelete</c> and <c>ShowPageViewer</c> already are.
     /// </summary>
-    public Func<int, string, string, EmailAttachment, bool,
-        (EmailAttachment Format, string Subject, bool DontWarnAgain)?> Ask
-    { get; set; }
+    public Func<int, string, string, EmailAttachment, bool, EmailChoice> Ask { get; set; }
         = Views.Dialogs.EmailDialog.Ask;
 
     public async Task<string> SendAsync(
@@ -75,14 +87,18 @@ public sealed class EmailSender(
         var warn = evidenceRecord
             && !await EmailSettings.WarningSeenAsync(settings, cancellationToken);
 
-        if (Ask(pages.Count, source, subject, remembered, warn) is not { } chosen)
-        {
-            return "Email cancelled — nothing left the app.";
-        }
+        var chosen = Ask(pages.Count, source, subject, remembered, warn);
 
+        // Before the cancel check: ticking "don't show this again" and then cancelling is still
+        // having read the warning, and it used to come back on the next send.
         if (warn && chosen.DontWarnAgain)
         {
             await EmailSettings.MarkWarningSeenAsync(settings, cancellationToken);
+        }
+
+        if (!chosen.Continue)
+        {
+            return "Email cancelled — nothing left the app.";
         }
 
         if (chosen.Format != remembered)
@@ -105,6 +121,11 @@ public sealed class EmailSender(
         Log.Information(
             "Email: {Count} page(s) from {Source} as {Format} via {Route}",
             pages.Count, source, chosen.Format, outcome.Route);
+
+        if (outcome.Declined)
+        {
+            return outcome.Message;
+        }
 
         // Only a route that took the files may say they were attached. The fallbacks attached
         // nothing, so they say what was made instead — pages here, files in the share layer's
@@ -133,7 +154,7 @@ public sealed class EmailSender(
         AppSettingsService settings) =>
         new(new AttachmentBuilder(pdf), new NoMailPath(), settings)
         {
-            Ask = (_, _, _, _, _) => null,
+            Ask = (_, _, _, _, _) => EmailChoice.Cancel(),
         };
 
     private sealed class NoMailPath : IShareService

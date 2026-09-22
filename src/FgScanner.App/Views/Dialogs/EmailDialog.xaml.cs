@@ -40,8 +40,8 @@ public partial class EmailDialog : Window
 
     public void ShowEvidenceWarning() => EvidencePanel.Visibility = Visibility.Visible;
 
-    /// <summary>Shows the dialog over the active window, or null if it was cancelled.</summary>
-    public static (EmailAttachment Format, string Subject, bool DontWarnAgain)? Ask(
+    /// <summary>Shows the dialog over the main window and returns what the operator chose.</summary>
+    public static EmailChoice Ask(
         int pageCount, string source, string subject, EmailAttachment format, bool warnEvidence)
     {
         var dialog = new EmailDialog { Owner = Application.Current?.MainWindow, Subject = subject };
@@ -53,8 +53,8 @@ public partial class EmailDialog : Window
         }
 
         return dialog.ShowDialog() == true
-            ? (dialog.Format, dialog.Subject, dialog.DontWarnAgain)
-            : null;
+            ? EmailChoice.Go(dialog.Format, dialog.Subject, dialog.DontWarnAgain)
+            : EmailChoice.Cancel(dialog.DontWarnAgain);
     }
 
     private void OnContinue(object sender, RoutedEventArgs e) => DialogResult = true;

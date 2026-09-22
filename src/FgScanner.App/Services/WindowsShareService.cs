@@ -22,16 +22,16 @@ namespace FgScanner.App.Services;
 /// </summary>
 public sealed class WindowsShareService(
     Func<ShareRequest, bool>? shareSheet = null,
-    Func<ShareRequest, bool>? mapi = null,
+    Func<ShareRequest, MapiDraft>? mapi = null,
     Func<bool>? mapiAvailable = null,
     Func<string, bool>? revealInExplorer = null) : IShareService
 {
     private readonly Func<ShareRequest, bool> _shareSheet = shareSheet ?? ShareSheetRoute.TryOpen;
-    private readonly Func<ShareRequest, bool> _mapi = mapi ?? SimpleMapiRoute.TryOpen;
+    private readonly Func<ShareRequest, MapiDraft> _mapi = mapi ?? SimpleMapiRoute.TryOpen;
     private readonly Func<bool> _mapiAvailable =
         mapiAvailable ?? (() => new MapiProbe(new WindowsRegistryReader()).IsAvailable());
 
-    private readonly Func<string, bool> _revealInExplorer = revealInExplorer ?? RevealInExplorer;
+    private readonly Func<string, bool> _revealInExplorer = revealInExplorer ?? ExplorerSelect.Reveal;
 
     public ShareOutcome Open(ShareRequest request)
     {
@@ -42,10 +42,26 @@ public sealed class WindowsShareService(
 
         // The probe only reads the registry; MAPI itself is never called on a station without a
         // registered client (AC-7).
-        if (Try(_mapiAvailable, "the MAPI probe") && Try(() => _mapi(request), "Simple MAPI"))
+        if (Try(_mapiAvailable, "the MAPI probe"))
         {
-            Log.Information("Shared {Count} file(s) via Simple MAPI", request.FilePaths.Count);
-            return new ShareOutcome(ShareRoute.Mapi, "A new message is open in your mail app.");
+            // MAPI_DIALOG is modal, so by the time this returns the operator has already sent the
+            // draft or thrown it away. Neither is "open", and a thrown-away draft attached nothing.
+            var draft = MapiDraft.Failed;
+            Try(() => (draft = _mapi(request)) != MapiDraft.Failed, "Simple MAPI");
+            if (draft == MapiDraft.Sent)
+            {
+                Log.Information("Shared {Count} file(s) via Simple MAPI; the draft was sent", request.FilePaths.Count);
+                return new ShareOutcome(ShareRoute.Mapi, "Your mail app reports the message as sent.");
+            }
+
+            if (draft == MapiDraft.Cancelled)
+            {
+                Log.Information("The Simple MAPI draft was closed without sending");
+                return new ShareOutcome(
+                    ShareRoute.Mapi,
+                    "You closed the message without sending it — nothing left the app.",
+                    Declined: true);
+            }
         }
 
         if (Try(() => _shareSheet(request), "the Windows Share sheet"))
@@ -104,18 +120,5 @@ public sealed class WindowsShareService(
             Log.Warning(ex, "{Route} was not available", what);
             return false;
         }
-    }
-
-    private static bool RevealInExplorer(string path)
-    {
-        // /select, highlights the file itself rather than just opening the folder — the same call
-        // the Groups page already makes (GroupDetailViewModel).
-        using var started = Process.Start(new ProcessStartInfo
-        {
-            FileName = "explorer.exe",
-            ArgumentList = { "/select,", path },
-            UseShellExecute = false,
-        });
-        return true;
     }
 }
