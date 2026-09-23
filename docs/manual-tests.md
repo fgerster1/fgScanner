@@ -509,3 +509,99 @@ station is a different machine, so a row passed on one proves nothing about the 
 - [ ] A real feeder failure — a jam or a double feed part-way through a pass — and what the Scan
       page says. Only three NAPS2 exceptions are translated into plain words; a jam is not yet one
       of them, so it currently reads "Scan failed: …".
+
+## SPEC-2026-007 — email (phase 26)
+
+**Which route a station gets depends on what is installed on it**, so a send proves nothing about
+a different kind of station. Name the station and its mail app on every row. The dev station has
+**new Outlook only and no MAPI client** (all three probe values empty, checked 2026-09-22), so it
+gets the Share sheet; a classic-Outlook station gets MAPI first; a station with neither gets Explorer.
+
+**Phase 1 spike (AC-8)** — performed 2026-09-21, recorded in full in the spec's §22:
+
+- [x] `dotnet build -c Release` green after the target-framework change — 0 warnings, 0 errors.
+- [x] `dotnet test -c Release` green — 793 of 793, unchanged.
+- [x] `dotnet publish -p:PublishProfile=win-x64` still non-single-file and non-trimmed — nine
+      NAPS2 assemblies separate, 329 DLLs, `FgScanner.exe` 0.16 MB.
+- [x] Installer built, installed and run — `fgscanner-0.5.1-win-x64.exe`, exit 0, 94.8 → 104.1 MB,
+      the installed copy scanned on the fake scanner.
+
+**The four sends:**
+
+- [~] **A session as PDF.** 2026-09-22, dev station, `--fake-scanner`, active group "Defamation
+      Folder": Email… → Continue opened the **Windows Share sheet** reading *"You are sharing
+      Defamation Folder. 1 scanned page(s) from FG Scanner"* with `Defamation Folder.pdf` (3.5 KB)
+      attached and Outlook for Windows among the targets; status *"1 page attached. Opened in your
+      mail app."* (both since corrected: the sheet no longer counts files as pages, and the status no longer claims a message opened). The log read `Email: 1 page(s) from this scan as
+      "Pdf" via "ShareSheet"`. **The sheet was dismissed with Escape — no target was chosen and
+      nothing was sent**, so the rest of the row is open: pick Outlook, send to yourself, open the
+      PDF.
+- [ ] **Three selected pages as images** from a group: exactly those three arrive, in page order,
+      as the original files — compare one attachment's SHA-256 with that page's `checksum` in the
+      group's `index.json`.
+- [ ] **New Outlook receives the attachments** through the Share sheet: pick Outlook, and the draft
+      has the file attached (not an empty message).
+- [ ] **The forced fallback**: on a station with no mail app, or with the Share sheet unavailable,
+      the status reads *"… No mail app was found. The attachment is in … — attach it to your
+      message yourself. It stays there until FG Scanner closes."* and Explorer opens with the file
+      selected.
+
+**Added by the code review (2026-09-22):**
+
+- [ ] **Classic Outlook gets its own draft first** — on a station where the probe finds a MAPI
+      client: the Outlook compose window opens over FG Scanner, not the Share sheet. Send it: the
+      status reads *"… Your mail app reports the message as sent."* Repeat and close the draft
+      instead: *"You closed the message without sending it — nothing left the app."*, and no Share
+      sheet follows. **Never seen on hardware** — the dev station has no MAPI client.
+- [~] **A comma in the path.** 2026-09-22, dev station, on the shell directly rather than through
+      the app: for a file `…\comma-test\Smith,John.pdf`, the old argument form opened the Desktop
+      with Documents selected; the new always-quoted form opened `comma-test` with
+      `Smith,John.pdf` selected. Still to do through the app: a subject "Smith,John" on the
+      fallback, and "Open containing folder" on a group whose folder name holds a comma.
+- [ ] **The evidence warning** on a committed group on the Evidence profile: shown on the first
+      send; tick "don't show this again" and press **Cancel** — the next send does not show it.
+- [ ] **A crash leaves nothing behind**: send once, end FG Scanner from Task Manager, relaunch —
+      `%TEMP%\FGScanner\email` is empty after startup. (Seen once 2026-09-22 on a harness-killed
+      session: 17 folders before launch, 0 after.)
+
+**Known and not fixed here:** at the 800×560 minimum window the Scan page's Email… button, like
+**Scan** itself and every Groups toolbar button, is below the fold (§16 R7, app-wide).
+
+**Webmail (added 2026-09-22)** — Franz sends from Gmail, Jim from Yahoo, both in a browser. Set
+Settings → Email → "Send email with" on each station first.
+
+- [x] **Gmail on Franz's station — 2026-09-22, "It all works" (Franz).** Two selected pages as a
+      PDF; the log read `Email: 2 page(s) from the 2 selected pages as "Pdf" via "Webmail"` at
+      17:06 (since the security review it reads `from Group` — the source text could carry the
+      group's name). Gmail opened with the subject filled in, and Explorer beside it with the PDF.
+      **Not exercised:** a subject containing `&` or `,`, and **the "Gmail account" box — no
+      `Email.WebmailAccount` value is stored**, so this send used whichever account Chrome holds
+      first. The wrong-account case is the row below and is still open.
+- [ ] **Yahoo Mail on Jim's station.** The same. **The Yahoo compose link is undocumented** — if
+      the subject does not fill in, or the page is not a new message, record what Yahoo shows.
+- [x] **Paste, not drag (amended 2026-09-23).** A PDF to Gmail: no Explorer window opens, the
+      status says to press Ctrl+V, and Ctrl+V in the message attaches the PDF — 2026-09-23,
+      Franz's station, "It worked".
+- [x] **The "PDF copied" notice**: appears in the bottom-right corner over the Gmail window, does
+      not take the cursor (click into the message and type straight away), and closes after about
+      20 seconds or on a click — 2026-09-23, Franz's station, "everything looks good". The log
+      read `Webmail: Gmail compose opened true, clipboard true, Explorer opened false, 1 file(s)`
+      and `Email: 3 page(s) from "Group" as "Pdf" via "Webmail"` at 13:46. **Not exercised:**
+      FG Scanner on a second monitor.
+- [ ] **Three images to Gmail**: the status says 3 files are ready to paste; one Ctrl+V attaches
+      all three.
+- [ ] **Yahoo takes a paste** — part of the Yahoo row above. If it does not, record what Yahoo
+      does; Yahoo then goes back to the drag.
+- [ ] **The Share sheet on a mail-program station** now also names the file's folder.
+
+**First real Gmail send, 2026-09-22 (Franz's station).** The route worked and looked as though it
+had not: Chrome held a compose window titled "Compose Mail — fgerster@replacepaper.net" with the
+subject "Threats and lies" filled in, **behind** the Explorer window, and in the wrong Google
+account. Both fixed — Explorer now opens first so the message ends in front, and Settings takes an
+optional Gmail account. Still to confirm on the station:
+
+- [x] The Gmail message opens **in front** of the Explorer window — 2026-09-22, Franz.
+- [ ] With "Gmail account" set to an address, the message opens in that account. **Still open:**
+      the setting was never filled in on the station, so the named-account path has run only in
+      tests.
+

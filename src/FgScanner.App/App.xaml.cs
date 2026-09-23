@@ -113,6 +113,13 @@ public partial class App : Application
                         "FGScanner", "trash")));
                 services.AddSingleton<ReorderService>();
                 services.AddSingleton<AppSettingsService>();
+
+                // Sharing: one builder for the session so every temp folder it makes is known to
+                // OnExit, and one share service so both call sites take the same interface.
+                services.AddSingleton(_ => new AttachmentBuilder(
+                    new FgScanner.Scanning.Export.PdfExportService()));
+                services.AddSingleton<FgScanner.Core.Sharing.IShareService>(_ => new WindowsShareService());
+                services.AddSingleton<EmailSender>();
                 services.AddSingleton<OcrQueueService>();
                 services.AddSingleton<AiQueueService>();
                 services.AddSingleton(sp => new FgScanner.Ai.CredentialStore());
@@ -139,7 +146,11 @@ public partial class App : Application
                     sp.GetRequiredService<FgScanner.Ai.CredentialStore>(),
                     sp.GetRequiredService<AppSettingsService>(),
                     sp.GetRequiredService<CaptureTriageService>(),
-                    sp.GetRequiredService<DuplicateFinder>()));
+                    sp.GetRequiredService<DuplicateFinder>())
+                {
+                    // The DI sender, so the attachment folders it makes are the ones OnExit removes.
+                    Email = sp.GetRequiredService<EmailSender>(),
+                });
                 services.AddSingleton(sp => new FgScanner.Ocr.LanguageManager());
                 services.AddSingleton(sp => new FgScanner.Ocr.TesseractRunner(
                     tessdataDir: sp.GetRequiredService<FgScanner.Ocr.LanguageManager>().TessdataDir));
@@ -177,6 +188,18 @@ public partial class App : Application
         }
 
         OfferCrashRecovery(_host.Services.GetRequiredService<ScanSessionService>());
+
+        // Attachment copies a crashed session left in the temp folder. Safe to take them all only
+        // because this is the one instance: the mutex above is already held.
+        var attachments = _host.Services.GetRequiredService<AttachmentBuilder>();
+        attachments.CleanUp();
+
+        // OnExit runs only on a clean shutdown. A Windows sign-out or shutdown, and an exit that
+        // skips WPF's own path, still reach these — so the copies go then too rather than waiting
+        // for the next startup. A process killed outright reaches neither, which is what the
+        // startup sweep above is for.
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => attachments.CleanUp();
+        Microsoft.Win32.SystemEvents.SessionEnding += (_, _) => attachments.CleanUp();
 
         // Bundled English lands in the writable tessdata dir; then the durable queue drains.
         _host.Services.GetRequiredService<FgScanner.Ocr.LanguageManager>().EnsureBundledData();
@@ -317,6 +340,11 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         Log.Information("FG Scanner exiting");
+
+        // Attachments are copies of case material sitting in the system temp folder. They are
+        // temporary by design (§07), and leaving them behind after the app has gone is the quiet
+        // spread §13 is about. Before the host goes, because the builder lives in it.
+        _host?.Services.GetService<AttachmentBuilder>()?.CleanUp();
         _host?.StopAsync().GetAwaiter().GetResult();
         _host?.Dispose();
         _singleInstanceMutex?.Dispose();

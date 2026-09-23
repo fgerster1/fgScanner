@@ -58,6 +58,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         {
             await LoadRetentionAsync();
             await LoadThemeAsync();
+            await LoadSendWithAsync();
         }
         catch (Exception ex)
         {
@@ -104,6 +105,19 @@ public sealed partial class SettingsViewModel : ObservableObject
     public IReadOnlyList<string> Themes => FgScanner.App.Services.ThemeSetting.Choices;
 #pragma warning restore CA1822
 
+    /// <summary>How this station sends mail (Email.SendWith) — Gmail on Franz's, Yahoo on Jim's.</summary>
+    [ObservableProperty]
+    private FgScanner.Core.Sharing.MailPath _sendWith;
+
+    /// <summary>Which Gmail account to compose in (Email.WebmailAccount); blank is the browser's first.</summary>
+    [ObservableProperty]
+    private string _webmailAccount = "";
+
+    /// <summary>Instance property so XAML can bind it.</summary>
+#pragma warning disable CA1822
+    public IReadOnlyList<SendWithOption> SendWithChoices => SendWithOption.All;
+#pragma warning restore CA1822
+
     /// <summary>What was stored when the screen opened, so a save can tell a change from a no-op.</summary>
     private int _retentionAsLoaded = TrashService.DefaultRetentionDays;
 
@@ -111,6 +125,12 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         _retentionAsLoaded = await _trashService.GetRetentionDaysAsync();
         RetentionDays = _retentionAsLoaded;
+    }
+
+    public async Task LoadSendWithAsync()
+    {
+        SendWith = await Services.EmailSettings.ReadSendWithAsync(_appSettings);
+        WebmailAccount = await Services.EmailSettings.ReadWebmailAccountAsync(_appSettings);
     }
 
     public async Task LoadThemeAsync() =>
@@ -783,6 +803,8 @@ public sealed partial class SettingsViewModel : ObservableObject
             await _appSettings.SetAsync(AiWorker.ModelSettingKey, AiModel.Trim());
 
             await _appSettings.SetAsync(FgScanner.App.Services.ThemeSetting.Key, Theme);
+            await Services.EmailSettings.WriteSendWithAsync(_appSettings, SendWith);
+            await Services.EmailSettings.WriteWebmailAccountAsync(_appSettings, WebmailAccount);
             FgScanner.App.Services.ThemeSetting.Apply(Theme);
 
             // Shortening the retention only matters once the purge runs, and that used to happen
@@ -954,4 +976,20 @@ public sealed partial class ShortcutRow : ObservableObject
 
     [ObservableProperty]
     private string _gesture = "";
+}
+
+/// <summary>
+/// One entry in Settings' "Send email with" list. ToString is the label, so a screen reader
+/// announces "Gmail in the browser" rather than the type name.
+/// </summary>
+public sealed record SendWithOption(FgScanner.Core.Sharing.MailPath Value, string Label)
+{
+    public static IReadOnlyList<SendWithOption> All { get; } =
+    [
+        new(FgScanner.Core.Sharing.MailPath.MailApp, "A mail program on this PC"),
+        new(FgScanner.Core.Sharing.MailPath.Gmail, "Gmail in the browser"),
+        new(FgScanner.Core.Sharing.MailPath.Yahoo, "Yahoo Mail in the browser"),
+    ];
+
+    public override string ToString() => Label;
 }

@@ -89,7 +89,11 @@ so deletes go to the Windows Recycle Bin (§05 Q1).
 - `docs/spec-scan-section.md` gets its status updated per §05 Q2.
 
 **Non-goals**
-- No rotate, crop, adjust, OCR, PDF, email or print on the evidence Scan page.
+- No rotate, crop, adjust, OCR, PDF, ~~email~~ or print on the evidence Scan page.
+  > **Amended 2026-09-20.** Franz approved email on the evidence Scan page
+  > (SPEC-2026-007 §05 Q1a, Round A part 3, verdict *approve*). The page gains an **Email…**
+  > button that sends the session's pages; every other exclusion on this line stands. See
+  > [SPEC-2026-007](./SPEC-2026-007-email-scanned-pages.md) and ADR-0012.
 - No deleting pages already saved to a group from the Scan page.
 - No change to Save to group, Batch scan, the note-sheet sequence, or auto-save after
   "Scan into this group".

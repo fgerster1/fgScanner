@@ -1,0 +1,1821 @@
+using System.IO;
+using System.Reflection;
+using FgScanner.App.Services;
+using FgScanner.App.Views;
+using FgScanner.Core.Sharing;
+using Xunit;
+
+namespace FgScanner.App.Tests;
+
+/// <summary>
+/// The share service hands files to whatever mail path the station has and returns. It is the
+/// first thing in this app that moves case material out of the folder whose checksums are its
+/// evidentiary integrity, so two properties matter more than any feature: it never transmits,
+/// and when there is no mail path at all it says so in a sentence rather than a code.
+/// </summary>
+public sealed class EmailCommandTests : IDisposable
+{
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "fgscanner-tests", Guid.NewGuid().ToString("N"));
+
+    public EmailCommandTests() => Directory.CreateDirectory(_root);
+
+    public void Dispose()
+    {
+        try
+        {
+            Directory.Delete(_root, recursive: true);
+        }
+        catch (IOException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Stands in for the shell the way FakeScanService stands in for hardware: it records what it
+    /// was asked to share and which route it was told to report, and it cannot send either.
+    /// </summary>
+    private sealed class FakeShareService(ShareRoute route) : IShareService
+    {
+        public List<ShareRequest> Opened { get; } = [];
+
+        public ShareOutcome Open(ShareRequest request)
+        {
+            Opened.Add(request);
+            return new ShareOutcome(route, $"opened via {route}");
+        }
+    }
+
+    private string MakePage(string name) => MakePageIn(_root, name);
+
+    /// <summary>
+    /// A real PNG, because the exporters decode what they are given — and a distinct one, because
+    /// adoption drops a page whose checksum is already in the group and identical fixtures would
+    /// quietly leave a six-page group holding one row.
+    /// </summary>
+    private static string MakePageIn(string directory, string name)
+    {
+        var path = Path.Combine(directory, name);
+        using var bitmap = new System.Drawing.Bitmap(120, 160);
+        using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
+        {
+            graphics.Clear(System.Drawing.Color.White);
+            using var font = new System.Drawing.Font(System.Drawing.FontFamily.GenericSansSerif, 10);
+            graphics.DrawString(name, font, System.Drawing.Brushes.Black, 6, 40);
+        }
+
+        bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        return path;
+    }
+
+    private ShareRequest Request() => new([MakePage("page-1.png"), MakePage("page-2.png")], "Two pages");
+
+    /// <summary>
+    /// AC-5. The operator presses Send in their own mail client, under their own identity, or
+    /// nothing leaves the machine. Nothing in this app may claim otherwise, so the interface is
+    /// not allowed to grow a method that sends — a later session must not add one casually.
+    /// </summary>
+    [Fact]
+    public void The_share_service_is_never_asked_to_send()
+    {
+        var fake = new FakeShareService(ShareRoute.ShareSheet);
+
+        var outcome = fake.Open(Request());
+
+        Assert.Single(fake.Opened);
+        Assert.Equal(ShareRoute.ShareSheet, outcome.Route);
+
+        var sending = typeof(IShareService)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Select(m => m.Name)
+            .Where(n => n.Contains("Send", StringComparison.OrdinalIgnoreCase)
+                || n.Contains("Transmit", StringComparison.OrdinalIgnoreCase)
+                || n.Contains("Deliver", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        Assert.Empty(sending);
+    }
+
+    /// <summary>
+    /// AC-6. With no share target and no MAPI client, the operator is told where the pages are
+    /// and asked to attach them — not shown an HRESULT. The route delegates all fail here, which
+    /// is exactly the station this was written on.
+    /// </summary>
+    [Fact]
+    public void The_fallback_explains_itself()
+    {
+        var revealed = new List<string>();
+        var service = new WindowsShareService(
+            shareSheet: _ => false,
+            mapi: _ => MapiDraft.Failed,
+            mapiAvailable: () => false,
+            revealInExplorer: path => { revealed.Add(path); return true; });
+
+        var request = Request();
+        var outcome = service.Open(request);
+
+        Assert.Equal(ShareRoute.Explorer, outcome.Route);
+        Assert.Equal([request.FilePaths[0]], revealed);
+        Assert.Contains(_root, outcome.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("attach", outcome.Message, StringComparison.OrdinalIgnoreCase);
+
+        // Never an error code and never an exception's words.
+        Assert.DoesNotContain("0x", outcome.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Exception", outcome.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("HRESULT", outcome.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Even the last route failing leaves a sentence, not a stack trace.</summary>
+    [Fact]
+    public void Every_route_failing_still_reads_as_a_sentence()
+    {
+        var service = new WindowsShareService(
+            shareSheet: _ => throw new InvalidOperationException("no share target registered"),
+            mapi: _ => throw new InvalidOperationException("MAPI32.DLL not found"),
+            mapiAvailable: () => true,
+            revealInExplorer: _ => throw new InvalidOperationException("explorer.exe is missing"));
+
+        var outcome = service.Open(Request());
+
+        Assert.Equal(ShareRoute.None, outcome.Route);
+        Assert.DoesNotContain("0x", outcome.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Exception", outcome.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("MAPI32.DLL", outcome.Message, StringComparison.Ordinal);
+        Assert.Contains(_root, outcome.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static WindowsShareService Recording(
+        List<string> order, bool sheet, bool mapi, bool mapiAvailable) => new(
+        shareSheet: _ => { order.Add("sheet"); return sheet; },
+        mapi: _ => { order.Add("mapi"); return mapi ? MapiDraft.Sent : MapiDraft.Failed; },
+        mapiAvailable: () => mapiAvailable,
+        revealInExplorer: _ => { order.Add("explorer"); return true; });
+
+    /// <summary>
+    /// The Share sheet opens on every Windows 10 and 11 machine, so with it first MAPI was never
+    /// reached — and classic Outlook is not a share target, so a classic-Outlook station got a
+    /// sheet with no Outlook in it. When the probe finds a registered MAPI client, that client's
+    /// own draft comes first (Franz's decision, amending §08's order).
+    /// </summary>
+    [Fact]
+    public void A_station_with_a_mapi_client_gets_its_draft_first()
+    {
+        var order = new List<string>();
+
+        var outcome = Recording(order, sheet: true, mapi: true, mapiAvailable: true).Open(Request());
+
+        Assert.Equal(ShareRoute.Mapi, outcome.Route);
+        Assert.Equal(["mapi"], order);
+    }
+
+    [Fact]
+    public void A_mapi_client_that_fails_falls_back_to_the_share_sheet()
+    {
+        var order = new List<string>();
+
+        var outcome = Recording(order, sheet: true, mapi: false, mapiAvailable: true).Open(Request());
+
+        Assert.Equal(ShareRoute.ShareSheet, outcome.Route);
+        Assert.Equal(["mapi", "sheet"], order);
+    }
+
+    /// <summary>New Outlook and most other clients register no MAPI: the Share sheet is theirs.</summary>
+    [Fact]
+    public void Without_a_mapi_client_the_share_sheet_comes_first_and_mapi_is_never_called()
+    {
+        var order = new List<string>();
+
+        var outcome = Recording(order, sheet: true, mapi: true, mapiAvailable: false).Open(Request());
+
+        Assert.Equal(ShareRoute.ShareSheet, outcome.Route);
+        Assert.Equal(["sheet"], order);
+    }
+
+    [Fact]
+    public void Every_mail_route_failing_ends_in_explorer_after_both()
+    {
+        var order = new List<string>();
+
+        var outcome = Recording(order, sheet: false, mapi: false, mapiAvailable: true).Open(Request());
+
+        Assert.Equal(ShareRoute.Explorer, outcome.Route);
+        Assert.Equal(["mapi", "sheet", "explorer"], order);
+    }
+
+    private sealed class TestFactory(string dbPath)
+        : Microsoft.EntityFrameworkCore.IDbContextFactory<FgScanner.Data.FgScannerDbContext>
+    {
+        public FgScanner.Data.FgScannerDbContext CreateDbContext() =>
+            new(FgScanner.Data.DbBootstrapper.BuildOptions(dbPath));
+    }
+
+    private FgScanner.Data.AppSettingsService Settings()
+    {
+        var dbPath = Path.Combine(_root, "settings.db");
+        using (var db = new FgScanner.Data.FgScannerDbContext(FgScanner.Data.DbBootstrapper.BuildOptions(dbPath)))
+        {
+            Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.Migrate(db.Database);
+        }
+
+        return new FgScanner.Data.AppSettingsService(new TestFactory(dbPath));
+    }
+
+    /// <summary>
+    /// §07: read fresh per send, and a value that cannot be read falls back to PDF rather than
+    /// throwing. A corrupt setting must not stop an operator sending a page, and it must not
+    /// quietly change what gets attached either.
+    /// </summary>
+    [Fact]
+    public async Task The_attachment_format_is_read_fresh_and_falls_back_to_pdf()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var settings = Settings();
+
+        Assert.Equal(EmailAttachment.Pdf, await EmailSettings.ReadAsync(settings, ct));
+
+        await EmailSettings.WriteAsync(settings, EmailAttachment.Images, ct);
+        Assert.Equal(EmailAttachment.Images, await EmailSettings.ReadAsync(settings, ct));
+
+        await settings.SetAsync(EmailSettings.AttachmentKey, "Fax", ct);
+        Assert.Equal(EmailAttachment.Pdf, await EmailSettings.ReadAsync(settings, ct));
+    }
+
+    // ---- which pages a send actually takes ----
+
+    private async Task<GroupDetailViewModel> GroupOfAsync(
+        int pages,
+        bool evidenceProfile = false,
+        bool committed = false,
+        Func<FgScanner.Data.ProfileService, Task<FgScanner.Data.Profile>>? profile = null)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var dbPath = Path.Combine(_root, $"group-{evidenceProfile}-{committed}.db");
+        using (var db = new FgScanner.Data.FgScannerDbContext(FgScanner.Data.DbBootstrapper.BuildOptions(dbPath)))
+        {
+            Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.Migrate(db.Database);
+        }
+
+        var factory = new TestFactory(dbPath);
+        var groups = new FgScanner.Data.GroupService(factory);
+        var profiles = new FgScanner.Data.ProfileService(factory);
+        var trash = new FgScanner.Data.TrashService(factory, Path.Combine(_root, "trash"));
+        var indexing = new FgScanner.Data.IndexingService(
+            factory, profiles, new FgScanner.Core.Index.IndexExporter());
+
+        var incoming = Path.Combine(_root, $"incoming-{evidenceProfile}-{committed}");
+        Directory.CreateDirectory(incoming);
+
+        (Guid, int)? profileRef = null;
+        if (profile is not null)
+        {
+            var built = await profile(profiles);
+            profileRef = (built.Id, (await profiles.GetLatestSchemaAsync(built.Id, ct)).Version);
+        }
+        else if (evidenceProfile)
+        {
+            var evidence = await profiles.EnsureEvidenceProfileAsync(ct);
+            profileRef = (evidence.Id, (await profiles.GetLatestSchemaAsync(evidence.Id, ct)).Version);
+        }
+        else
+        {
+            var ordinary = await profiles.CreateAsync("Invoices", ct);
+            profileRef = (ordinary.Id, (await profiles.GetLatestSchemaAsync(ordinary.Id, ct)).Version);
+        }
+
+        var group = await groups.CreateGroupAsync(
+            Path.Combine(_root, $"groups-{evidenceProfile}-{committed}"), "Farm Folder", profileRef, ct);
+        var files = Enumerable.Range(1, pages)
+            .Select(i => MakePageIn(incoming, $"in_{i:00}.png"))
+            .ToList();
+        await groups.AdoptPagesAsync(group.Id, files, null, false, ct);
+        if (committed)
+        {
+            // Committing is IndexingService's job and needs an index; the state is what the
+            // warning turns on, so it is set directly here — in the row and in the instance the
+            // view model is handed.
+            await using (var db = new FgScanner.Data.FgScannerDbContext(
+                FgScanner.Data.DbBootstrapper.BuildOptions(dbPath)))
+            {
+                var row = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions
+                    .FirstAsync(db.Groups, g => g.Id == group.Id, ct);
+                row.State = FgScanner.Data.GroupState.Committed;
+                await db.SaveChangesAsync(ct);
+            }
+
+            group.State = FgScanner.Data.GroupState.Committed;
+        }
+
+        var toolset = new PageEditingToolset(
+            new FgScanner.Scanning.Editing.ImageEditor(),
+            new FgScanner.Scanning.Export.PdfExportService(),
+            new FgScanner.Scanning.Export.ImageExportService(),
+            new FgScanner.Scanning.Import.FileImportService(),
+            new FgScanner.Data.ReorderService(factory),
+            new FgScanner.Data.OcrQueueService(factory),
+            new FgScanner.Data.AiQueueService(factory),
+            new FgScanner.Data.RetroProcessService(factory, groups, trash),
+            new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false),
+            new FgScanner.Data.AppSettingsService(factory),
+            new FgScanner.Data.CaptureTriageService(factory, new FgScanner.Data.AppSettingsService(factory)),
+            new FgScanner.Data.DuplicateFinder(factory))
+        {
+            // A fake mail path and a builder under this test's own folder: a test that sends must
+            // never read the real registry, open Explorer, or leave PDFs in the real %TEMP%.
+            Email = new EmailSender(
+                Builder(), new FakeShareService(ShareRoute.Explorer), new FgScanner.Data.AppSettingsService(factory)),
+        };
+
+        var vm = new GroupDetailViewModel(
+            group, groups, profiles, indexing, trash, new ActiveGroupStore(), toolset);
+        await vm.LoadAsync();
+        return vm;
+    }
+
+    /// <summary>
+    /// §05 N2a. Export treats a selection of one as "the whole group"
+    /// (`ExportImagePaths`, deliberately left alone). Email must not: picking one page and
+    /// sending sixty is the kind of mistake that is only noticed by the recipient, and this is
+    /// case material. Email gets its own rule — any selection means exactly that selection.
+    /// </summary>
+    [Fact]
+    public async Task Three_selected_rows_send_exactly_those_three_in_sequence_order()
+    {
+        var vm = await GroupOfAsync(6);
+        foreach (var row in new[] { vm.Rows[4], vm.Rows[1], vm.Rows[3] })
+        {
+            vm.SelectedRows.Add(row);
+        }
+
+        Assert.Equal(
+            [vm.Rows[1].ImagePath, vm.Rows[3].ImagePath, vm.Rows[4].ImagePath],
+            vm.EmailImagePaths);
+    }
+
+    [Fact]
+    public async Task One_selected_row_sends_that_row_and_not_the_group()
+    {
+        var vm = await GroupOfAsync(6);
+        vm.SelectedRows.Add(vm.Rows[2]);
+
+        Assert.Equal([vm.Rows[2].ImagePath], vm.EmailImagePaths);
+
+        // The export rule is the one that widens to the group, and it stays that way.
+        Assert.Equal(6, vm.Rows.Count);
+    }
+
+    /// <summary>
+    /// Every OCR or AI batch that finishes reloads the rows as new instances. The grid drops its
+    /// selection when its items reset — mimicked here, since no headless test has a grid — and
+    /// nothing put it back, so "no selection" quietly meant the whole group: pick three, mail
+    /// sixty. The selection is the operator's, and a background reload must not take it away.
+    /// </summary>
+    [Fact]
+    public async Task A_background_reload_keeps_the_pages_the_operator_selected()
+    {
+        var vm = await GroupOfAsync(6);
+        vm.Rows.CollectionChanged += (_, e) =>
+        {
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset)
+            {
+                vm.SelectedRows.Clear();
+            }
+        };
+        var chosen = new[] { vm.Rows[1], vm.Rows[3], vm.Rows[4] };
+        foreach (var row in chosen)
+        {
+            vm.SelectedRows.Add(row);
+        }
+
+        vm.SelectedRow = vm.Rows[3];
+        var expected = chosen.Select(r => r.ImagePath).ToList();
+
+        await vm.ReloadRowsAsync();
+
+        Assert.Equal(expected, vm.EmailImagePaths);
+        Assert.All(vm.SelectedRows, r => Assert.Contains(r, vm.Rows));
+        Assert.Same(vm.Rows[3], vm.SelectedRow);
+    }
+
+    [Fact]
+    public async Task No_selection_sends_the_whole_group()
+    {
+        var vm = await GroupOfAsync(4);
+
+        Assert.Empty(vm.SelectedRows);
+        Assert.Equal(vm.Rows.Select(r => r.ImagePath), vm.EmailImagePaths);
+    }
+
+    /// <summary>
+    /// The Scan page sends what is on screen, in the order it is on screen.
+    ///
+    /// The prompt for this phase says "ordered by sequence", which was true when it was written.
+    /// Phase 25 changed it: a two-pass duplex stack is deliberately no longer in capture order,
+    /// the sequence numbers record what came off the scanner first, and the list is the order —
+    /// which is what SaveToGroupAsync reads. Ordering a send by sequence number would email a
+    /// paired stack as fronts-then-backs while the screen showed sheet order.
+    /// </summary>
+    [Fact]
+    public void The_scan_page_sends_its_pages_in_the_order_on_screen()
+    {
+        var scan = ScanViewModelFor([
+            new FgScanner.Scanning.ScannedPage(MakePage("a.png"), 1),
+            new FgScanner.Scanning.ScannedPage(MakePage("b.png"), 4),
+            new FgScanner.Scanning.ScannedPage(MakePage("c.png"), 2),
+        ]);
+
+        Assert.Equal(scan.Pages.Select(p => p.FilePath), scan.EmailImagePaths);
+    }
+
+    private ScanViewModel ScanViewModelFor(
+        IReadOnlyList<FgScanner.Scanning.ScannedPage> pages,
+        Func<FgScanner.Data.AppSettingsService, EmailSender>? email = null,
+        ActiveGroupStore? activeGroup = null)
+    {
+        var dbPath = Path.Combine(_root, "scan.db");
+        using (var db = new FgScanner.Data.FgScannerDbContext(FgScanner.Data.DbBootstrapper.BuildOptions(dbPath)))
+        {
+            Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.Migrate(db.Database);
+        }
+
+        var factory = new TestFactory(dbPath);
+        var groups = new FgScanner.Data.GroupService(factory);
+        var profiles = new FgScanner.Data.ProfileService(factory);
+        var trash = new FgScanner.Data.TrashService(factory, Path.Combine(_root, "scantrash"));
+        var scan = new ScanViewModel(
+            new FgScanner.Scanning.FakeScanService(),
+            new ScanSessionService(Path.Combine(_root, "recovery")),
+            groups,
+            new FgScanner.Data.IndexingService(factory, profiles, new FgScanner.Core.Index.IndexExporter()),
+            activeGroup ?? new ActiveGroupStore(),
+            new ProfileOcrTrigger(profiles, new FgScanner.Data.OcrQueueService(factory)),
+            new PageEditingToolset(
+                new FgScanner.Scanning.Editing.ImageEditor(),
+                new FgScanner.Scanning.Export.PdfExportService(),
+                new FgScanner.Scanning.Export.ImageExportService(),
+                new FgScanner.Scanning.Import.FileImportService(),
+                new FgScanner.Data.ReorderService(factory),
+                new FgScanner.Data.OcrQueueService(factory),
+                new FgScanner.Data.AiQueueService(factory),
+                new FgScanner.Data.RetroProcessService(factory, groups, trash),
+                new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred2"), useCredentialManager: false),
+                new FgScanner.Data.AppSettingsService(factory),
+                new FgScanner.Data.CaptureTriageService(factory, new FgScanner.Data.AppSettingsService(factory)),
+                new FgScanner.Data.DuplicateFinder(factory))
+            {
+                Email = email?.Invoke(new FgScanner.Data.AppSettingsService(factory))
+                    ?? EmailSender.Unwired(
+                        new FgScanner.Scanning.Export.PdfExportService(),
+                        new FgScanner.Data.AppSettingsService(factory)),
+            },
+            trash);
+        foreach (var page in pages)
+        {
+            scan.Pages.Add(page);
+        }
+
+        return scan;
+    }
+
+    // ---- the buttons turn on and off with what is on screen ----
+
+    /// <summary>
+    /// The Scan page is built once, with nothing staged, so its Email button binds disabled. A
+    /// CommunityToolkit command is never re-asked unless someone raises CanExecuteChanged — the
+    /// button stayed grey through any number of scans. Watched through the event, because
+    /// CanExecute answers honestly whether or not anything ever consults it again.
+    /// </summary>
+    [Fact]
+    public void The_scan_page_email_button_turns_on_when_a_page_arrives_and_off_when_it_goes()
+    {
+        var scan = ScanViewModelFor([]);
+        Assert.False(scan.EmailCommand.CanExecute(null));
+        var raised = 0;
+        scan.EmailCommand.CanExecuteChanged += (_, _) => raised++;
+
+        var page = new FgScanner.Scanning.ScannedPage(MakePage("arrives.png"), 1);
+        scan.Pages.Add(page);
+        Assert.True(raised > 0, "adding a page never re-asked the Email button");
+        Assert.True(scan.EmailCommand.CanExecute(null));
+
+        raised = 0;
+        scan.Pages.Remove(page);
+        Assert.True(raised > 0, "removing the last page never re-asked the Email button");
+        Assert.False(scan.EmailCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void The_scan_page_email_button_follows_scanning()
+    {
+        var scan = ScanViewModelFor([new FgScanner.Scanning.ScannedPage(MakePage("s.png"), 1)]);
+        var raised = 0;
+        scan.EmailCommand.CanExecuteChanged += (_, _) => raised++;
+
+        scan.IsScanning = true;
+        Assert.True(raised > 0, "starting a scan never re-asked the Email button");
+        Assert.False(scan.EmailCommand.CanExecute(null));
+
+        raised = 0;
+        scan.IsScanning = false;
+        Assert.True(raised > 0, "finishing a scan never re-asked the Email button");
+        Assert.True(scan.EmailCommand.CanExecute(null));
+    }
+
+    /// <summary>
+    /// A group is usually opened empty — right after it is created — and filled by Scan into group
+    /// or Import. Its Email button kept the grey it had when the group was opened.
+    /// </summary>
+    [Fact]
+    public async Task A_group_opened_empty_can_email_once_pages_arrive()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var vm = await GroupOfAsync(0);
+        var boundEnabled = vm.EmailCommand.CanExecute(null);
+        var raised = 0;
+        vm.EmailCommand.CanExecuteChanged += (_, _) => raised++;
+
+        var groups = new FgScanner.Data.GroupService(new TestFactory(Path.Combine(_root, "group-False-False.db")));
+        var arriving = Path.Combine(_root, "arriving");
+        Directory.CreateDirectory(arriving);
+        await groups.AdoptPagesAsync(vm.Group.Id, [MakePageIn(arriving, "late.png")], null, false, ct);
+        await vm.ReloadRowsAsync();
+
+        Assert.Single(vm.Rows);
+        Assert.True(vm.EmailCommand.CanExecute(null));
+        Assert.True(boundEnabled || raised > 0, "the button bound grey and nothing ever re-asked it");
+    }
+
+    // ---- a send that goes wrong says so, and nothing moves its pages mid-build ----
+
+    private EmailSender SenderThatContinues(FgScanner.Data.AppSettingsService settings, string? subject = null) =>
+        new(Builder(), new FakeShareService(ShareRoute.Explorer), settings)
+        {
+            Ask = (_, _, s, format, _) => EmailChoice.Go(format, subject ?? s),
+        };
+
+    /// <summary>
+    /// §12: "named message; no crash". A page that passes File.Exists and then will not decode is
+    /// the ordinary way a build fails; nothing on the path caught it, and an exception out of an
+    /// async command closes the app.
+    /// </summary>
+    [Fact]
+    public async Task A_page_that_will_not_decode_is_a_sentence_and_not_a_crash()
+    {
+        var corrupt = Path.Combine(_root, "corrupt.jpg");
+        await File.WriteAllBytesAsync(corrupt, [0xFF, 0xD8, 0xFF, 0xE0, 0x00], TestContext.Current.CancellationToken);
+        var sender = SenderThatContinues(Settings());
+
+        var message = await sender.SendAsync(
+            [corrupt], "Farm Folder", "this page", EmailSurface.Scan, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Contains("nothing", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Exception", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The subject becomes the file name, and the export sanitiser does not shorten. A subject the
+    /// operator pasted a paragraph into made a name past the 255-character limit.
+    /// </summary>
+    [Fact]
+    public async Task A_very_long_subject_still_builds()
+    {
+        var sender = SenderThatContinues(Settings(), subject: new string('x', 400));
+
+        var message = await sender.SendAsync(
+            [MakePage("long.png")], "Farm Folder", "this page", EmailSurface.Scan, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Contains("1 page", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Save moves the staged files into the group and Delete recycles them; either one mid-build
+    /// pulls the pages out from under the exporter. Both are held for the length of the send and
+    /// re-asked at each end of it, so the buttons actually go grey and come back.
+    /// </summary>
+    [Fact]
+    public async Task Save_and_delete_are_held_while_a_send_is_building()
+    {
+        var store = new ActiveGroupStore { Current = new FgScanner.Data.Group { Name = "Farm Folder", DirectoryPath = Path.Combine(_root, "farm") } };
+        bool? saveDuring = null, deleteDuring = null;
+        ScanViewModel? scan = null;
+        scan = ScanViewModelFor(
+            [new FgScanner.Scanning.ScannedPage(MakePage("held.png"), 1)],
+            settings => new EmailSender(Builder(), new FakeShareService(ShareRoute.Explorer), settings)
+            {
+                Ask = (_, _, subject, format, _) =>
+                {
+                    saveDuring = scan!.SaveToGroupCommand.CanExecute(null);
+                    deleteDuring = scan.DeleteSelectedPagesCommand.CanExecute(null);
+                    return EmailChoice.Go(format, subject);
+                },
+            },
+            store);
+        scan.SelectedPages.Add(scan.Pages[0]);
+        Assert.True(scan.SaveToGroupCommand.CanExecute(null));
+        Assert.True(scan.DeleteSelectedPagesCommand.CanExecute(null));
+        var saveRaised = 0;
+        var deleteRaised = 0;
+        scan.SaveToGroupCommand.CanExecuteChanged += (_, _) => saveRaised++;
+        scan.DeleteSelectedPagesCommand.CanExecuteChanged += (_, _) => deleteRaised++;
+
+        await scan.EmailCommand.ExecuteAsync(null);
+
+        Assert.False(saveDuring);
+        Assert.False(deleteDuring);
+        Assert.True(saveRaised >= 2, "Save was never re-asked around the send");
+        Assert.True(deleteRaised >= 2, "Delete was never re-asked around the send");
+        Assert.True(scan.SaveToGroupCommand.CanExecute(null));
+        Assert.True(scan.DeleteSelectedPagesCommand.CanExecute(null));
+    }
+
+    /// <summary>
+    /// A batch scan ends by calling the save directly, past the button's CanExecute — so the save
+    /// itself has to refuse while a send is building, or the batch moves the pages away mid-build.
+    /// Run against a real group, so a save that was not refused would genuinely take the page.
+    /// </summary>
+    [Fact]
+    public async Task A_save_that_bypasses_the_button_still_waits_for_the_send()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var store = new ActiveGroupStore();
+        ScanViewModel? scan = null;
+        scan = ScanViewModelFor(
+            [new FgScanner.Scanning.ScannedPage(MakePage("batch.png"), 1)],
+            settings => new EmailSender(Builder(), new FakeShareService(ShareRoute.Explorer), settings)
+            {
+                Ask = (_, _, subject, format, _) =>
+                {
+                    scan!.SaveToGroupCommand.ExecuteAsync(null).GetAwaiter().GetResult();
+                    return EmailChoice.Go(format, subject);
+                },
+            },
+            store);
+        var groups = new FgScanner.Data.GroupService(new TestFactory(Path.Combine(_root, "scan.db")));
+        store.Current = await groups.CreateGroupAsync(Path.Combine(_root, "batch-groups"), "Batch", null, ct);
+        var staged = scan.Pages[0].FilePath;
+
+        var message = await Record(scan);
+
+        Assert.Single(scan.Pages);
+        Assert.True(File.Exists(staged), "the save moved the page while its attachment was building");
+        Assert.Contains("1 page was made into one PDF", message, StringComparison.Ordinal);
+    }
+
+    private static async Task<string> Record(ScanViewModel scan)
+    {
+        await scan.EmailCommand.ExecuteAsync(null);
+        return scan.StatusText;
+    }
+
+    // ---- the Share sheet can actually be reached ----
+
+    private static T OnStaThread<T>(Func<T> work)
+    {
+        T result = default!;
+        Exception? error = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                result = work();
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (error is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The Share sheet's manager is looked up for a window. The hand-written interop asked for it
+    /// by the projected class's GUID — a name hash, not the interface's IID — so every lookup
+    /// threw, the route's wrapper swallowed it, and every send fell through to Explorer. The
+    /// window is real and never shown; nothing here opens the sheet.
+    /// </summary>
+    [Fact]
+    public void The_share_sheet_finds_its_manager_for_a_real_window()
+    {
+        var found = OnStaThread(() =>
+        {
+            var window = new System.Windows.Window { ShowInTaskbar = false };
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(window).EnsureHandle();
+            try
+            {
+                return ShareSheetRoute.ManagerFor(hwnd) is not null;
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+
+        Assert.True(found);
+    }
+
+    private sealed class ThreadRecordingShare : IShareService
+    {
+        public int? OpenedOn { get; private set; }
+
+        public ShareOutcome Open(ShareRequest request)
+        {
+            OpenedOn = Environment.CurrentManagedThreadId;
+            return new ShareOutcome(ShareRoute.Explorer, "recorded");
+        }
+    }
+
+    /// <summary>
+    /// The Share sheet needs the app's window and MAPI needs a parent for its modal draft, and
+    /// both live on the UI thread. The send awaited with ConfigureAwait(false) and the export
+    /// finishes on the pool, so the mail route ran on a pool thread with no window at all — the
+    /// sheet was skipped with nothing logged. Run here under a WPF dispatcher, the way both
+    /// buttons run it.
+    /// </summary>
+    [Fact]
+    public void The_mail_route_is_opened_on_the_thread_that_asked()
+    {
+        var settings = Settings();
+        var pages = Enumerable.Range(1, 4).Select(i => MakePage($"ui-{i}.png")).ToList();
+        var share = new ThreadRecordingShare();
+        var sender = new EmailSender(Builder(), share, settings)
+        {
+            Ask = (_, _, subject, format, _) => EmailChoice.Go(format, subject),
+        };
+
+        var asked = OnStaThread(() =>
+        {
+            SynchronizationContext.SetSynchronizationContext(
+                new System.Windows.Threading.DispatcherSynchronizationContext());
+            var frame = new System.Windows.Threading.DispatcherFrame();
+            var send = sender.SendAsync(pages, "Farm Folder", "this scan", EmailSurface.Scan);
+            send.ContinueWith(_ => frame.Continue = false, TaskScheduler.Default);
+            System.Windows.Threading.Dispatcher.PushFrame(frame);
+            send.GetAwaiter().GetResult();
+            return Environment.CurrentManagedThreadId;
+        });
+
+        Assert.Equal(asked, share.OpenedOn);
+    }
+
+    // ---- the one-time evidence warning (§05 Q2b) ----
+
+    /// <summary>
+    /// Records what the dialog was asked to show, and answers as if the operator pressed
+    /// Continue. Replaces the real dialog so a send can be walked without a window.
+    /// </summary>
+    private sealed class RecordingAsk
+    {
+        public List<bool> WarningShown { get; } = [];
+
+        public bool Dismiss { get; set; }
+
+        /// <summary>Cancel the first dialog — with the tick as <see cref="Dismiss"/> says.</summary>
+        public bool CancelFirst { get; set; }
+
+        public EmailChoice Ask(
+            int pageCount, string source, string subject, EmailAttachment format, bool warn)
+        {
+            WarningShown.Add(warn);
+            return CancelFirst && WarningShown.Count == 1
+                ? EmailChoice.Cancel(Dismiss)
+                : EmailChoice.Go(format, subject, Dismiss);
+        }
+    }
+
+    private async Task<(GroupDetailViewModel Vm, RecordingAsk Ask)> EvidenceGroupAsync(
+        bool evidenceProfile = true, bool committed = true)
+    {
+        var vm = await GroupOfAsync(2, evidenceProfile, committed);
+        var ask = new RecordingAsk();
+        vm.Email.Ask = ask.Ask;
+        return (vm, ask);
+    }
+
+    /// <summary>
+    /// §05 Q2b. A send copies pages out of the folder whose checksums and `originals\` archive
+    /// are its evidentiary integrity (ADR-0003). It is allowed — but the operator is told, once,
+    /// what leaving that folder means. It never blocks the send.
+    /// </summary>
+    [Fact]
+    public async Task A_committed_evidence_group_warns_on_the_first_send()
+    {
+        var (vm, ask) = await EvidenceGroupAsync();
+
+        await vm.EmailCommand.ExecuteAsync(null);
+
+        Assert.Equal([true], ask.WarningShown);
+    }
+
+    [Fact]
+    public async Task The_warning_does_not_come_back_once_it_is_dismissed()
+    {
+        var (vm, ask) = await EvidenceGroupAsync();
+        ask.Dismiss = true;
+
+        await vm.EmailCommand.ExecuteAsync(null);
+        await vm.EmailCommand.ExecuteAsync(null);
+
+        Assert.Equal([true, false], ask.WarningShown);
+    }
+
+    /// <summary>
+    /// Evidence is what the importer reads, and the importer reads field names — not the profile's
+    /// name. The walkthrough before 0.4.0 built "JimsStuff Evidence" by hand, with the nine fields
+    /// that preceded the sticky-note ones, and Jim's runbook says to pick it.
+    /// </summary>
+    private static readonly string[] PreContractEvidenceFields =
+        ["DocNo", "DocDate", "DocType", "Title", "Parties", "Operator", "Redact", "Box", "Notes"];
+
+    [Fact]
+    public async Task A_committed_group_on_the_hand_built_evidence_profile_is_warned_about()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var vm = await GroupOfAsync(2, committed: true, profile: async profiles =>
+        {
+            var handBuilt = await profiles.CreateAsync("JimsStuff Evidence", ct);
+            await profiles.SaveSchemaAsync(
+                handBuilt.Id,
+                [.. PreContractEvidenceFields.Select((name, i) => new FgScanner.Data.FieldDefinition { Name = name, Order = i })],
+                ct);
+            return handBuilt;
+        });
+        var ask = new RecordingAsk();
+        vm.Email.Ask = ask.Ask;
+
+        await vm.EmailCommand.ExecuteAsync(null);
+
+        Assert.Equal([true], ask.WarningShown);
+    }
+
+    [Fact]
+    public async Task A_renamed_evidence_profile_is_still_evidence()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var vm = await GroupOfAsync(2, committed: true, profile: async profiles =>
+        {
+            var evidence = await profiles.EnsureEvidenceProfileAsync(ct);
+            await profiles.RenameAsync(evidence.Id, "Portage County box scans", ct);
+            return evidence;
+        });
+        var ask = new RecordingAsk();
+        vm.Email.Ask = ask.Ask;
+
+        await vm.EmailCommand.ExecuteAsync(null);
+
+        Assert.Equal([true], ask.WarningShown);
+    }
+
+    /// <summary>
+    /// Ticking "don't show this again" and then pressing Cancel is still having read the warning.
+    /// The tick was lost with the rest of the cancelled dialog, so it came back on the next send.
+    /// </summary>
+    [Fact]
+    public async Task A_dismissed_warning_stays_dismissed_when_that_send_is_cancelled()
+    {
+        var (vm, ask) = await EvidenceGroupAsync();
+        ask.Dismiss = true;
+        ask.CancelFirst = true;
+
+        await vm.EmailCommand.ExecuteAsync(null);
+        await vm.EmailCommand.ExecuteAsync(null);
+
+        Assert.Equal([true, false], ask.WarningShown);
+    }
+
+    /// <summary>Not every group is evidence; a warning shown everywhere is a warning nobody reads.</summary>
+    [Fact]
+    public async Task A_group_on_an_ordinary_profile_is_never_warned_about()
+    {
+        var (vm, ask) = await EvidenceGroupAsync(evidenceProfile: false);
+
+        await vm.EmailCommand.ExecuteAsync(null);
+
+        Assert.Equal([false], ask.WarningShown);
+    }
+
+    /// <summary>
+    /// Before commit there is no index and no `originals\` archive to speak of — the folder is
+    /// still being built, and the warning is about leaving a finished record.
+    /// </summary>
+    [Fact]
+    public async Task An_uncommitted_group_is_never_warned_about()
+    {
+        var (vm, ask) = await EvidenceGroupAsync(committed: false);
+
+        await vm.EmailCommand.ExecuteAsync(null);
+
+        Assert.Equal([false], ask.WarningShown);
+    }
+
+    /// <summary>
+    /// §14. Every send is logged: which surface, how many pages, which format, which route.
+    ///
+    /// And never a recipient. The app does not know one — the operator addresses the message in
+    /// their own client — and it must not start keeping a record of who case material was sent
+    /// to as a side effect of logging that it was sent. That would be a decision of its own, and
+    /// nobody has made it. Asserted rather than eyeballed, because a log line grows by accident.
+    /// </summary>
+    [Fact]
+    public async Task Every_send_is_logged_without_a_recipient()
+    {
+        var written = new List<string>();
+        var previous = Serilog.Log.Logger;
+        Serilog.Log.Logger = new Serilog.LoggerConfiguration()
+            .MinimumLevel.Information()
+            .WriteTo.Sink(new CapturingSink(written))
+            .CreateLogger();
+        try
+        {
+            var share = new FakeShareService(ShareRoute.Explorer);
+            var sender = new EmailSender(Builder(), share, Settings())
+            {
+                Ask = (_, _, subject, format, _) => EmailChoice.Go(format, subject),
+            };
+
+            await sender.SendAsync(
+                [MakePage("log-1.png"), MakePage("log-2.png")],
+                "Farm Folder",
+                "the 2 selected pages",
+                EmailSurface.Group,
+                evidenceRecord: false,
+                TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            (Serilog.Log.Logger as IDisposable)?.Dispose();
+            Serilog.Log.Logger = previous;
+        }
+
+        var line = Assert.Single(written, l => l.Contains("Email:", StringComparison.Ordinal));
+        Assert.Contains("2 page(s)", line, StringComparison.Ordinal);
+        Assert.Contains("Group", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("the 2 selected pages", line, StringComparison.Ordinal);
+        Assert.Contains("Pdf", line, StringComparison.Ordinal);
+        Assert.Contains("Explorer", line, StringComparison.Ordinal);
+
+        // Nothing that could be an address, anywhere in the whole run's output.
+        Assert.All(written, l => Assert.False(LooksLikeAddressing(l), l));
+    }
+
+    /// <summary>
+    /// The markers are whole headers, never bare letters: the log carries GUID folder names, and
+    /// a bare "cc" turns up in random hex often enough to fail about one run in five.
+    /// </summary>
+    private static bool LooksLikeAddressing(string line) =>
+        line.Contains('@', StringComparison.Ordinal)
+        || AddressingMarkers.Any(marker => line.Contains(marker, StringComparison.OrdinalIgnoreCase));
+
+    private static readonly string[] AddressingMarkers = ["recipient", "mailto:", "To:", "Cc:", "Bcc:"];
+
+    /// <summary>
+    /// The check above has to be able to pass. The folder in this line is one a real run logged
+    /// shape-for-shape, with "cc" in its GUID — the case that used to fail the send test at random.
+    /// </summary>
+    [Fact]
+    public void A_folder_guid_is_not_mistaken_for_an_address()
+    {
+        const string line = "[Information] Built 1 attachment(s) (2825 bytes) as Pdf in "
+            + "\"C:\\Temp\\fgscanner-tests\\91b2118a25c541d0912ccc48bc251b53\\temp\\1a33fe6e8820423ca43837674e7290be\"";
+
+        Assert.False(LooksLikeAddressing(line));
+        Assert.True(LooksLikeAddressing("[Information] Cc: someone"));
+        Assert.True(LooksLikeAddressing("[Information] sent to jsmith@firm.com"));
+    }
+
+    /// <summary>
+    /// A toolset built without its email sender wired — every test that is not about email — must
+    /// not be able to reach the shell, the registry or a window. The old default was the real
+    /// share service, so any test that pressed Email opened Explorer and left PDFs in %TEMP%.
+    /// </summary>
+    [Fact]
+    public async Task An_unwired_toolset_cannot_reach_the_shell_or_a_window()
+    {
+        var dbPath = Path.Combine(_root, "unwired.db");
+        using (var db = new FgScanner.Data.FgScannerDbContext(FgScanner.Data.DbBootstrapper.BuildOptions(dbPath)))
+        {
+            Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.Migrate(db.Database);
+        }
+
+        var factory = new TestFactory(dbPath);
+        var toolset = new PageEditingToolset(
+            new FgScanner.Scanning.Editing.ImageEditor(),
+            new FgScanner.Scanning.Export.PdfExportService(),
+            new FgScanner.Scanning.Export.ImageExportService(),
+            new FgScanner.Scanning.Import.FileImportService(),
+            new FgScanner.Data.ReorderService(factory),
+            new FgScanner.Data.OcrQueueService(factory),
+            new FgScanner.Data.AiQueueService(factory),
+            new FgScanner.Data.RetroProcessService(
+                factory, new FgScanner.Data.GroupService(factory), new FgScanner.Data.TrashService(factory, Path.Combine(_root, "t"))),
+            new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred3"), useCredentialManager: false),
+            new FgScanner.Data.AppSettingsService(factory),
+            new FgScanner.Data.CaptureTriageService(factory, new FgScanner.Data.AppSettingsService(factory)),
+            new FgScanner.Data.DuplicateFinder(factory));
+
+        var message = await toolset.Email.SendAsync(
+            [MakePage("unwired.png")], "Farm Folder", "this page", EmailSurface.Scan, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Contains("nothing left the app", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// §14 again, through the real share service rather than the fake. The subject is the
+    /// operator's free text, and "Box 14 deeds for jsmith@firm.com" is an ordinary thing to type
+    /// — logged, it kept a recipient in the 14-day log. The routes are stubbed; the logging is not.
+    /// </summary>
+    [Fact]
+    public void The_share_service_never_logs_the_subject()
+    {
+        const string subject = "Box 14 deeds for jsmith@firm.com";
+        var written = new List<string>();
+        var previous = Serilog.Log.Logger;
+        Serilog.Log.Logger = new Serilog.LoggerConfiguration()
+            .MinimumLevel.Verbose()
+            .WriteTo.Sink(new CapturingSink(written))
+            .CreateLogger();
+        try
+        {
+            var service = new WindowsShareService(
+                shareSheet: _ => false,
+                mapi: _ => MapiDraft.Failed,
+                mapiAvailable: () => true,
+                revealInExplorer: _ => true);
+
+            service.Open(new ShareRequest([MakePage("subject.png")], subject));
+        }
+        finally
+        {
+            (Serilog.Log.Logger as IDisposable)?.Dispose();
+            Serilog.Log.Logger = previous;
+        }
+
+        Assert.NotEmpty(written);
+        Assert.All(written, l => Assert.DoesNotContain("jsmith", l, StringComparison.OrdinalIgnoreCase));
+        Assert.All(written, l => Assert.False(LooksLikeAddressing(l), l));
+    }
+
+    /// <summary>
+    /// The exception is part of the line: Serilog's default file template ends with {Exception},
+    /// so whatever an exception says reaches %LOCALAPPDATA%\FGScanner\logs. Rendering only the
+    /// message made every privacy test below blind to the one path that actually leaked — the
+    /// attachment's file name, which is the subject, inside an IOException.
+    /// </summary>
+    private sealed class CapturingSink(List<string> lines) : Serilog.Core.ILogEventSink
+    {
+        public void Emit(Serilog.Events.LogEvent logEvent)
+        {
+            using var writer = new StringWriter();
+            logEvent.RenderMessage(writer, System.Globalization.CultureInfo.InvariantCulture);
+            var exception = logEvent.Exception is { } ex ? Environment.NewLine + ex : "";
+            lines.Add($"[{logEvent.Level}] {writer}{exception}");
+        }
+    }
+
+    private static List<string> CaptureLog(Action work)
+    {
+        var written = new List<string>();
+        var previous = Serilog.Log.Logger;
+        Serilog.Log.Logger = new Serilog.LoggerConfiguration()
+            .MinimumLevel.Verbose()
+            .WriteTo.Sink(new CapturingSink(written))
+            .CreateLogger();
+        try
+        {
+            work();
+        }
+        finally
+        {
+            (Serilog.Log.Logger as IDisposable)?.Dispose();
+            Serilog.Log.Logger = previous;
+        }
+
+        return written;
+    }
+
+    private const string SubjectNamingSomeone = "Box 14 deeds for jsmith@firm.com";
+
+    /// <summary>
+    /// §14 forbids recording who case material went to. The subject becomes the attachment's file
+    /// name, and a failed clean-up logs an IOException that quotes that name — the ordinary case,
+    /// since the mail client is usually still holding the PDF. So the exception must not reach the
+    /// log at all; the operator gets the reason on screen instead.
+    /// </summary>
+    [Fact]
+    public async Task A_locked_attachment_does_not_put_the_subject_in_the_log()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var builder = Builder();
+        var built = await builder.BuildAsync([MakePage("locked.png")], SubjectNamingSomeone, EmailAttachment.Pdf, ct);
+        Assert.True(built.Ok, built.Message);
+
+        // Held open the way a mail client holds an attachment it has not finished with.
+        using var hold = new FileStream(built.FilePaths[0], FileMode.Open, FileAccess.Read, FileShare.None);
+        var written = CaptureLog(builder.CleanUp);
+
+        Assert.NotEmpty(written);
+        Assert.All(written, l => Assert.DoesNotContain("jsmith", l, StringComparison.OrdinalIgnoreCase));
+        Assert.All(written, l => Assert.DoesNotContain("Box 14", l, StringComparison.Ordinal));
+        Assert.All(written, l => Assert.False(LooksLikeAddressing(l), l));
+    }
+
+    /// <summary>
+    /// The compose URL carries the subject and the operator's own account. A browser that fails to
+    /// start throws a Win32Exception quoting the whole command — so that exception must not be
+    /// logged either.
+    /// </summary>
+    [Fact]
+    public void A_browser_failure_does_not_put_the_compose_url_in_the_log()
+    {
+        var url = "";
+        var service = new WindowsShareService(
+            shareSheet: _ => false,
+            mapi: _ => MapiDraft.Failed,
+            mapiAvailable: () => false,
+            revealInExplorer: _ => true,
+            copyToClipboard: _ => true,
+            openInBrowser: u =>
+            {
+                url = u;
+                throw new System.ComponentModel.Win32Exception(
+                    $"An error occurred trying to start process '{u}' with working directory '.'.");
+            });
+
+        var written = CaptureLog(() => service.Open(
+            new ShareRequest([MakePage("url.png")], SubjectNamingSomeone, MailPath.Gmail, "fgerster@fgmaker.com")));
+
+        Assert.Contains("jsmith", url, StringComparison.OrdinalIgnoreCase);
+        Assert.NotEmpty(written);
+        Assert.All(written, l => Assert.DoesNotContain("jsmith", l, StringComparison.OrdinalIgnoreCase));
+        Assert.All(written, l => Assert.DoesNotContain("fgerster", l, StringComparison.OrdinalIgnoreCase));
+        Assert.All(written, l => Assert.False(LooksLikeAddressing(l), l));
+    }
+
+    /// <summary>
+    /// A send whose attachment cannot be built logs the failure — and the exception's message names
+    /// the file, which is the subject. Same rule: the type, not the exception.
+    /// </summary>
+    [Fact]
+    public async Task A_failed_build_does_not_put_the_subject_in_the_log()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var corrupt = Path.Combine(_root, "corrupt-log.jpg");
+        await File.WriteAllBytesAsync(corrupt, [0xFF, 0xD8, 0xFF, 0xE0, 0x00], ct);
+        var sender = new EmailSender(Builder(), new FakeShareService(ShareRoute.Explorer), Settings())
+        {
+            Ask = (_, _, _, format, _) => EmailChoice.Go(format, SubjectNamingSomeone),
+        };
+
+        var written = CaptureLog(() => sender.SendAsync([corrupt], "Farm Folder", "this scan", EmailSurface.Scan).GetAwaiter().GetResult());
+
+        Assert.NotEmpty(written);
+        Assert.All(written, l => Assert.DoesNotContain("jsmith", l, StringComparison.OrdinalIgnoreCase));
+        Assert.All(written, l => Assert.False(LooksLikeAddressing(l), l));
+    }
+
+    /// <summary>
+    /// The descriptors are freed in a finally that used to run over every slot, including those the
+    /// loop never wrote — freeing pointers out of uninitialised memory, which fail-fasts the
+    /// process past every catch. A path that cannot be resolved throws part-way through that loop.
+    /// </summary>
+    [Fact]
+    public void A_path_that_throws_part_way_through_the_attachments_does_not_take_the_process_with_it()
+    {
+        var request = new ShareRequest(
+            [MakePage("first.png"), "C:\\a\0b", MakePage("third.png")], "Farm Folder");
+
+        Assert.ThrowsAny<Exception>(() => SimpleMapiRoute.TryOpen(request));
+    }
+
+    /// <summary>
+    /// Launched by bare name, Windows searches the app's own folder — and the file-association
+    /// launch path means that folder can be one the operator merely opened a scan from.
+    /// </summary>
+    [Fact]
+    public void Explorer_is_launched_from_the_Windows_folder()
+    {
+        var expected = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+
+        Assert.Equal(expected, ExplorerSelect.Executable);
+        Assert.True(File.Exists(ExplorerSelect.Executable));
+    }
+
+    /// <summary>
+    /// "It stays there until FG Scanner closes" promised a deletion the app cannot guarantee: a
+    /// killed session never reaches its clean-up, and on this station most sessions are killed.
+    /// The startup sweep is the real guarantee, so the sentence says both.
+    /// </summary>
+    [Fact]
+    public void The_fallback_is_honest_about_when_the_copy_goes()
+    {
+        var service = new WindowsShareService(
+            shareSheet: _ => false, mapi: _ => MapiDraft.Failed, mapiAvailable: () => false, revealInExplorer: _ => true);
+
+        var message = service.Open(Request()).Message;
+
+        Assert.Contains("next time it starts", message, StringComparison.Ordinal);
+    }
+
+    private AttachmentBuilder Builder() => new(
+        new FgScanner.Scanning.Export.PdfExportService(),
+        Path.Combine(_root, "temp"));
+
+    /// <summary>
+    /// AC-9. The group folder is the record: its checksums and its `originals\` archive are what
+    /// make it evidence (ADR-0003). Building something to attach must not add a file to it, move
+    /// one, or touch one — the copy that leaves is a copy, and the folder is as it was.
+    /// </summary>
+    [Fact]
+    public async Task Building_attachments_writes_nothing_into_the_group_folder()
+    {
+        var group = Path.Combine(_root, "group");
+        Directory.CreateDirectory(group);
+        var pages = new[] { MakePageIn(group, "scan_00001.png"), MakePageIn(group, "scan_00002.png") };
+        var before = Directory.GetFiles(group, "*", SearchOption.AllDirectories)
+            .ToDictionary(f => f, f => new FileInfo(f).LastWriteTimeUtc, StringComparer.OrdinalIgnoreCase);
+
+        var built = await Builder().BuildAsync(pages, "Farm Folder", EmailAttachment.Pdf, TestContext.Current.CancellationToken);
+
+        Assert.True(built.Ok, built.Message);
+        Assert.NotEmpty(built.FilePaths);
+        Assert.All(built.FilePaths, p => Assert.DoesNotContain(group, p, StringComparison.OrdinalIgnoreCase));
+
+        var after = Directory.GetFiles(group, "*", SearchOption.AllDirectories)
+            .ToDictionary(f => f, f => new FileInfo(f).LastWriteTimeUtc, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal(before.Keys.Order(), after.Keys.Order());
+        Assert.All(before, kv => Assert.Equal(kv.Value, after[kv.Key]));
+    }
+
+    /// <summary>
+    /// A page whose file has gone — moved, deleted, a drive unplugged — must name the page and
+    /// share nothing. Sending a PDF silently short of a page is the failure mode that matters
+    /// here: the message looks complete to whoever receives it.
+    /// </summary>
+    [Fact]
+    public async Task A_missing_page_names_the_page_and_shares_nothing()
+    {
+        var present = MakePage("here.png");
+        var missing = Path.Combine(_root, "gone.png");
+
+        var built = await Builder().BuildAsync([present, missing], "Farm Folder", EmailAttachment.Pdf, TestContext.Current.CancellationToken);
+
+        Assert.False(built.Ok);
+        Assert.Empty(built.FilePaths);
+        Assert.Contains("gone.png", built.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Exception", built.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// A page's file name comes from the naming template, which can be built from field values —
+    /// a title, the parties. The operator is told which page is gone; the 14-day log is told how
+    /// many (§14).
+    /// </summary>
+    [Fact]
+    public void A_missing_page_is_counted_but_not_named_in_the_log()
+    {
+        var present = MakePage("here-log.png");
+        var missing = Path.Combine(_root, "Deed for jsmith@firm.com.png");
+        BuiltAttachments built = default!;
+
+        var written = CaptureLog(() => built = Builder()
+            .BuildAsync([present, missing], "Farm Folder", EmailAttachment.Pdf).GetAwaiter().GetResult());
+
+        Assert.Contains("jsmith", built.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(written, l => l.Contains("1 page file(s) missing", StringComparison.Ordinal));
+        Assert.All(written, l => Assert.DoesNotContain("jsmith", l, StringComparison.OrdinalIgnoreCase));
+        Assert.All(written, l => Assert.False(LooksLikeAddressing(l), l));
+    }
+
+    /// <summary>
+    /// §14 asks for the surface, Scan or Groups. What the dialog shows as the source is the group's
+    /// name in quotes — free text, like the subject, and just as able to name someone.
+    /// </summary>
+    [Fact]
+    public async Task A_group_send_logs_the_surface_and_not_the_group_name()
+    {
+        var (vm, _) = await EvidenceGroupAsync(evidenceProfile: false, committed: false);
+
+        var written = CaptureLog(() => vm.EmailCommand.ExecuteAsync(null).GetAwaiter().GetResult());
+
+        var line = Assert.Single(written, l => l.Contains("Email:", StringComparison.Ordinal));
+        Assert.Contains("from Group", line, StringComparison.Ordinal);
+        Assert.All(written, l => Assert.DoesNotContain("Farm Folder", l, StringComparison.Ordinal));
+    }
+
+    /// <summary>§15: warn above 20 MB, never refuse — the operator decides.</summary>
+    [Fact]
+    public async Task A_large_attachment_warns_but_still_goes()
+    {
+        var built = await Builder().BuildAsync([MakePage("one.png")], "Small", EmailAttachment.Pdf, TestContext.Current.CancellationToken);
+        Assert.True(built.Ok);
+        Assert.False(built.TooLarge);
+        Assert.Equal("", built.Warning);
+
+        var over = AttachmentBuilder.SizeWarning(21L * 1024 * 1024);
+        Assert.Contains("20 MB", over, StringComparison.Ordinal);
+        Assert.Contains("28", over, StringComparison.Ordinal);
+        Assert.Equal("", AttachmentBuilder.SizeWarning(14L * 1024 * 1024));
+    }
+
+    private async Task<string> SendThroughAsync(WindowsShareService share, int pages, EmailAttachment format)
+    {
+        var sender = new EmailSender(Builder(), share, Settings())
+        {
+            Ask = (_, _, subject, _, _) => EmailChoice.Go(format, subject),
+        };
+        var files = Enumerable.Range(1, pages).Select(i => MakeJpeg($"status-{i}.jpg")).ToList();
+        return await sender.SendAsync(files, "Farm Folder", "this scan", EmailSurface.Scan, cancellationToken: TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>
+    /// The status line said "3 pages attached. No mail app was found. The 1 page is in …" — two
+    /// claims that were false and a count that contradicted the first. Nothing was attached to
+    /// anything, and the "1 page" was one PDF holding three. The share layer sees files, not
+    /// pages, so it speaks of attachments; the sender, which knows both, says what was made.
+    /// </summary>
+    [Fact]
+    public async Task A_send_that_opened_no_message_says_what_was_made_and_where()
+    {
+        var fallback = new WindowsShareService(
+            shareSheet: _ => false, mapi: _ => MapiDraft.Failed, mapiAvailable: () => false, revealInExplorer: _ => true);
+
+        var message = await SendThroughAsync(fallback, 3, EmailAttachment.Pdf);
+
+        Assert.DoesNotContain("attached", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("1 page", message, StringComparison.Ordinal);
+        Assert.Contains("3 pages", message, StringComparison.Ordinal);
+        Assert.Contains("one PDF", message, StringComparison.Ordinal);
+        Assert.Contains("attach it", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Images_that_opened_no_message_are_counted_as_files()
+    {
+        var fallback = new WindowsShareService(
+            shareSheet: _ => false, mapi: _ => MapiDraft.Failed, mapiAvailable: () => false, revealInExplorer: _ => true);
+
+        var message = await SendThroughAsync(fallback, 3, EmailAttachment.Images);
+
+        Assert.Contains("3 images", message, StringComparison.Ordinal);
+        Assert.Contains("attach them", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The Share sheet opening is not a message opening: the operator still chooses where it goes,
+    /// and may close it. "Opened in your mail app" said otherwise.
+    /// </summary>
+    [Fact]
+    public async Task The_share_sheet_is_named_for_what_it_is()
+    {
+        var sheet = new WindowsShareService(
+            shareSheet: _ => true, mapi: _ => MapiDraft.Failed, mapiAvailable: () => false, revealInExplorer: _ => true);
+
+        var message = await SendThroughAsync(sheet, 3, EmailAttachment.Pdf);
+
+        Assert.StartsWith("3 pages attached", message, StringComparison.Ordinal);
+        Assert.Contains("Share sheet", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Opened in your mail app", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Attachments are full-resolution copies of case material in the system temp folder. They
+    /// were removed only from this session's own list, and only on a clean exit — so a crash, End
+    /// Task or a power cut left them indefinitely. The app is single-instance, so every folder
+    /// under the attachment root belongs to a session that is over, and a new one takes them all.
+    /// </summary>
+    [Fact]
+    public async Task A_new_session_removes_what_a_crashed_one_left()
+    {
+        var root = Path.Combine(_root, "temp");
+        var crashed = new AttachmentBuilder(new FgScanner.Scanning.Export.PdfExportService(), root);
+        var left = await crashed.BuildAsync(
+            [MakePage("left.png")], "Farm Folder", EmailAttachment.Pdf, TestContext.Current.CancellationToken);
+        Assert.True(File.Exists(left.FilePaths[0]));
+
+        // The crashed session never ran its clean-up; the next one starts with an empty list.
+        new AttachmentBuilder(new FgScanner.Scanning.Export.PdfExportService(), root).CleanUp();
+
+        Assert.Empty(Directory.GetFileSystemEntries(root));
+    }
+
+    /// <summary>
+    /// The Explorer fallback sends the operator to a folder that closing the app deletes. Said, so
+    /// nobody closes FG Scanner between finding the file and attaching it.
+    /// </summary>
+    [Fact]
+    public async Task The_fallback_says_the_folder_goes_when_the_app_closes()
+    {
+        var fallback = new WindowsShareService(
+            shareSheet: _ => false, mapi: _ => MapiDraft.Failed, mapiAvailable: () => false, revealInExplorer: _ => true);
+
+        var message = await SendThroughAsync(fallback, 2, EmailAttachment.Pdf);
+
+        Assert.Contains("until FG Scanner closes", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// MAPI_DIALOG is modal: MAPISendMail returns only when the compose window closes, and
+    /// MAPI_USER_ABORT means "no message was sent". That was counted as opened, so a draft the
+    /// operator threw away read "attached … open in your mail app" — and with MAPI now first, a
+    /// cancelled draft is the ordinary way to change one's mind. It must not fall through to the
+    /// Share sheet either: closing the draft was the answer.
+    /// </summary>
+    [Fact]
+    public async Task A_mapi_draft_closed_without_sending_says_nothing_left()
+    {
+        var sheetTried = false;
+        var share = new WindowsShareService(
+            shareSheet: _ => { sheetTried = true; return true; },
+            mapi: _ => MapiDraft.Cancelled,
+            mapiAvailable: () => true,
+            revealInExplorer: _ => true);
+
+        var message = await SendThroughAsync(share, 2, EmailAttachment.Pdf);
+
+        Assert.False(sheetTried);
+        Assert.DoesNotContain("attached", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("without sending", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>By the time MAPISendMail returns success the operator has pressed Send — the draft is not "open".</summary>
+    [Fact]
+    public async Task A_sent_mapi_draft_is_not_described_as_open()
+    {
+        var share = new WindowsShareService(
+            shareSheet: _ => true, mapi: _ => MapiDraft.Sent, mapiAvailable: () => true, revealInExplorer: _ => true);
+
+        var message = await SendThroughAsync(share, 2, EmailAttachment.Pdf);
+
+        Assert.DoesNotContain("is open", message, StringComparison.Ordinal);
+        Assert.Contains("sent", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Explorer splits /select's argument on commas. The file is named after the subject, and
+    /// "Smith, John deeds" is an ordinary subject — the old argument list passed that path
+    /// unquoted when it had no spaces, and Explorer opened the wrong place or none. A group folder
+    /// named with a comma broke the Groups page's "Open containing folder" the same way.
+    /// </summary>
+    [Theory]
+    [InlineData(@"C:\Temp\email\1a2b\Smith,John.pdf")]
+    [InlineData(@"D:\Evidence-Scans\Smith, John\scan_00001.jpg")]
+    public void The_explorer_argument_quotes_the_path_so_a_comma_stays_in_it(string path)
+    {
+        Assert.Equal($"/select,\"{path}\"", ExplorerSelect.Arguments(path));
+    }
+
+    /// <summary>
+    /// §15's limit is the mail server's, and it measures the message, not the files: attachments
+    /// travel base64-encoded, a third larger. A 19 MB PDF is a 25 MB message, and it was not warned
+    /// about.
+    /// </summary>
+    [Fact]
+    public void The_size_warning_counts_what_the_message_will_weigh()
+    {
+        Assert.NotEqual("", AttachmentBuilder.SizeWarning(16L * 1024 * 1024));
+        Assert.Equal("", AttachmentBuilder.SizeWarning(14L * 1024 * 1024));
+        Assert.Contains("about 25 MB", AttachmentBuilder.SizeWarning(19L * 1024 * 1024), StringComparison.Ordinal);
+    }
+
+    // ---- webmail: Franz sends from Gmail, Jim from Yahoo (2026-09-22) ----
+
+    private static WindowsShareService WebmailStation(
+        List<string> order, bool browser = true, bool explorer = true, bool clipboard = true) => new(
+        announcePaste: (headline, detail) => order.Add($"notice:{headline} | {detail}"),
+        shareSheet: _ => { order.Add("sheet"); return true; },
+        mapi: _ => { order.Add("mapi"); return MapiDraft.Sent; },
+        mapiAvailable: () => true,
+        revealInExplorer: p => { order.Add("explorer:" + Path.GetFileName(p)); return explorer; },
+        openInBrowser: url => { order.Add("browser:" + url); return browser; },
+        copyToClipboard: files =>
+        {
+            order.Add("clipboard:" + string.Join(",", files.Select(Path.GetFileName)));
+            return clipboard ? true : throw new InvalidOperationException("OpenClipboard failed");
+        });
+
+    /// <summary>
+    /// No Windows mechanism can hand a file to a mail service running in a browser: it is neither
+    /// a MAPI client nor a share target, and mailto: cannot carry an attachment. What a browser does
+    /// take is a paste: Franz copied the PDF in Explorer and pressed Ctrl+V in a Gmail message, and
+    /// it attached (2026-09-23). So the file goes on the clipboard and the compose page opens — one
+    /// keystroke, and no Explorer window to drag from. The mail-app routes are never tried: on
+    /// Franz's PC the Share sheet opened every time and Gmail was never in it.
+    /// </summary>
+    [Fact]
+    public void Gmail_opens_a_compose_page_with_the_file_ready_to_paste_and_never_tries_the_mail_app_routes()
+    {
+        var order = new List<string>();
+
+        var outcome = WebmailStation(order).Open(
+            new ShareRequest([MakePage("farm.png")], "Farm Folder", MailPath.Gmail));
+
+        Assert.Equal(ShareRoute.Webmail, outcome.Route);
+        Assert.Equal("clipboard:farm.png", order[0]);
+        Assert.Equal("browser:https://mail.google.com/mail/?view=cm&fs=1&su=Farm%20Folder", order[1]);
+        Assert.Contains("Gmail", outcome.Message, StringComparison.Ordinal);
+        Assert.Contains("Ctrl+V", outcome.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("drag", outcome.Message, StringComparison.Ordinal);
+        Assert.Contains("until FG Scanner closes", outcome.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Once the message is open the operator is looking at the browser, not at FG Scanner's status
+    /// line — so the paste went unannounced where it mattered (Franz, 2026-09-23). A notice that
+    /// stays on top says what was copied and which key attaches it. Last, after the browser, so it
+    /// is not waiting behind a window that has not opened yet.
+    /// </summary>
+    [Theory]
+    [InlineData("deed.pdf", 1, "notice:PDF copied | Click in the Gmail message and press Ctrl+V to attach it.")]
+    [InlineData("page.jpg", 1, "notice:Image copied | Click in the Gmail message and press Ctrl+V to attach it.")]
+    [InlineData("page.jpg", 3, "notice:3 images copied | Click in the Gmail message and press Ctrl+V to attach them.")]
+    public void The_paste_is_announced_where_the_operator_is_looking(string file, int count, string expected)
+    {
+        var order = new List<string>();
+        var files = Enumerable.Range(1, count)
+            .Select(i => MakePage($"{i}-{file}"))
+            .ToList();
+
+        WebmailStation(order).Open(new ShareRequest(files, "Farm Folder", MailPath.Gmail));
+
+        Assert.Equal(expected, order[^1]);
+        Assert.StartsWith("browser:", order[^2], StringComparison.Ordinal);
+    }
+
+    /// <summary>Nothing was copied, or there is no message to paste into: a notice saying Ctrl+V would be wrong.</summary>
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void No_paste_notice_when_there_is_nothing_to_paste_or_nowhere_to_paste_it(bool clipboard, bool browser)
+    {
+        var order = new List<string>();
+
+        WebmailStation(order, browser: browser, clipboard: clipboard).Open(
+            new ShareRequest([MakePage("farm.png")], "Farm Folder", MailPath.Gmail));
+
+        Assert.DoesNotContain(order, o => o.StartsWith("notice:", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Another program can hold the clipboard open, and then it cannot be set. That send is the
+    /// drag it was before: Explorer first and the message second, since whichever opens last takes
+    /// the foreground — opened the other way round, Explorer covered the Gmail window and the send
+    /// looked as though it had done nothing (Franz, 2026-09-22).
+    /// </summary>
+    [Fact]
+    public void A_clipboard_that_cannot_be_set_falls_back_to_the_drag()
+    {
+        var order = new List<string>();
+
+        var outcome = WebmailStation(order, clipboard: false).Open(
+            new ShareRequest([MakePage("farm.png")], "Farm Folder", MailPath.Gmail));
+
+        Assert.Equal(ShareRoute.Webmail, outcome.Route);
+        Assert.Equal(
+            ["clipboard:farm.png", "explorer:farm.png", "browser:https://mail.google.com/mail/?view=cm&fs=1&su=Farm%20Folder"],
+            order);
+        Assert.Contains("drag", outcome.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Ctrl+V", outcome.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// §14: whether the paste was set up belongs in the log, next to the rest of the send. The paths
+    /// on the clipboard do not — the file is named after the subject.
+    /// </summary>
+    [Fact]
+    public void The_webmail_log_says_whether_the_clipboard_took_the_files_and_never_names_them()
+    {
+        var order = new List<string>();
+
+        var written = CaptureLog(() => WebmailStation(order).Open(
+            new ShareRequest([MakePage("Deed for jsmith.png")], SubjectNamingSomeone, MailPath.Gmail)));
+
+        Assert.Contains(written, l => l.Contains("clipboard True", StringComparison.OrdinalIgnoreCase));
+        Assert.All(written, l => Assert.DoesNotContain("jsmith", l, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// With several Google accounts signed in, the bare link opens whichever Chrome holds first —
+    /// for Franz that was the wrong one. The account named in Settings goes in the path: an
+    /// address, or the number Chrome gives it (0, 1, 2…).
+    /// </summary>
+    [Theory]
+    [InlineData("fgerster@fgmaker.com", "https://mail.google.com/mail/u/fgerster%40fgmaker.com/?view=cm&fs=1&su=Farm%20Folder")]
+    [InlineData("1", "https://mail.google.com/mail/u/1/?view=cm&fs=1&su=Farm%20Folder")]
+    public void A_named_Gmail_account_is_asked_for_by_name(string account, string expected)
+    {
+        Assert.Equal(expected, WebmailCompose.Url(MailPath.Gmail, "Farm Folder", account));
+    }
+
+    [Fact]
+    public void An_account_reaches_the_share_service_from_the_setting()
+    {
+        var order = new List<string>();
+
+        WebmailStation(order).Open(
+            new ShareRequest([MakePage("acct.png")], "Farm Folder", MailPath.Gmail, "1"));
+
+        Assert.Contains("browser:https://mail.google.com/mail/u/1/?view=cm&fs=1&su=Farm%20Folder", order);
+    }
+
+    /// <summary>Yahoo has no account form here; the setting is ignored rather than pasted into its link.</summary>
+    [Fact]
+    public void Yahoos_link_ignores_the_account_setting()
+    {
+        Assert.Equal(
+            WebmailCompose.Url(MailPath.Yahoo, "Farm Folder", ""),
+            WebmailCompose.Url(MailPath.Yahoo, "Farm Folder", "someone@yahoo.com"));
+    }
+
+    /// <summary>Yahoo documents no compose link; this is the widely used form, to be checked on Jim's station.</summary>
+    [Fact]
+    public void Yahoo_opens_its_own_compose_page()
+    {
+        Assert.Equal(
+            "https://compose.mail.yahoo.com/?subject=Farm%20Folder",
+            WebmailCompose.Url(MailPath.Yahoo, "Farm Folder"));
+    }
+
+    /// <summary>
+    /// The subject is free text and lands in a URL. Unescaped, "&amp;" would end the parameter and
+    /// the rest of the subject would become parameters of its own.
+    /// </summary>
+    [Fact]
+    public void The_subject_is_escaped_in_the_compose_link()
+    {
+        Assert.Equal(
+            "https://mail.google.com/mail/?view=cm&fs=1&su=Smith%20%26%20Jones%2C%20box%204%3F",
+            WebmailCompose.Url(MailPath.Gmail, "Smith & Jones, box 4?"));
+    }
+
+    [Fact]
+    public void A_browser_that_will_not_open_still_leaves_the_file_in_front_of_the_operator()
+    {
+        var order = new List<string>();
+
+        var outcome = WebmailStation(order, browser: false).Open(
+            new ShareRequest([MakePage("farm.png")], "Farm Folder", MailPath.Gmail));
+
+        Assert.Equal(ShareRoute.Explorer, outcome.Route);
+        Assert.Contains("explorer:farm.png", order);
+        Assert.Contains("Gmail could not be opened", outcome.Message, StringComparison.Ordinal);
+        Assert.Contains(_root, outcome.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Several images all go on the clipboard, so one paste attaches them together — Explorer could
+    /// select only one, which is why the drag needed the operator to select the rest. Yahoo gets the
+    /// same as Gmail (Franz, 2026-09-23); Jim's station confirms Yahoo takes a pasted file.
+    /// </summary>
+    [Fact]
+    public void Several_images_for_webmail_all_go_on_the_clipboard()
+    {
+        var order = new List<string>();
+
+        var outcome = WebmailStation(order).Open(
+            new ShareRequest([MakePage("a.png"), MakePage("b.png"), MakePage("c.png")], "Farm Folder", MailPath.Yahoo));
+
+        Assert.Equal("clipboard:a.png,b.png,c.png", order[0]);
+        Assert.DoesNotContain(order, o => o.StartsWith("explorer:", StringComparison.Ordinal));
+        Assert.Contains("Yahoo Mail", outcome.Message, StringComparison.Ordinal);
+        Assert.Contains("3 files", outcome.Message, StringComparison.Ordinal);
+        Assert.Contains("Ctrl+V", outcome.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Read per send (ADR-0010), and an unknown stored value is the mail-app path, never an error.</summary>
+    [Fact]
+    public async Task The_send_with_setting_is_read_fresh_and_falls_back_to_a_mail_app()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var settings = Settings();
+
+        Assert.Equal(MailPath.MailApp, await EmailSettings.ReadSendWithAsync(settings, ct));
+
+        await EmailSettings.WriteSendWithAsync(settings, MailPath.Gmail, ct);
+        Assert.Equal(MailPath.Gmail, await EmailSettings.ReadSendWithAsync(settings, ct));
+
+        await settings.SetAsync(EmailSettings.SendWithKey, "Hotmail", ct);
+        Assert.Equal(MailPath.MailApp, await EmailSettings.ReadSendWithAsync(settings, ct));
+    }
+
+    [Fact]
+    public async Task The_sender_hands_on_the_stations_choice()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var settings = Settings();
+        await EmailSettings.WriteSendWithAsync(settings, MailPath.Yahoo, ct);
+        await EmailSettings.WriteWebmailAccountAsync(settings, "2", ct);
+        var share = new FakeShareService(ShareRoute.Webmail);
+        var sender = new EmailSender(Builder(), share, settings)
+        {
+            Ask = (_, _, subject, format, _) => EmailChoice.Go(format, subject),
+        };
+
+        await sender.SendAsync([MakePage("via.png")], "Farm Folder", "this scan", EmailSurface.Scan, cancellationToken: ct);
+
+        Assert.Equal(MailPath.Yahoo, Assert.Single(share.Opened).Via);
+        Assert.Equal("2", share.Opened[0].Account);
+    }
+
+    /// <summary>
+    /// The Share sheet opened and the status said only "choose your mail app there" — so on a
+    /// station whose mail is in a browser, closing the sheet stranded the operator with no idea
+    /// where the file was. It now says, whichever station it is.
+    /// </summary>
+    [Fact]
+    public void The_share_sheet_also_says_where_the_file_is()
+    {
+        var service = new WindowsShareService(
+            shareSheet: _ => true, mapi: _ => MapiDraft.Failed, mapiAvailable: () => false, revealInExplorer: _ => true);
+
+        var outcome = service.Open(Request());
+
+        Assert.Equal(ShareRoute.ShareSheet, outcome.Route);
+        Assert.Contains(_root, outcome.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("until FG Scanner closes", outcome.Message, StringComparison.Ordinal);
+    }
+
+    private string MakeJpeg(string name)
+    {
+        var path = Path.Combine(_root, name);
+        using var bitmap = new System.Drawing.Bitmap(200, 260);
+        using (var graphics = System.Drawing.Graphics.FromImage(bitmap))
+        {
+            graphics.Clear(System.Drawing.Color.White);
+            using var font = new System.Drawing.Font(System.Drawing.FontFamily.GenericSansSerif, 10);
+            graphics.DrawString(name, font, System.Drawing.Brushes.Black, 6, 40);
+        }
+
+        bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Jpeg);
+        return path;
+    }
+
+    /// <summary>
+    /// "Separate images" attaches the page files themselves. Re-encoding the scanner's JPEGs as
+    /// PNG made them two and a half to four times larger than the PDF of the same pages — and a
+    /// byte-identical copy is the better thing to send from an evidence record anyway: its
+    /// checksum is the one in index.json, so a recipient can check it against the record.
+    /// </summary>
+    [Fact]
+    public async Task Images_are_attached_exactly_as_scanned()
+    {
+        var pages = new[] { MakeJpeg("front.jpg"), MakeJpeg("back.jpg") };
+
+        var built = await Builder().BuildAsync(pages, "Farm Folder", EmailAttachment.Images, TestContext.Current.CancellationToken);
+
+        Assert.True(built.Ok, built.Message);
+        Assert.Equal(["Farm Folder_001.jpg", "Farm Folder_002.jpg"], built.FilePaths.Select(Path.GetFileName));
+        for (var i = 0; i < pages.Length; i++)
+        {
+            Assert.Equal(
+                await File.ReadAllBytesAsync(pages[i], TestContext.Current.CancellationToken),
+                await File.ReadAllBytesAsync(built.FilePaths[i], TestContext.Current.CancellationToken));
+        }
+    }
+
+    [Fact]
+    public async Task One_image_is_named_after_the_subject_alone()
+    {
+        var built = await Builder().BuildAsync(
+            [MakeJpeg("only.jpg")], "Farm Folder", EmailAttachment.Images, TestContext.Current.CancellationToken);
+
+        Assert.Equal(["Farm Folder.jpg"], built.FilePaths.Select(Path.GetFileName));
+    }
+
+    /// <summary>
+    /// The warning used to advise attaching images instead of a PDF. The PDF carries the scanner's
+    /// JPEGs through unchanged, so the images are no smaller — following that advice sent the
+    /// same bytes, or before this fix three times as many, and bounced again.
+    /// </summary>
+    [Fact]
+    public void The_size_warning_does_not_send_the_operator_to_images()
+    {
+        var over = AttachmentBuilder.SizeWarning(30L * 1024 * 1024);
+
+        Assert.DoesNotContain("image", over, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("fewer pages", over, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// AC-7's other half. A failing probe means MAPI is never reached at all — the point is that
+    /// the station is asked about MAPI, never MAPI itself.
+    /// </summary>
+    [Fact]
+    public void A_failing_probe_keeps_mapi_out_of_the_route_list()
+    {
+        var reached = false;
+        var service = new WindowsShareService(
+            shareSheet: _ => false,
+            mapi: _ => { reached = true; return MapiDraft.Sent; },
+            mapiAvailable: () => false,
+            revealInExplorer: _ => true);
+
+        var outcome = service.Open(Request());
+
+        Assert.False(reached);
+        Assert.Equal(ShareRoute.Explorer, outcome.Route);
+    }
+}

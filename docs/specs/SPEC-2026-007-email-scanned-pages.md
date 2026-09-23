@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Approved |
-| **Revision** | B |
+| **Revision** | D — amended 2026-09-22 after the code review, then for webmail; see the notes marked **Amended** |
 | **Tier** | Feature |
 | **Author** | Claude, for Franz Gerster |
 | **Date** | 2026-09-20 |
@@ -52,10 +52,12 @@
 - The route order already decided on 2026-09-13: Windows Share sheet first; Simple MAPI
   only where a MAPI client is genuinely present; otherwise open the containing folder with
   the file selected and say so plainly.
+  > **Amended 2026-09-22 (Franz):** MAPI comes **first** when the probe finds a client — see §08.
 - **A one-time warning** before the first send from a committed group on an evidence
   profile, saying the copy leaves the folder whose checksums are its integrity (§05 Q2b).
   Dismissed with "don't show again", stored in `Settings`; every send is logged either way.
 - Attachments produced by the existing export services — a PDF, or one or more images.
+  > **Amended 2026-09-22 (Franz):** images are the page files copied byte for byte — see §07.
 - A spike, before any of it, proving the target-framework change is safe.
 
 **Non-goals**
@@ -191,12 +193,26 @@ recommendation is taken, one `Settings` key for the remembered attachment format
 |---|---|---|
 | `Email.Attachment` | `Pdf` \| `Images` | `Pdf` |
 | `Email.EvidenceWarningSeen` | `true` \| `false` | `false` |
+| `Email.SendWith` *(added 2026-09-22)* | `MailApp` \| `Gmail` \| `Yahoo` | `MailApp` |
+| `Email.WebmailAccount` *(added 2026-09-22)* | a Gmail address, or its browser number (`0`, `1`…) | empty |
 
 Written through `AppSettingsService` like every other setting, and read fresh per send.
 Documented as a doc comment where it is read.
 
 Attachments themselves are temporary files, not records: written under the system temp
 path in a per-send folder, and not registered in the database.
+
+> **Amended 2026-09-22 (Franz), after code review finding #8.** "Separate images" attaches **the
+> page files themselves, copied byte for byte**, each keeping its own extension
+> (`<subject>_001.jpg`…), rather than running them through `ImageExportService`. That exporter's
+> default re-encoded the scanner's JPEGs as PNG — on real station scans the median page went from
+> 1.04 MB to 3.38 MB, against 1.02 MB inside a PDF — and the size warning then advised switching
+> to images. A byte-for-byte copy is also the better thing to send from an evidence record: its
+> checksum is the one `index.json` holds. The PDF still comes from `PdfExportService`, as §08 says.
+>
+> The temp folders are removed **all of them, at startup as well as exit** (finding #10): a crash
+> never reached exit, and the per-session list forgot any folder whose delete failed. Safe because
+> the app is single-instance.
 
 ## 08 · Architecture and approach
 
@@ -208,6 +224,54 @@ same shape `IScanService` uses for hardware (CLAUDE.md: hardware access only thr
 interface; the same reasoning applies to shell UI).
 
 **Route order, exactly as decided:**
+
+> **Amended 2026-09-22 (Franz), after code review finding #11.** The order is now **MAPI first when
+> the probe finds a client, then the Share sheet, then Explorer.** With the Share sheet working it
+> opened on every Windows 10 and 11 machine, so route 2 was unreachable — and classic Outlook is
+> not a share target, so a classic-Outlook station got a sheet without Outlook in it. A station
+> with no MAPI client (new Outlook; this station) is unaffected. Route 1 is also no longer the
+> hand-declared `IDataTransferManagerInterop`, which could never work (finding #1): it uses the SDK
+> projection's `DataTransferManagerInterop`, parented to the main window on the UI thread
+> (finding #2). ADR-0012 records the whole decision.
+
+> **Amended 2026-09-22 (Franz): webmail.** Franz sends from Gmail and Jim from Yahoo, both in a
+> browser — and a browser page is neither a MAPI client nor a share target, so as built the Share
+> sheet opened with no Gmail in it and closing it stranded the operator. Settings gains **"Send
+> email with"** (`Email.SendWith`): *a mail program on this PC* (the routes above, and the
+> default), *Gmail in the browser* or *Yahoo Mail in the browser*. For webmail a send opens the
+> service's compose page with the subject filled in, and Explorer beside it with the file
+> selected, to be dragged in — the one step no desktop app can take for a webmail service. The
+> mail-app routes are never tried on a webmail station. Neither compose link is an official API;
+> Yahoo documents none at all, so its link is checked on Jim's station before this is Done.
+> Whichever the station, the Share sheet's status now also says where the file is.
+
+> **Amended 2026-09-23 (Franz): paste, not drag.** *Patch tier.* **Outcome** — a webmail send is
+> one keystroke: the message opens, the operator clicks in it and presses **Ctrl+V**, and the file
+> is attached. **Evidence** — Franz copied the PDF in Explorer (Ctrl+C) and pasted it into a Gmail
+> message (Ctrl+V) on his station, 2026-09-23: it attached. **Change** — before the browser opens,
+> the attachment files go on the Windows clipboard as a file list (what Explorer's Ctrl+C puts
+> there), and Explorer is **not** opened. **Explorer opens only if the clipboard cannot be set**
+> (another program holding it), and then the send is exactly the drag of the amendment above
+> (Franz, Q-A). **Yahoo gets the same behaviour** (Franz, Q-B); its paste is confirmed by the Yahoo
+> check on Jim's station, and if Yahoo refuses a pasted file, a follow-up returns Yahoo to the drag.
+> A browser that will not open still opens Explorer, since the operator then has no message to
+> paste into. *Assumptions:* replacing whatever the operator had copied is acceptable — a send is
+> a deliberate act and the status line says the file is on the clipboard; Windows' clipboard
+> history and cross-device sync keep text and images, not file lists, so no copy of the path
+> outlives the next copy; several images paste in one Ctrl+V (unproven — a manual row). *Risk* —
+> a paste after FG Scanner closes finds the copy gone (`AttachmentBuilder.CleanUp`); the status
+> line already says to attach before closing. *Tests first* — the clipboard is a route like the
+> others, injected: the files reach it and Explorer is not called; a clipboard that throws falls
+> back to Explorer-then-browser in that order; a failed browser still opens Explorer; the status
+> says Ctrl+V; the log carries the clipboard outcome and no path. *Not in this change* — the
+> mail-app routes, the Share sheet, the subject, anything that could attach without the operator.
+>
+> *Same day, after the first paste send (Franz):* the status line saying Ctrl+V is behind the
+> browser, so nothing in view said a paste was waiting. A small notice now opens in the bottom
+> corner of FG Scanner's monitor, over the browser — **"PDF copied"** (or "Image copied", "3 images
+> copied") and *"Click in the Gmail message and press Ctrl+V to attach it."* It stays on top, never
+> takes focus from the message, and closes after 20 seconds or on a click. Only when the paste is
+> really waiting: not for the Explorer fallback, not when the browser did not open.
 
 1. **Windows Share sheet** — `DataTransferManager` via `IDataTransferManagerInterop.GetForWindow`,
    which is supported for unpackaged WPF. Real file attachments, and new Outlook is a
@@ -320,6 +384,15 @@ The app's own WPF Fluent theme governs.
 > *Proven by:* `tests/FgScanner.App.Tests/EmailCommandTests.cs` → "the evidence warning
 > is shown once and only for committed evidence groups"
 
+> **AC-12** *(added 2026-09-22)* — On a station set to Gmail or Yahoo Mail, a send opens that
+> service's compose page with the subject filled in and escaped, and Explorer with the file
+> selected; MAPI and the Share sheet are never tried; if the browser cannot be opened the file is
+> still shown and the status says so.
+> *Proven by:* `EmailCommandTests.cs` → "Gmail opens a compose page beside the file and never tries
+> the mail app routes", "the subject is escaped", "a browser that will not open…", and
+> `AiModelAndThemeSettingTests.cs` → the two "send with" cases; `manual` — Gmail on Franz's
+> station, Yahoo on Jim's
+
 ## 11 · Test strategy
 
 **11.1 — The failing tests to write first**
@@ -354,13 +427,16 @@ no test touches the real registry. Existing in-memory fixtures for groups and ro
 | Case | Expected behaviour | Where handled |
 |---|---|---|
 | No pages in the session | Email disabled, with the reason | `CanExecute` |
-| Group with zero rows | Email disabled | `CanExecute` |
+| Group with zero rows | *"There are no pages to email."* — the Groups button has no `CanExecute`, like the export buttons beside it, because one tied to rows went stale when rows refilled *(amended 2026-09-22, finding #3)* | command |
 | A page file missing from disk | Named message identifying the page; nothing sent | attachment build |
 | Share sheet dismissed without sending | Nothing sent, no error, temp files cleaned | route 1 result |
+| MAPI draft closed without sending | *"You closed the message without sending it — nothing left the app."*; the Share sheet is not tried next *(added 2026-09-22)* | route 2 result |
 | Mail client not installed at all | Route 3, plain sentence | AC-6 |
 | Very large selection (200 pages) | A warning above a threshold, since mail servers reject large attachments; operator may continue | §15 |
 | PDF export fails mid-build | The export error surfaces; nothing is shared | existing export error path |
-| Temp folder not writable | Named message; no crash | attachment build |
+| Temp folder not writable | Named message; no crash | attachment build — every failure on the send path is caught in `EmailSender` *(finding #4)* |
+| Save or Delete pressed mid-build on the Scan page | Held for the length of the send, including the save a batch scan makes directly *(finding #5)* | `ScanViewModel._sending` |
+| A background OCR/AI reload mid-selection | The selection survives the reload, so "no selection = whole group" cannot trigger by accident *(finding #6)* | `GroupDetailViewModel.RestoreSelection` |
 | Send pressed twice quickly | Second press is ignored while the first is building | `CanExecute` guard |
 | Sending during an annotated sheet or a duplex sequence | Allowed — sending copies, it does not move or alter pages | — |
 
@@ -401,6 +477,10 @@ moves case material **out** of the app.
   fallback used.
 - **Surfaced to the operator**: the status line names the route in plain words — "opened
   in your mail app", or "no mail app found — the scan is in this folder".
+  > **Amended 2026-09-22.** "Opened in your mail app" was not true of the Share sheet, and the
+  > fallback said "attached" and counted files as pages (finding #9). The wording that shipped is
+  > in `docs/user-guide.md` → "Emailing pages". The subject is **not** logged either (finding #12):
+  > it is free text, and a recipient named in it would otherwise sit in the 14-day log.
 - **A silent failure** would be a Send that quietly attaches nothing. What makes it
   non-silent: the attachment count is logged and shown before the route is invoked, and
   AC-5's fake proves the service never claims to have sent.
@@ -417,6 +497,9 @@ Attachment size is the real limit, and it is external: most mail servers reject 
 about 25 MB, and a 300 DPI colour page is roughly 2 MB. So the practical ceiling is around
 a dozen images or a compressed PDF of a few dozen pages. Warn above 20 MB rather than
 fail; the operator decides. Revisit if anyone routinely sends whole boxes.
+
+> **Amended 2026-09-22.** The 20 MB is measured on the **message**, not the files: attachments
+> travel base64-encoded, a third larger, so the warning now starts at about 15 MB of files.
 
 ## 16 · Regression risk
 
@@ -487,14 +570,45 @@ fail; the operator decides. Revisit if anyone routinely sends whole boxes.
 
 ## 21 · Definition of done
 
-- [ ] All acceptance criteria met
-- [ ] Failing tests written first, now passing
-- [ ] Full suite green (≥ 692)
-- [ ] `/code-review max` run, findings resolved or accepted in writing
-- [ ] Security review run against §13 — P/Invoke surface, data exposure, the new TFM
-- [ ] Documentation updated per §18, including the SPEC-003 amendment
-- [ ] Spike checklist recorded (AC-8)
-- [ ] Rollback tested or explicitly waived by Franz
+- [ ] All acceptance criteria met — **AC-2..AC-11 are proven by tests** (AC-8 by the spike);
+      **AC-1's manual half is open**: the Share sheet opened with the session's PDF attached on
+      2026-09-22 but was dismissed, so no send has yet reached a mail app. See `docs/manual-tests.md`
+      → SPEC-2026-007.
+- [x] Failing tests written first, now passing — each watched red before its fix, including every
+      code-review fix.
+- [x] Full suite green (≥ 692) — **849 of 849**, `dotnet test -c Release`, 2026-09-22.
+- [x] `/code-review max` run, findings resolved or accepted in writing — 2026-09-22, 15 findings
+      and 4 smaller ones, **all fixed** (commits `156e2f8` … `24b334e`). Two review claims were
+      corrected on the evidence: #7's "no warning on Jim's station" (all 18 of his groups are on the
+      profile named "Evidence"; the fix stands for renamed and imported profiles), and #11's route
+      order, which Franz changed rather than kept.
+- [x] Security review run against §13 — 2026-09-22, three reviewers over the interop,
+      data-exposure and input surfaces. The design held (no credential, no network, no new
+      package, no recipient anywhere to leak); eight implementation holes did not, **all fixed**:
+      exception text carrying the subject into the log, a MAPI free over uninitialised
+      descriptors, a Share-sheet handler left attached after a failed open, mapi32/Explorer
+      resolved off the search path, the 32-bit registry view unread, copies not swept on session
+      end (`9ed45fc`); then the group's name logged as the send's surface, and missing page file
+      names in the refusal's log line (the commit after `9ed45fc`).
+- [x] Documentation updated per §18, including the SPEC-003 amendment — 2026-09-22.
+- [x] Spike checklist recorded (AC-8) — §22 below.
+- [x] Rollback tested — 2026-09-23, on a scratch worktree off `main` (`0ec1d8d`): the branch
+      merged `--no-ff` the way phases are, then `git revert -m 1` of that merge. **The revert
+      applied cleanly and the tree is identical to `main`**; Release build `0 Warning(s)`, tests
+      **793 of 793** (the count `main` had at the spike, so all 78 email tests went with it).
+      What a code revert cannot take back, checked:
+      - *Database* — no migration on the branch. A throwaway test ran `main`'s
+        `MigrateWithBackup` over a database holding the four `Email.*` rows the branch writes:
+        no pending migration, no backup taken, settings and groups read and write normally.
+        The rows stay, inert — `main` reads settings only by key. `Email.WebmailAccount` holds
+        the operator's own address; delete it by hand if that matters on a station.
+      - *Install folder* — the branch adds exactly two files to the output,
+        `Microsoft.Windows.SDK.NET.dll` and `WinRT.Runtime.dll`; the installer's
+        `[InstallDelete]` purges `{app}\*.dll`, so reinstalling the older version removes them.
+      - *Temp copies* — `main` does not sweep `%TEMP%\FGScanner\email`. Only copies from a
+        killed session could be there (the branch sweeps at exit), and Windows' temp cleanup
+        takes them.
+      **Not exercised:** actually running the older installer over this one on a station.
 
 ## 22 · Sign-off
 
@@ -502,5 +616,50 @@ fail; the operator decides. Revisit if anyone routinely sends whole boxes.
 |---|---|
 | **Review round answered** | ☑ 2026-09-20 — [Round A, part 3 of 3](https://claude.ai/artifact/XkzFVnPicnfjNrc4C1ZwPV) · db doc `review/SPEC-2026-007-rA-p3`, with Q2 corrected to (b) in the terminal |
 | **Franz approved** | ☑ 2026-09-20 (verdict `approve`) |
-| **Built** | ☐ date: |
+| **Built** | ☑ 2026-09-22 — branch `phase-26-email`, 16 commits from `979d641` (the spike) to `24b334e`, then the documentation; not yet merged to `main`, no release cut |
 | **Verified in production** | ☐ date: |
+
+### Phase 1 spike — result: **GO**, 2026-09-21
+
+Branch `phase-26-email` off `main` (`0ec1d8d`). The only change is the target framework:
+`net10.0-windows` → **`net10.0-windows10.0.26100.0`** in `FgScanner.App.csproj`, and in
+`FgScanner.App.Tests.csproj`, which had to follow — a test project cannot reference a project
+with a higher platform version. `10.0.26100.0` is the only Windows Kit on this machine.
+`FgScanner.Scanning` did **not** need to change: a `net10.0-windows10.0.x` project can reference
+a plain `net10.0-windows` one. `git diff` was two `.csproj` lines and nothing else.
+
+**The projection resolved**, which is what the spike existed to find out:
+`Microsoft.Windows.SDK.NET.Ref 10.0.26100.57` restored from NuGet with no feed or SDK
+intervention, and `WinRT.Runtime.dll` (1,364 KB) is in the output.
+`IDataTransferManagerInterop` is therefore reachable, so route 1 in §08 is open.
+
+| Check | Result |
+|---|---|
+| a · `dotnet build -c Release` | `0 Warning(s), 0 Error(s)` — warnings are errors in Release |
+| b · `dotnet test -c Release` | `total: 793, failed: 0, succeeded: 793` — unchanged |
+| c · `dotnet publish -p:PublishProfile=win-x64` | **LGPL separation intact** — see below |
+| d · installer built, installed, runs | `fgscanner-0.5.1-win-x64.exe`, exit code 0, app scans |
+
+**c — the separation, in numbers.** Nine NAPS2 assemblies present as separate files
+(`NAPS2.Sdk.dll` 1,420 KB, `NAPS2.Images.dll` 332 KB, `NAPS2.Internals.dll` 256 KB,
+`NAPS2.Escl.dll` 252 KB, `NAPS2.Wia.dll` 100 KB, `NAPS2.Images.Gdi.dll` 52 KB, plus the three
+small binaries packages) alongside the out-of-process `NAPS2.Worker.exe`. 340 files, 329 DLLs,
+and `FgScanner.exe` is 0.16 MB — a launcher, not a bundle. Not trimmed:
+`PresentationFramework.dll` 15,446 KB and `System.Private.CoreLib.dll` 15,658 KB are full size.
+
+**d — installed, not merely compiled.** The installer grew from **94.8 MB to 104.1 MB**; the
+WinRT projection assemblies are the difference, and that is the visible cost of this route.
+Installed over the existing 0.5.1 into `C:\Program Files\FGScanner` (`PrivilegesRequired=admin`),
+exit code 0, log reads *"Installation process succeeded."* The installed copy was then launched
+with `--fake-scanner`: **"1 device(s) found."**, **"Scan complete — 1 page(s)."**, and the
+phase-25 two-pass button present and enabled. 344 files in the install directory with the NAPS2
+assemblies still separate, so the separation survives packaging as well as publishing.
+
+**Not proven by this spike**, and not claimed: that the Share sheet itself works. The spike shows
+the framework change is safe and the projection is reachable; whether `DataTransferManager`
+behaves for an unpackaged WPF app with new Outlook as a target is Prompt 2's problem. The
+installer's file-association, StillImage and AutoPlay registrations were written by this install
+but not exercised.
+
+**Version note.** This installed build carries version 0.5.1, the same number as what it replaced,
+and it includes the whole of phase 25. It is not the 0.5.2 release; `<Version>` was not bumped.

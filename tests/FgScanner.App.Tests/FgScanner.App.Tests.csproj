@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <!-- 26100 is only the SDK the WinRT projection compiles against. The floor the installer
+         accepts (setup.iss MinVersion) is 1607; without this the analyzer takes 26100 as the
+         floor and CA1416 stops flagging APIs a Windows 10 station does not have. -->
+    <SupportedOSPlatformVersion>10.0.14393.0</SupportedOSPlatformVersion>
     <OutputType>Exe</OutputType>
     <UseWPF>true</UseWPF>
   </PropertyGroup>

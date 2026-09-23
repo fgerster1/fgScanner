@@ -852,6 +852,21 @@ deliberately are not building — plus the page tools and undo/redo from the 202
 
 ### Phase 10 — Email
 
+> **Implementation superseded 2026-09-22 by
+> [SPEC-2026-007](../../specs/SPEC-2026-007-email-scanned-pages.md)**, which built email for the
+> evidence Scan page and the Groups page ahead of Quick Scan. The shell and share code it added
+> (`IShareService`, `EmailSender`, `AttachmentBuilder`, the three routes) is app infrastructure:
+> when Quick Scan is built, this phase **consumes it** rather than writing its own, and shrinks
+> to wiring the Save panel's Email toggle to `EmailSender`. The spike below is done
+> (SPEC-2026-007 §22, 2026-09-21: GO).
+>
+> **The route decision stands with one change** (ADR-0012). The three routes and the probe rule
+> are as written here, but the order was amended on 2026-09-22: when the probe finds a MAPI
+> client, its draft comes **first**, then the Share sheet, then Explorer. With the Share sheet
+> working it opened on every machine, so MAPI was never reached — and classic Outlook is not a
+> share target. On a station with no MAPI client, which includes this one, the order below is
+> unchanged.
+
 **Goal:** the Email button in the reference screenshot, done honestly — and on this station it must
 actually produce an email.
 

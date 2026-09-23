@@ -9,6 +9,7 @@ using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.Input;
 using FgScanner.App.Services;
 using FgScanner.App.Views.Dialogs;
+using FgScanner.Core.Evidence;
 using FgScanner.Core.Naming;
 using FgScanner.Data;
 using FgScanner.Scanning;
@@ -277,6 +278,69 @@ public sealed partial class GroupDetailViewModel
         await UndoRedo.RedoAsync();
         StatusText = "Redone.";
     }
+
+    /// <summary>
+    /// Which pages a send takes: **any** selection means exactly that selection, and no selection
+    /// means the group (§05 N2a).
+    ///
+    /// Deliberately not <see cref="ExportImagePaths"/>, which widens a selection of one to the
+    /// whole group. That is defensible for an export the operator then looks at in a folder; it
+    /// is not defensible for a send, where picking one page and mailing sixty is a mistake only
+    /// the recipient notices, and the pages are case material. The export rule is left exactly as
+    /// it was — changing it would alter four buttons nobody asked about.
+    /// </summary>
+    public IReadOnlyList<string> EmailImagePaths =>
+        (SelectedRows.Count > 0 ? SelectedRows.OrderBy(r => r.Sequence) : Rows.AsEnumerable())
+        .Select(r => r.ImagePath)
+        .ToList();
+
+    /// <summary>
+    /// Opens a message with the chosen pages attached. This app never sends: the operator presses
+    /// Send in their own mail client, having seen the message (AC-5).
+    ///
+    /// The pages leave the group folder here — the folder's checksums and its `originals\`
+    /// archive stay exactly as they were, and what goes is a copy built by the same exporters the
+    /// export buttons use.
+    ///
+    /// Always pressable, like the export buttons beside it. Rows are refilled by scans, imports
+    /// and background OCR, and a CanExecute on them has to be re-asked after every one of those —
+    /// a group opened empty kept a grey button however many pages arrived. An empty group gets a
+    /// sentence instead.
+    /// </summary>
+    [RelayCommand]
+    private async Task EmailAsync()
+    {
+        var pages = EmailImagePaths;
+        if (pages.Count == 0)
+        {
+            StatusText = "There are no pages to email.";
+            return;
+        }
+
+        var source = SelectedRows.Count > 0
+            ? (SelectedRows.Count == 1 ? "the selected page" : $"the {SelectedRows.Count} selected pages")
+            : $"\"{Group.Name}\"";
+        StatusText = await _toolset.Email.SendAsync(pages, Group.Name, source, EmailSurface.Group, IsEvidenceRecord());
+    }
+
+    /// <summary>
+    /// Whether this group is a finished evidence record — committed, and carrying the evidence
+    /// field contract. Only then is a send leaving a folder whose index, checksums and
+    /// `originals\` archive are its integrity, which is what §05 Q2b's one-time warning is about.
+    ///
+    /// Recognised by its fields, never by the profile's name: the importer reads field names, and
+    /// a name matched only the profile the app builds itself. The hand-built "JimsStuff Evidence"
+    /// of the pre-0.4.0 walkthrough, a renamed profile, and an imported "Evidence (2)" all missed.
+    /// The test is the fields the contract makes required — DocNo and Box — read off
+    /// EvidenceProfile rather than listed again here; the hand-built profile, which predates the
+    /// sticky-note fields, already had both. A stray profile that happens to have both only costs
+    /// one extra reading of a warning that never blocks.
+    /// </summary>
+    private bool IsEvidenceRecord() =>
+        Group.State == GroupState.Committed
+        && EvidenceProfile.Fields
+            .Where(f => f.Required)
+            .All(required => Fields.Any(f => string.Equals(f.Name, required.Name, StringComparison.Ordinal)));
 
     /// <summary>Selection of 2+ exports just those pages; otherwise the whole group.</summary>
     private IReadOnlyList<string> ExportImagePaths =>

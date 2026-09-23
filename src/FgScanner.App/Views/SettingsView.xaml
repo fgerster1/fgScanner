@@ -200,6 +200,21 @@
                 <TextBlock Text="Applies when you save." VerticalAlignment="Center" Opacity="0.7" Margin="8,0,0,0" />
             </WrapPanel>
 
+            <TextBlock Text="Email" FontWeight="SemiBold" Margin="0,0,0,4" />
+            <WrapPanel Margin="0,0,0,4">
+                <TextBlock Text="Send email with" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <ComboBox Width="220" ItemsSource="{Binding SendWithChoices}"
+                          SelectedValuePath="Value" SelectedValue="{Binding SendWith}"
+                          DisplayMemberPath="Label" AutomationProperties.Name="Send email with" />
+            </WrapPanel>
+            <WrapPanel Margin="0,0,0,4">
+                <TextBlock Text="Gmail account" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <TextBox Width="220" Text="{Binding WebmailAccount}" AutomationProperties.Name="Gmail account" />
+                <TextBlock Text="optional" VerticalAlignment="Center" Opacity="0.7" Margin="8,0,0,0" />
+            </WrapPanel>
+            <TextBlock Opacity="0.6" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"
+                       Text="A mail program on this PC gets the pages attached for you. Gmail and Yahoo Mail open a new message in your browser with the file selected in Explorer beside it — drag it into the message. With several Google accounts signed in, name the one to write from (the address, or its number in the browser: 0, 1, 2…) or leave it blank for whichever the browser opens first. Saved with the button below." />
+
             <TextBlock Text="Trash" FontWeight="SemiBold" Margin="0,0,0,4" />
             <WrapPanel Margin="0,0,0,12">
                 <TextBlock Text="Keep deleted pages for" VerticalAlignment="Center" Margin="0,0,6,0" />
@@ -245,7 +260,14 @@
             <TextBlock Text="Keyboard shortcuts" FontWeight="SemiBold" Margin="0,0,0,4" />
             <TextBlock Opacity="0.6" FontSize="11" Margin="0,0,0,4"
                        Text="Gestures like Ctrl+Enter, Ctrl+Shift+Left, F5. Clear a box to unbind. Saved with the button below." />
-            <ItemsControl ItemsSource="{Binding Shortcuts}" Margin="0,0,0,4">
+            <ItemsControl ItemsSource="{Binding Shortcuts}" Margin="0,0,0,4"
+                          AutomationProperties.Name="Keyboard shortcuts">
+                <!-- Announced as the action, not as FgScanner.App.Views.ShortcutRow. -->
+                <ItemsControl.ItemContainerStyle>
+                    <Style TargetType="ContentPresenter">
+                        <Setter Property="AutomationProperties.Name" Value="{Binding Action}" />
+                    </Style>
+                </ItemsControl.ItemContainerStyle>
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
                         <WrapPanel />

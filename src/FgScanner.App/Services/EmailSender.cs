@@ -1,0 +1,183 @@
+using FgScanner.Core.Sharing;
+using FgScanner.Data;
+using Serilog;
+
+namespace FgScanner.App.Services;
+
+/// <summary>
+/// What the operator answered in the attachment dialog. A value rather than a nullable tuple so
+/// that Cancel can still carry the "don't show this again" tick — ticking it and then cancelling
+/// is still having read the warning.
+/// </summary>
+public readonly record struct EmailChoice(bool Continue, EmailAttachment Format, string Subject, bool DontWarnAgain)
+{
+    public static EmailChoice Go(EmailAttachment format, string subject, bool dontWarnAgain = false) =>
+        new(true, format, subject, dontWarnAgain);
+
+    public static EmailChoice Cancel(bool dontWarnAgain = false) =>
+        new(false, EmailAttachment.Pdf, "", dontWarnAgain);
+}
+
+/// <summary>
+/// Which page a send was made from — what §14 logs. The dialog's source text says more, but on the
+/// Groups page it is the group's name, which is free text and can name someone.
+/// </summary>
+public enum EmailSurface
+{
+    Scan,
+    Group,
+}
+
+/// <summary>
+/// One send, end to end: ask what to attach, build it, hand it to the operator's mail path, and
+/// come back with the sentence to show. Both call sites — the Scan page and a group — use this,
+/// so they cannot drift apart on what a send means.
+///
+/// It never sends. The share service opens a message and returns; the operator presses Send in
+/// their own client, under their own identity, having seen it (AC-5).
+/// </summary>
+public sealed class EmailSender(
+    AttachmentBuilder attachments,
+    IShareService share,
+    AppSettingsService settings)
+{
+    /// <summary>
+    /// Asks the operator what to attach. Replaceable so a send can be walked in a test without a
+    /// window, the way <c>ConfirmDelete</c> and <c>ShowPageViewer</c> already are.
+    /// </summary>
+    public Func<int, string, string, EmailAttachment, bool, EmailChoice> Ask { get; set; }
+        = Views.Dialogs.EmailDialog.Ask;
+
+    public async Task<string> SendAsync(
+        IReadOnlyList<string> pages,
+        string subject,
+        string source,
+        EmailSurface surface,
+        bool evidenceRecord = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (pages.Count == 0)
+        {
+            return "There are no pages to email.";
+        }
+
+        // No ConfigureAwait(false) in this class: the mail route has to run on the UI thread,
+        // where the Share sheet finds the app's window and MAPI's modal draft finds its parent.
+        // The services it awaits may leave the UI thread inside themselves; these awaits bring the
+        // send back. The export finishing on the pool used to carry the rest of the send there
+        // with it, and the sheet was skipped with nothing on screen or in the log.
+        //
+        // Nothing above this catches: both callers are async commands, and an exception out of
+        // one closes the app (§12, "named message; no crash"). A page that passes the existence
+        // check and then will not decode, a full temp folder, a page locked by another program —
+        // each is a send that did not happen, and the operator needs to be told that in a sentence.
+        try
+        {
+            return await SendCoreAsync(pages, subject, source, surface, evidenceRecord, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The type, never the exception: its message names the attachment, whose file name is
+            // the subject (§14). The operator gets the full reason on screen instead.
+            Log.Error(
+                "Email from {Surface} failed while building or opening the message ({Error})",
+                surface, ex.GetType().Name);
+            return $"The attachment could not be built, so nothing left the app. ({ex.Message})";
+        }
+    }
+
+    private async Task<string> SendCoreAsync(
+        IReadOnlyList<string> pages,
+        string subject,
+        string source,
+        EmailSurface surface,
+        bool evidenceRecord,
+        CancellationToken cancellationToken)
+    {
+        // Read per send, never captured once: a format chosen in Settings reaches the next send
+        // without a restart (ADR-0010).
+        var remembered = await EmailSettings.ReadAsync(settings, cancellationToken);
+
+        // §05 Q2b: allowed, but said once. The warning rides inside the dialog the operator was
+        // going to see anyway — it is not a second confirmation and it cannot stop a send.
+        var warn = evidenceRecord
+            && !await EmailSettings.WarningSeenAsync(settings, cancellationToken);
+
+        var chosen = Ask(pages.Count, source, subject, remembered, warn);
+
+        // Before the cancel check: ticking "don't show this again" and then cancelling is still
+        // having read the warning, and it used to come back on the next send.
+        if (warn && chosen.DontWarnAgain)
+        {
+            await EmailSettings.MarkWarningSeenAsync(settings, cancellationToken);
+        }
+
+        if (!chosen.Continue)
+        {
+            return "Email cancelled — nothing left the app.";
+        }
+
+        if (chosen.Format != remembered)
+        {
+            await EmailSettings.WriteAsync(settings, chosen.Format, cancellationToken);
+        }
+
+        var built = await attachments
+            .BuildAsync(pages, chosen.Subject, chosen.Format, cancellationToken);
+        if (!built.Ok)
+        {
+            return built.Message;
+        }
+
+        var via = await EmailSettings.ReadSendWithAsync(settings, cancellationToken);
+        var account = await EmailSettings.ReadWebmailAccountAsync(settings, cancellationToken);
+        var outcome = share.Open(new ShareRequest(built.FilePaths, chosen.Subject, via, account));
+
+        // §14: which surface, how many pages, which format, which route. Never the recipient —
+        // the app does not know it, and should not start recording who case material went to
+        // without that being a decision of its own.
+        Log.Information(
+            "Email: {Count} page(s) from {Surface} as {Format} via {Route}",
+            pages.Count, surface, chosen.Format, outcome.Route);
+
+        if (outcome.Declined)
+        {
+            return outcome.Message;
+        }
+
+        // Only a route that took the files may say they were attached. The fallbacks attached
+        // nothing, so they say what was made instead — pages here, files in the share layer's
+        // sentence, since one PDF holds every page.
+        var pagesWord = pages.Count == 1 ? "1 page" : $"{pages.Count} pages";
+        var status = outcome.Route is ShareRoute.ShareSheet or ShareRoute.Mapi
+            ? $"{pagesWord} attached. {outcome.Message}"
+            : $"{pagesWord} {(pages.Count == 1 ? "was" : "were")} made into {Made(chosen.Format, built.FilePaths.Count)}. "
+                + outcome.Message;
+        return built.TooLarge ? $"{status} {built.Warning}" : status;
+    }
+
+    private static string Made(EmailAttachment format, int files) => format switch
+    {
+        EmailAttachment.Pdf => "one PDF",
+        _ => files == 1 ? "1 image" : $"{files} images",
+    };
+
+    /// <summary>
+    /// A sender that declines before building anything or showing a window. The toolset's default
+    /// for construction sites that never meant to send — tests, chiefly — which must not reach the
+    /// operator's shell, registry or temp folder by accident.
+    /// </summary>
+    public static EmailSender Unwired(
+        Scanning.Export.PdfExportService pdf,
+        AppSettingsService settings) =>
+        new(new AttachmentBuilder(pdf), new NoMailPath(), settings)
+        {
+            Ask = (_, _, _, _, _) => EmailChoice.Cancel(),
+        };
+
+    private sealed class NoMailPath : IShareService
+    {
+        public ShareOutcome Open(ShareRequest request) =>
+            new(ShareRoute.None, "Email is not set up here — nothing left the app.");
+    }
+}
