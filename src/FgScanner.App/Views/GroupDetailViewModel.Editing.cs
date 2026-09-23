@@ -320,7 +320,7 @@ public sealed partial class GroupDetailViewModel
         var source = SelectedRows.Count > 0
             ? (SelectedRows.Count == 1 ? "the selected page" : $"the {SelectedRows.Count} selected pages")
             : $"\"{Group.Name}\"";
-        StatusText = await _toolset.Email.SendAsync(pages, Group.Name, source, IsEvidenceRecord());
+        StatusText = await _toolset.Email.SendAsync(pages, Group.Name, source, EmailSurface.Group, IsEvidenceRecord());
     }
 
     /// <summary>

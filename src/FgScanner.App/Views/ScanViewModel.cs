@@ -189,7 +189,7 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
         AnnouncedSendingState();
         try
         {
-            StatusText = await _toolset.Email.SendAsync(EmailImagePaths, subject, "this scan");
+            StatusText = await _toolset.Email.SendAsync(EmailImagePaths, subject, "this scan", EmailSurface.Scan);
         }
         finally
         {

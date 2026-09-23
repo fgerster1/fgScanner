@@ -563,7 +563,7 @@ public sealed class EmailCommandTests : IDisposable
         var sender = SenderThatContinues(Settings());
 
         var message = await sender.SendAsync(
-            [corrupt], "Farm Folder", "this page", cancellationToken: TestContext.Current.CancellationToken);
+            [corrupt], "Farm Folder", "this page", EmailSurface.Scan, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Contains("nothing", message, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Exception", message, StringComparison.OrdinalIgnoreCase);
@@ -579,7 +579,7 @@ public sealed class EmailCommandTests : IDisposable
         var sender = SenderThatContinues(Settings(), subject: new string('x', 400));
 
         var message = await sender.SendAsync(
-            [MakePage("long.png")], "Farm Folder", "this page", cancellationToken: TestContext.Current.CancellationToken);
+            [MakePage("long.png")], "Farm Folder", "this page", EmailSurface.Scan, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Contains("1 page", message, StringComparison.Ordinal);
     }
@@ -752,7 +752,7 @@ public sealed class EmailCommandTests : IDisposable
             SynchronizationContext.SetSynchronizationContext(
                 new System.Windows.Threading.DispatcherSynchronizationContext());
             var frame = new System.Windows.Threading.DispatcherFrame();
-            var send = sender.SendAsync(pages, "Farm Folder", "this scan");
+            var send = sender.SendAsync(pages, "Farm Folder", "this scan", EmailSurface.Scan);
             send.ContinueWith(_ => frame.Continue = false, TaskScheduler.Default);
             System.Windows.Threading.Dispatcher.PushFrame(frame);
             send.GetAwaiter().GetResult();
@@ -941,6 +941,7 @@ public sealed class EmailCommandTests : IDisposable
                 [MakePage("log-1.png"), MakePage("log-2.png")],
                 "Farm Folder",
                 "the 2 selected pages",
+                EmailSurface.Group,
                 evidenceRecord: false,
                 TestContext.Current.CancellationToken);
         }
@@ -952,7 +953,8 @@ public sealed class EmailCommandTests : IDisposable
 
         var line = Assert.Single(written, l => l.Contains("Email:", StringComparison.Ordinal));
         Assert.Contains("2 page(s)", line, StringComparison.Ordinal);
-        Assert.Contains("the 2 selected pages", line, StringComparison.Ordinal);
+        Assert.Contains("Group", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("the 2 selected pages", line, StringComparison.Ordinal);
         Assert.Contains("Pdf", line, StringComparison.Ordinal);
         Assert.Contains("Explorer", line, StringComparison.Ordinal);
 
@@ -1016,7 +1018,7 @@ public sealed class EmailCommandTests : IDisposable
             new FgScanner.Data.DuplicateFinder(factory));
 
         var message = await toolset.Email.SendAsync(
-            [MakePage("unwired.png")], "Farm Folder", "this page", cancellationToken: TestContext.Current.CancellationToken);
+            [MakePage("unwired.png")], "Farm Folder", "this page", EmailSurface.Scan, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Contains("nothing left the app", message, StringComparison.OrdinalIgnoreCase);
     }
@@ -1167,7 +1169,7 @@ public sealed class EmailCommandTests : IDisposable
             Ask = (_, _, _, format, _) => EmailChoice.Go(format, SubjectNamingSomeone),
         };
 
-        var written = CaptureLog(() => sender.SendAsync([corrupt], "Farm Folder", "this scan").GetAwaiter().GetResult());
+        var written = CaptureLog(() => sender.SendAsync([corrupt], "Farm Folder", "this scan", EmailSurface.Scan).GetAwaiter().GetResult());
 
         Assert.NotEmpty(written);
         Assert.All(written, l => Assert.DoesNotContain("jsmith", l, StringComparison.OrdinalIgnoreCase));
@@ -1266,6 +1268,43 @@ public sealed class EmailCommandTests : IDisposable
         Assert.DoesNotContain("Exception", built.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// A page's file name comes from the naming template, which can be built from field values —
+    /// a title, the parties. The operator is told which page is gone; the 14-day log is told how
+    /// many (§14).
+    /// </summary>
+    [Fact]
+    public void A_missing_page_is_counted_but_not_named_in_the_log()
+    {
+        var present = MakePage("here-log.png");
+        var missing = Path.Combine(_root, "Deed for jsmith@firm.com.png");
+        BuiltAttachments built = default!;
+
+        var written = CaptureLog(() => built = Builder()
+            .BuildAsync([present, missing], "Farm Folder", EmailAttachment.Pdf).GetAwaiter().GetResult());
+
+        Assert.Contains("jsmith", built.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(written, l => l.Contains("1 page file(s) missing", StringComparison.Ordinal));
+        Assert.All(written, l => Assert.DoesNotContain("jsmith", l, StringComparison.OrdinalIgnoreCase));
+        Assert.All(written, l => Assert.False(LooksLikeAddressing(l), l));
+    }
+
+    /// <summary>
+    /// §14 asks for the surface, Scan or Groups. What the dialog shows as the source is the group's
+    /// name in quotes — free text, like the subject, and just as able to name someone.
+    /// </summary>
+    [Fact]
+    public async Task A_group_send_logs_the_surface_and_not_the_group_name()
+    {
+        var (vm, _) = await EvidenceGroupAsync(evidenceProfile: false, committed: false);
+
+        var written = CaptureLog(() => vm.EmailCommand.ExecuteAsync(null).GetAwaiter().GetResult());
+
+        var line = Assert.Single(written, l => l.Contains("Email:", StringComparison.Ordinal));
+        Assert.Contains("from Group", line, StringComparison.Ordinal);
+        Assert.All(written, l => Assert.DoesNotContain("Farm Folder", l, StringComparison.Ordinal));
+    }
+
     /// <summary>§15: warn above 20 MB, never refuse — the operator decides.</summary>
     [Fact]
     public async Task A_large_attachment_warns_but_still_goes()
@@ -1288,7 +1327,7 @@ public sealed class EmailCommandTests : IDisposable
             Ask = (_, _, subject, _, _) => EmailChoice.Go(format, subject),
         };
         var files = Enumerable.Range(1, pages).Select(i => MakeJpeg($"status-{i}.jpg")).ToList();
-        return await sender.SendAsync(files, "Farm Folder", "this scan", cancellationToken: TestContext.Current.CancellationToken);
+        return await sender.SendAsync(files, "Farm Folder", "this scan", EmailSurface.Scan, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     /// <summary>
@@ -1589,7 +1628,7 @@ public sealed class EmailCommandTests : IDisposable
             Ask = (_, _, subject, format, _) => EmailChoice.Go(format, subject),
         };
 
-        await sender.SendAsync([MakePage("via.png")], "Farm Folder", "this scan", cancellationToken: ct);
+        await sender.SendAsync([MakePage("via.png")], "Farm Folder", "this scan", EmailSurface.Scan, cancellationToken: ct);
 
         Assert.Equal(MailPath.Yahoo, Assert.Single(share.Opened).Via);
         Assert.Equal("2", share.Opened[0].Account);

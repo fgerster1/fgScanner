@@ -571,8 +571,9 @@ gets the Share sheet; a classic-Outlook station gets MAPI first; a station with 
 Settings → Email → "Send email with" on each station first.
 
 - [x] **Gmail on Franz's station — 2026-09-22, "It all works" (Franz).** Two selected pages as a
-      PDF; the log reads `Email: 2 page(s) from the 2 selected pages as "Pdf" via "Webmail"` at
-      17:06. Gmail opened with the subject filled in, and Explorer beside it with the PDF.
+      PDF; the log read `Email: 2 page(s) from the 2 selected pages as "Pdf" via "Webmail"` at
+      17:06 (since the security review it reads `from Group` — the source text could carry the
+      group's name). Gmail opened with the subject filled in, and Explorer beside it with the PDF.
       **Not exercised:** a subject containing `&` or `,`, and **the "Gmail account" box — no
       `Email.WebmailAccount` value is stored**, so this send used whichever account Chrome holds
       first. The wrong-account case is the row below and is still open.

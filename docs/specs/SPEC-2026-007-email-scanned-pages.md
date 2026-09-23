@@ -554,10 +554,14 @@ fail; the operator decides. Revisit if anyone routinely sends whole boxes.
       corrected on the evidence: #7's "no warning on Jim's station" (all 18 of his groups are on the
       profile named "Evidence"; the fix stands for renamed and imported profiles), and #11's route
       order, which Franz changed rather than kept.
-- [ ] Security review run against §13 — **not run as a separate pass.** The code review covered
-      part of it: the P/Invoke calls (the interop defect, #1), data exposure (temp copies, #10; the
-      subject in the log, #12) and the new TFM (the lost analyzer floor, #15). A dedicated
-      security review has not been done.
+- [x] Security review run against §13 — 2026-09-22, three reviewers over the interop,
+      data-exposure and input surfaces. The design held (no credential, no network, no new
+      package, no recipient anywhere to leak); eight implementation holes did not, **all fixed**:
+      exception text carrying the subject into the log, a MAPI free over uninitialised
+      descriptors, a Share-sheet handler left attached after a failed open, mapi32/Explorer
+      resolved off the search path, the 32-bit registry view unread, copies not swept on session
+      end (`9ed45fc`); then the group's name logged as the send's surface, and missing page file
+      names in the refusal's log line (the commit after `9ed45fc`).
 - [x] Documentation updated per §18, including the SPEC-003 amendment — 2026-09-22.
 - [x] Spike checklist recorded (AC-8) — §22 below.
 - [ ] Rollback tested or explicitly waived by Franz

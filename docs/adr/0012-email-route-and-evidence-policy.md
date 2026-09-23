@@ -124,7 +124,10 @@ this path**, only its type name: an IOException names the file it could not dele
 browser launch quotes the whole compose URL, and Serilog's file template ends with `{Exception}` —
 so a locked attachment, the ordinary case at exit, wrote the subject (and any address in it) to
 disk for 14 days. The security review of 2026-09-22 found it; the operator still gets the full
-reason on screen.
+reason on screen. The same review's rule covers every name the operator or a template chose: the
+surface is logged as `Scan` or `Group`, never the dialog's source text, which on the Groups page is
+the group's name; and a refused build logs how many page files are missing, never which — page
+file names come from the naming template, which can be built from a title or the parties.
 
 ## Consequences
 

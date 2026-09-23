@@ -153,8 +153,10 @@ public sealed class AttachmentBuilder(
         var missing = pagePaths.Where(p => !File.Exists(p)).Select(Path.GetFileName).ToList();
         if (missing.Count > 0)
         {
+            // Counted in the log, named only on screen: a page's file name comes from the naming
+            // template, which can be built from a title or the parties (§14).
             var named = string.Join(", ", missing);
-            Log.Warning("Refused to build attachments: {Count} page file(s) missing: {Missing}", missing.Count, named);
+            Log.Warning("Refused to build attachments: {Count} page file(s) missing", missing.Count);
             return new BuiltAttachments(
                 false,
                 [],

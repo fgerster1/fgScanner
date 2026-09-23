@@ -19,6 +19,16 @@ public readonly record struct EmailChoice(bool Continue, EmailAttachment Format,
 }
 
 /// <summary>
+/// Which page a send was made from — what §14 logs. The dialog's source text says more, but on the
+/// Groups page it is the group's name, which is free text and can name someone.
+/// </summary>
+public enum EmailSurface
+{
+    Scan,
+    Group,
+}
+
+/// <summary>
 /// One send, end to end: ask what to attach, build it, hand it to the operator's mail path, and
 /// come back with the sentence to show. Both call sites — the Scan page and a group — use this,
 /// so they cannot drift apart on what a send means.
@@ -42,6 +52,7 @@ public sealed class EmailSender(
         IReadOnlyList<string> pages,
         string subject,
         string source,
+        EmailSurface surface,
         bool evidenceRecord = false,
         CancellationToken cancellationToken = default)
     {
@@ -62,15 +73,15 @@ public sealed class EmailSender(
         // each is a send that did not happen, and the operator needs to be told that in a sentence.
         try
         {
-            return await SendCoreAsync(pages, subject, source, evidenceRecord, cancellationToken);
+            return await SendCoreAsync(pages, subject, source, surface, evidenceRecord, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // The type, never the exception: its message names the attachment, whose file name is
             // the subject (§14). The operator gets the full reason on screen instead.
             Log.Error(
-                "Email from {Source} failed while building or opening the message ({Error})",
-                source, ex.GetType().Name);
+                "Email from {Surface} failed while building or opening the message ({Error})",
+                surface, ex.GetType().Name);
             return $"The attachment could not be built, so nothing left the app. ({ex.Message})";
         }
     }
@@ -79,6 +90,7 @@ public sealed class EmailSender(
         IReadOnlyList<string> pages,
         string subject,
         string source,
+        EmailSurface surface,
         bool evidenceRecord,
         CancellationToken cancellationToken)
     {
@@ -125,8 +137,8 @@ public sealed class EmailSender(
         // the app does not know it, and should not start recording who case material went to
         // without that being a decision of its own.
         Log.Information(
-            "Email: {Count} page(s) from {Source} as {Format} via {Route}",
-            pages.Count, source, chosen.Format, outcome.Route);
+            "Email: {Count} page(s) from {Surface} as {Format} via {Route}",
+            pages.Count, surface, chosen.Format, outcome.Route);
 
         if (outcome.Declined)
         {
