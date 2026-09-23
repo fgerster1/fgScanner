@@ -133,8 +133,9 @@ the JimsStuff portal (`JimsStuff/pipeline/import_fgscanner.py`) parses committed
   "evidence" is recognised by the contract's required fields, never by the profile's name. Routes:
   MAPI when the registry probe finds a client, then the Share sheet, then Explorer — unless
   Settings' "Send email with" (`Email.SendWith`) says Gmail or Yahoo Mail, when the compose page
-  opens in the browser beside Explorer and the operator drags the file in (no Windows mechanism can
-  attach to webmail). Franz uses Gmail and Jim uses Yahoo, so on both stations it is the webmail path.
+  opens in the browser with the files on the clipboard and the operator presses Ctrl+V (no Windows
+  mechanism can attach to webmail, but a browser takes a pasted file); Explorer, to drag from, is
+  only the fallback when the clipboard cannot be set. Franz uses Gmail and Jim uses Yahoo, so on both stations it is the webmail path.
 - `Feature.PreserveOriginals` stays ON for evidence groups (ADR-0003); the `originals\`
   subfolder and its checksums are part of the folder's evidentiary integrity.
 - **A field's length and memo flag are layout and validation settings, never part of the export

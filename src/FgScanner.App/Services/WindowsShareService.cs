@@ -25,7 +25,8 @@ public sealed class WindowsShareService(
     Func<ShareRequest, MapiDraft>? mapi = null,
     Func<bool>? mapiAvailable = null,
     Func<string, bool>? revealInExplorer = null,
-    Func<string, bool>? openInBrowser = null) : IShareService
+    Func<string, bool>? openInBrowser = null,
+    Func<IReadOnlyList<string>, bool>? copyToClipboard = null) : IShareService
 {
     private readonly Func<ShareRequest, bool> _shareSheet = shareSheet ?? ShareSheetRoute.TryOpen;
     private readonly Func<ShareRequest, MapiDraft> _mapi = mapi ?? SimpleMapiRoute.TryOpen;
@@ -34,6 +35,7 @@ public sealed class WindowsShareService(
 
     private readonly Func<string, bool> _revealInExplorer = revealInExplorer ?? ExplorerSelect.Reveal;
     private readonly Func<string, bool> _openInBrowser = openInBrowser ?? OpenInBrowser;
+    private readonly Func<IReadOnlyList<string>, bool> _copyToClipboard = copyToClipboard ?? CopyToClipboard;
 
     public ShareOutcome Open(ShareRequest request)
     {
@@ -109,24 +111,45 @@ public sealed class WindowsShareService(
     }
 
     /// <summary>
-    /// Gmail or Yahoo Mail: a new message in the browser with the subject filled in, and Explorer
-    /// beside it with the file selected, to be dragged in. That drag is the one step no desktop app
-    /// can take for a webmail service. Either half failing still leaves the operator told where
-    /// the file is.
+    /// Gmail or Yahoo Mail: a new message in the browser with the subject filled in, and the files
+    /// on the clipboard for the operator to paste in with Ctrl+V. No desktop app can attach a file
+    /// to a web page, but a browser takes a pasted one (Franz, 2026-09-23). When the clipboard cannot
+    /// be set, Explorer opens beside the message with the file selected, to be dragged in. Any part
+    /// failing still leaves the operator told where the file is.
     /// </summary>
     private ShareOutcome OpenWebmail(ShareRequest request)
     {
         var name = WebmailCompose.Name(request.Via);
         var (folder, count, pronoun) = Location(request);
+        var copied = request.FilePaths.Count > 0 && Try(() => _copyToClipboard(request.FilePaths), "the clipboard");
+
         // Explorer first, the message second: whichever opens last takes the foreground, and the
         // message is the window the operator works in. The other way round, Explorer covered the
         // compose window and the send looked as though nothing had happened.
-        var shown = request.FilePaths.Count > 0 && Try(() => _revealInExplorer(request.FilePaths[0]), "Explorer");
+        var shown = !copied
+            && request.FilePaths.Count > 0 && Try(() => _revealInExplorer(request.FilePaths[0]), "Explorer");
         var browser = Try(
             () => _openInBrowser(WebmailCompose.Url(request.Via, request.Subject, request.Account)), name);
+
+        // No message to paste into, so the files have to be found: Explorer after all.
+        if (!browser && copied)
+        {
+            shown = Try(() => _revealInExplorer(request.FilePaths[0]), "Explorer");
+        }
+
         Log.Information(
-            "Webmail: {Service} compose opened {Browser}, Explorer opened {Explorer}, {Count} file(s)",
-            name, browser, shown, request.FilePaths.Count);
+            "Webmail: {Service} compose opened {Browser}, clipboard {Clipboard}, Explorer opened {Explorer}, {Count} file(s)",
+            name, browser, copied, shown, request.FilePaths.Count);
+
+        if (browser && copied)
+        {
+            var paste = request.FilePaths.Count == 1
+                ? "the file is ready to paste — click in the message and press Ctrl+V to attach it."
+                : $"the {request.FilePaths.Count} files are ready to paste — click in the message and press "
+                    + "Ctrl+V to attach them all.";
+            return new ShareOutcome(
+                ShareRoute.Webmail, $"A new {name} message is open in your browser, and {paste} {StaysUntilClose}");
+        }
 
         if (browser && shown)
         {
@@ -177,6 +200,22 @@ public sealed class WindowsShareService(
     {
         // The default browser, through the shell — the same way the separator-sheet PDF opens.
         using var started = Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        return true;
+    }
+
+    /// <summary>
+    /// The file list Explorer's Ctrl+C puts on the clipboard, which is what a browser reads on
+    /// Ctrl+V. Runs on the UI thread, as the whole send does: the clipboard needs an STA thread.
+    /// </summary>
+    private static bool CopyToClipboard(IReadOnlyList<string> files)
+    {
+        var list = new System.Collections.Specialized.StringCollection();
+        foreach (var file in files)
+        {
+            list.Add(file);
+        }
+
+        System.Windows.Clipboard.SetFileDropList(list);
         return true;
     }
 

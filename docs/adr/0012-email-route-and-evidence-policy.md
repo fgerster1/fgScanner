@@ -63,10 +63,18 @@ So the station says how it sends mail — **Settings → "Send email with"** (`E
 mail program on this PC (the three routes above, and the default), Gmail in the browser, or
 Yahoo Mail in the browser. It is chosen, not detected, because nothing on Windows records where
 someone reads their mail. For the webmail choices a send opens the service's compose page with the
-subject filled in, and Explorer beside it with the file selected, and the operator drags the file
-in. That drag is the whole of what cannot be automated; everything around it is.
+subject filled in, and the operator attaches the file.
 
-Explorer opens **before** the compose page, because the window opened last takes the foreground:
+**The file is pasted, not dragged** (amended 2026-09-23). A browser takes a file pasted from the
+clipboard — Franz copied the PDF in Explorer and pressed Ctrl+V in a Gmail message, and it attached.
+So a send puts the attachment files on the clipboard as a file list, opens the compose page, and
+the operator presses Ctrl+V: one keystroke is the whole of what cannot be automated. It replaces
+whatever the operator had copied, which a deliberate send makes acceptable. Explorer beside the
+message, to drag from, is now the fallback — for a clipboard another program is holding, and for a
+browser that will not open. Nothing attaches without the operator: attaching automatically would
+need the app to sign in to the mailbox, which is the credential this ADR keeps off the station.
+
+When Explorer does open, it opens **before** the compose page, because the window opened last takes the foreground:
 the other way round Explorer covered the message and the send looked as though nothing had
 happened (Franz, first real send, 2026-09-22). That send also went to the wrong Google account —
 the bare link opens whichever the browser holds first — so Settings takes an optional

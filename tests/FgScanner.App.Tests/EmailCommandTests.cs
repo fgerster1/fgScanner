@@ -1137,6 +1137,7 @@ public sealed class EmailCommandTests : IDisposable
             mapi: _ => MapiDraft.Failed,
             mapiAvailable: () => false,
             revealInExplorer: _ => true,
+            copyToClipboard: _ => true,
             openInBrowser: u =>
             {
                 url = u;
@@ -1482,23 +1483,29 @@ public sealed class EmailCommandTests : IDisposable
 
     // ---- webmail: Franz sends from Gmail, Jim from Yahoo (2026-09-22) ----
 
-    private static WindowsShareService WebmailStation(List<string> order, bool browser = true, bool explorer = true) => new(
+    private static WindowsShareService WebmailStation(
+        List<string> order, bool browser = true, bool explorer = true, bool clipboard = true) => new(
         shareSheet: _ => { order.Add("sheet"); return true; },
         mapi: _ => { order.Add("mapi"); return MapiDraft.Sent; },
         mapiAvailable: () => true,
         revealInExplorer: p => { order.Add("explorer:" + Path.GetFileName(p)); return explorer; },
-        openInBrowser: url => { order.Add("browser:" + url); return browser; });
+        openInBrowser: url => { order.Add("browser:" + url); return browser; },
+        copyToClipboard: files =>
+        {
+            order.Add("clipboard:" + string.Join(",", files.Select(Path.GetFileName)));
+            return clipboard ? true : throw new InvalidOperationException("OpenClipboard failed");
+        });
 
     /// <summary>
     /// No Windows mechanism can hand a file to a mail service running in a browser: it is neither
-    /// a MAPI client nor a share target, and mailto: cannot carry an attachment. So on a station
-    /// set to Gmail the compose page opens in the browser, Explorer opens beside it with the file
-    /// selected, and the operator drags it in — one drag, which is the best there is. The mail-app
-    /// routes are never tried: on Franz's PC the Share sheet opened every time and Gmail was never
-    /// in it.
+    /// a MAPI client nor a share target, and mailto: cannot carry an attachment. What a browser does
+    /// take is a paste: Franz copied the PDF in Explorer and pressed Ctrl+V in a Gmail message, and
+    /// it attached (2026-09-23). So the file goes on the clipboard and the compose page opens — one
+    /// keystroke, and no Explorer window to drag from. The mail-app routes are never tried: on
+    /// Franz's PC the Share sheet opened every time and Gmail was never in it.
     /// </summary>
     [Fact]
-    public void Gmail_opens_a_compose_page_beside_the_file_and_never_tries_the_mail_app_routes()
+    public void Gmail_opens_a_compose_page_with_the_file_ready_to_paste_and_never_tries_the_mail_app_routes()
     {
         var order = new List<string>();
 
@@ -1506,16 +1513,51 @@ public sealed class EmailCommandTests : IDisposable
             new ShareRequest([MakePage("farm.png")], "Farm Folder", MailPath.Gmail));
 
         Assert.Equal(ShareRoute.Webmail, outcome.Route);
-
-        // Explorer first, the message second: whichever opens last takes the foreground, and the
-        // message is what the operator types in. Opened the other way round, Explorer covered the
-        // Gmail window and the send looked like it had done nothing (Franz, 2026-09-22).
         Assert.Equal(
-            ["explorer:farm.png", "browser:https://mail.google.com/mail/?view=cm&fs=1&su=Farm%20Folder"],
+            ["clipboard:farm.png", "browser:https://mail.google.com/mail/?view=cm&fs=1&su=Farm%20Folder"],
             order);
         Assert.Contains("Gmail", outcome.Message, StringComparison.Ordinal);
-        Assert.Contains("drag", outcome.Message, StringComparison.Ordinal);
+        Assert.Contains("Ctrl+V", outcome.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("drag", outcome.Message, StringComparison.Ordinal);
         Assert.Contains("until FG Scanner closes", outcome.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Another program can hold the clipboard open, and then it cannot be set. That send is the
+    /// drag it was before: Explorer first and the message second, since whichever opens last takes
+    /// the foreground — opened the other way round, Explorer covered the Gmail window and the send
+    /// looked as though it had done nothing (Franz, 2026-09-22).
+    /// </summary>
+    [Fact]
+    public void A_clipboard_that_cannot_be_set_falls_back_to_the_drag()
+    {
+        var order = new List<string>();
+
+        var outcome = WebmailStation(order, clipboard: false).Open(
+            new ShareRequest([MakePage("farm.png")], "Farm Folder", MailPath.Gmail));
+
+        Assert.Equal(ShareRoute.Webmail, outcome.Route);
+        Assert.Equal(
+            ["clipboard:farm.png", "explorer:farm.png", "browser:https://mail.google.com/mail/?view=cm&fs=1&su=Farm%20Folder"],
+            order);
+        Assert.Contains("drag", outcome.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Ctrl+V", outcome.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// §14: whether the paste was set up belongs in the log, next to the rest of the send. The paths
+    /// on the clipboard do not — the file is named after the subject.
+    /// </summary>
+    [Fact]
+    public void The_webmail_log_says_whether_the_clipboard_took_the_files_and_never_names_them()
+    {
+        var order = new List<string>();
+
+        var written = CaptureLog(() => WebmailStation(order).Open(
+            new ShareRequest([MakePage("Deed for jsmith.png")], SubjectNamingSomeone, MailPath.Gmail)));
+
+        Assert.Contains(written, l => l.Contains("clipboard True", StringComparison.OrdinalIgnoreCase));
+        Assert.All(written, l => Assert.DoesNotContain("jsmith", l, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -1586,17 +1628,24 @@ public sealed class EmailCommandTests : IDisposable
         Assert.Contains(_root, outcome.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>Several images: Explorer can select only one file, so the sentence says where they all are.</summary>
+    /// <summary>
+    /// Several images all go on the clipboard, so one paste attaches them together — Explorer could
+    /// select only one, which is why the drag needed the operator to select the rest. Yahoo gets the
+    /// same as Gmail (Franz, 2026-09-23); Jim's station confirms Yahoo takes a pasted file.
+    /// </summary>
     [Fact]
-    public void Several_images_for_webmail_are_named_as_several()
+    public void Several_images_for_webmail_all_go_on_the_clipboard()
     {
         var order = new List<string>();
 
         var outcome = WebmailStation(order).Open(
             new ShareRequest([MakePage("a.png"), MakePage("b.png"), MakePage("c.png")], "Farm Folder", MailPath.Yahoo));
 
+        Assert.Equal("clipboard:a.png,b.png,c.png", order[0]);
+        Assert.DoesNotContain(order, o => o.StartsWith("explorer:", StringComparison.Ordinal));
         Assert.Contains("Yahoo Mail", outcome.Message, StringComparison.Ordinal);
         Assert.Contains("3 files", outcome.Message, StringComparison.Ordinal);
+        Assert.Contains("Ctrl+V", outcome.Message, StringComparison.Ordinal);
     }
 
     /// <summary>Read per send (ADR-0010), and an unknown stored value is the mail-app path, never an error.</summary>

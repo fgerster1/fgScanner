@@ -579,8 +579,12 @@ Settings → Email → "Send email with" on each station first.
       first. The wrong-account case is the row below and is still open.
 - [ ] **Yahoo Mail on Jim's station.** The same. **The Yahoo compose link is undocumented** — if
       the subject does not fill in, or the page is not a new message, record what Yahoo shows.
-- [ ] **Three images to Gmail**: the status says 3 files are in the Explorer window; select all
-      three and drag them in together.
+- [ ] **Paste, not drag (amended 2026-09-23).** A PDF to Gmail: no Explorer window opens, the
+      status says to press Ctrl+V, and Ctrl+V in the message attaches the PDF.
+- [ ] **Three images to Gmail**: the status says 3 files are ready to paste; one Ctrl+V attaches
+      all three.
+- [ ] **Yahoo takes a paste** — part of the Yahoo row above. If it does not, record what Yahoo
+      does; Yahoo then goes back to the drag.
 - [ ] **The Share sheet on a mail-program station** now also names the file's folder.
 
 **First real Gmail send, 2026-09-22 (Franz's station).** The route worked and looked as though it

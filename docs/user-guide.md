@@ -202,10 +202,10 @@ and originals are what make it evidence, and the folder itself is not changed. T
 
 - **A mail program on this PC** (Outlook, Thunderbird…) — the pages are attached for you.
 - **Gmail in the browser** or **Yahoo Mail in the browser** — a new message opens in your browser
-  with the subject filled in, and an Explorer window opens beside it with the file selected.
-  **Drag the file from Explorer into the message.** That one drag is the only thing FG Scanner
-  cannot do for you: no program can attach a file to a web page. Several images: select them all
-  in the Explorer window and drag them together.
+  with the subject filled in, and the file is already copied for you. **Click in the message and
+  press Ctrl+V** — the file attaches. That one keystroke is the only thing FG Scanner cannot do for
+  you: no program can attach a file to a web page. Several images paste together. Whatever you had
+  copied before is replaced.
 - **Gmail account** (optional, beside the list) — with several Google accounts signed in, the
   browser opens whichever it holds first, which may not be the one you want to write from. Put the
   address here (or its number in the browser: 0, 1, 2…) and the message opens in that account.
@@ -218,7 +218,8 @@ buttons says which:
 |---|---|
 | *"3 pages attached. Your mail app reports the message as sent."* | Your mail app (classic Outlook, for example) opened a new message with the pages attached, and you sent it. |
 | *"You closed the message without sending it — nothing left the app."* | The same, but you closed the message instead of sending it. |
-| *"3 pages were made into one PDF. A new Gmail message is open in your browser, and the file is selected in the Explorer window beside it — drag it into the message. It stays there until FG Scanner closes."* | Gmail or Yahoo Mail is set. Drag the file into the message, then send it. **Attach it before closing FG Scanner.** |
+| *"3 pages were made into one PDF. A new Gmail message is open in your browser, and the file is ready to paste — click in the message and press Ctrl+V to attach it. It stays there until FG Scanner closes."* | Gmail or Yahoo Mail is set. Click in the message, press Ctrl+V, then send it. **Attach it before closing FG Scanner.** |
+| *"… A new Gmail message is open in your browser, and the file is selected in the Explorer window beside it — drag it into the message."* | The file could not be copied for you (another program was using the clipboard). Drag it from the Explorer window into the message instead. |
 | *"Gmail could not be opened in your browser. The attachment is in … — start a new Gmail message and drag it in."* | The browser did not open. Open Gmail yourself; the Explorer window with the file is already there. |
 | *"3 pages attached. The Windows Share sheet is open — choose your mail app there. The attachment is in … as well, if your mail is in a browser."* | Windows' Share panel is open with the pages in it. Pick your mail app — new Outlook, for example — and send from there. Closing the panel sends nothing. If your mail is Gmail or Yahoo, close it, choose that in Settings, and the file is in the folder named. |
 | *"3 pages were made into one PDF. No mail app was found. The attachment is in C:\…\ — attach it to your message yourself. It stays there until FG Scanner closes, and is removed the next time it starts."* | No mail app could be reached. An Explorer window opens with the file selected: start a message yourself and attach it. **Attach it before closing FG Scanner** — closing the app removes the copy, and so does the next start if the app was killed. |

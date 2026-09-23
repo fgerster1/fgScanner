@@ -245,6 +245,27 @@ interface; the same reasoning applies to shell UI).
 > Yahoo documents none at all, so its link is checked on Jim's station before this is Done.
 > Whichever the station, the Share sheet's status now also says where the file is.
 
+> **Amended 2026-09-23 (Franz): paste, not drag.** *Patch tier.* **Outcome** — a webmail send is
+> one keystroke: the message opens, the operator clicks in it and presses **Ctrl+V**, and the file
+> is attached. **Evidence** — Franz copied the PDF in Explorer (Ctrl+C) and pasted it into a Gmail
+> message (Ctrl+V) on his station, 2026-09-23: it attached. **Change** — before the browser opens,
+> the attachment files go on the Windows clipboard as a file list (what Explorer's Ctrl+C puts
+> there), and Explorer is **not** opened. **Explorer opens only if the clipboard cannot be set**
+> (another program holding it), and then the send is exactly the drag of the amendment above
+> (Franz, Q-A). **Yahoo gets the same behaviour** (Franz, Q-B); its paste is confirmed by the Yahoo
+> check on Jim's station, and if Yahoo refuses a pasted file, a follow-up returns Yahoo to the drag.
+> A browser that will not open still opens Explorer, since the operator then has no message to
+> paste into. *Assumptions:* replacing whatever the operator had copied is acceptable — a send is
+> a deliberate act and the status line says the file is on the clipboard; Windows' clipboard
+> history and cross-device sync keep text and images, not file lists, so no copy of the path
+> outlives the next copy; several images paste in one Ctrl+V (unproven — a manual row). *Risk* —
+> a paste after FG Scanner closes finds the copy gone (`AttachmentBuilder.CleanUp`); the status
+> line already says to attach before closing. *Tests first* — the clipboard is a route like the
+> others, injected: the files reach it and Explorer is not called; a clipboard that throws falls
+> back to Explorer-then-browser in that order; a failed browser still opens Explorer; the status
+> says Ctrl+V; the log carries the clipboard outcome and no path. *Not in this change* — the
+> mail-app routes, the Share sheet, the subject, anything that could attach without the operator.
+
 1. **Windows Share sheet** — `DataTransferManager` via `IDataTransferManagerInterop.GetForWindow`,
    which is supported for unpackaged WPF. Real file attachments, and new Outlook is a
    share target.
