@@ -564,7 +564,23 @@ fail; the operator decides. Revisit if anyone routinely sends whole boxes.
       names in the refusal's log line (the commit after `9ed45fc`).
 - [x] Documentation updated per §18, including the SPEC-003 amendment — 2026-09-22.
 - [x] Spike checklist recorded (AC-8) — §22 below.
-- [ ] Rollback tested or explicitly waived by Franz
+- [x] Rollback tested — 2026-09-23, on a scratch worktree off `main` (`0ec1d8d`): the branch
+      merged `--no-ff` the way phases are, then `git revert -m 1` of that merge. **The revert
+      applied cleanly and the tree is identical to `main`**; Release build `0 Warning(s)`, tests
+      **793 of 793** (the count `main` had at the spike, so all 78 email tests went with it).
+      What a code revert cannot take back, checked:
+      - *Database* — no migration on the branch. A throwaway test ran `main`'s
+        `MigrateWithBackup` over a database holding the four `Email.*` rows the branch writes:
+        no pending migration, no backup taken, settings and groups read and write normally.
+        The rows stay, inert — `main` reads settings only by key. `Email.WebmailAccount` holds
+        the operator's own address; delete it by hand if that matters on a station.
+      - *Install folder* — the branch adds exactly two files to the output,
+        `Microsoft.Windows.SDK.NET.dll` and `WinRT.Runtime.dll`; the installer's
+        `[InstallDelete]` purges `{app}\*.dll`, so reinstalling the older version removes them.
+      - *Temp copies* — `main` does not sweep `%TEMP%\FGScanner\email`. Only copies from a
+        killed session could be there (the branch sweeps at exit), and Windows' temp cleanup
+        takes them.
+      **Not exercised:** actually running the older installer over this one on a station.
 
 ## 22 · Sign-off
 
