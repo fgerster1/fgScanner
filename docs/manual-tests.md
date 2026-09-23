@@ -582,9 +582,12 @@ Settings → Email → "Send email with" on each station first.
 - [x] **Paste, not drag (amended 2026-09-23).** A PDF to Gmail: no Explorer window opens, the
       status says to press Ctrl+V, and Ctrl+V in the message attaches the PDF — 2026-09-23,
       Franz's station, "It worked".
-- [ ] **The "PDF copied" notice**: appears in the bottom-right corner over the Gmail window, does
+- [x] **The "PDF copied" notice**: appears in the bottom-right corner over the Gmail window, does
       not take the cursor (click into the message and type straight away), and closes after about
-      20 seconds or on a click. With FG Scanner on a second monitor, it is on that monitor.
+      20 seconds or on a click — 2026-09-23, Franz's station, "everything looks good". The log
+      read `Webmail: Gmail compose opened true, clipboard true, Explorer opened false, 1 file(s)`
+      and `Email: 3 page(s) from "Group" as "Pdf" via "Webmail"` at 13:46. **Not exercised:**
+      FG Scanner on a second monitor.
 - [ ] **Three images to Gmail**: the status says 3 files are ready to paste; one Ctrl+V attaches
       all three.
 - [ ] **Yahoo takes a paste** — part of the Yahoo row above. If it does not, record what Yahoo
