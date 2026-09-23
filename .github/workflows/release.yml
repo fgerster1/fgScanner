@@ -29,12 +29,20 @@ jobs:
           -p:PublishProfile=win-x64
           -p:Version=${{ steps.ver.outputs.version }}
 
+      # Its own folder, never the app's: fgscanner.exe and FgScanner.exe differ only in case, so
+      # publishing both into one folder wrote the CLI over the app (0.5.2 shipped with no app).
+      # A separate folder is also what lets the framework-dependent CLI find the machine's .NET
+      # instead of taking the app's bundled one for an install.
       - name: Publish CLI
         run: >
           dotnet publish src/FgScanner.Cli/FgScanner.Cli.csproj -c Release
           -r win-x64 --self-contained false
-          -o publish/win-x64
+          -o publish/win-x64/cli
           -p:Version=${{ steps.ver.outputs.version }}
+
+      - name: Verify payload
+        shell: pwsh
+        run: ./build/verify-publish.ps1 -Dir publish/win-x64
 
       # --- Payload signing via SignPath (enable by setting the repo variable SIGNPATH_ENABLED=true
       #     and the secrets documented in docs/release.md). Runs BEFORE the installer is packed.

@@ -257,6 +257,10 @@ Explorer (by content checksum) and reports files that vanished.
 
 ## Command line
 
+The command line tool is `fgscanner.exe` in the `cli` folder of the install —
+`C:\Program Files\FGScanner\cli\fgscanner.exe` (before 0.5.3 it sat beside `FgScanner.exe`;
+a scheduled task that names the old path needs the new one).
+
 ```
 fgscanner scan --group C:\Scans\Inbox --source feeder -n 2
 fgscanner process C:\Scans\Inbox --ocr --write-index

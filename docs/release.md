@@ -4,9 +4,13 @@
 
 1. `dotnet test -c Release` green locally; CI green on main.
 2. Bump notable docs (FEATURE-PARITY.md), then tag: `git tag v0.1.0 && git push origin v0.1.0`.
-3. `release.yml` publishes the app + CLI, builds the portable ZIP and Inno
+3. `release.yml` publishes the app, then the CLI into `cli\`, checks the payload
+   (`build/verify-publish.ps1`), builds the portable ZIP and Inno
    installer, writes SHA256SUMS, attests provenance, and drafts a GitHub
-   Release. Review the draft, edit notes, publish.
+   Release. **Before publishing, install the draft's installer and start it** —
+   the local check below never publishes the CLI, so it cannot catch what only the
+   pipeline does. 0.5.2 passed every local check and shipped with the CLI written over
+   the app. Publishing is what puts it in front of every station's auto-update.
 4. Publishing the release triggers `winget.yml` (needs `WINGET_TOKEN`).
 
 Local installer check (PowerShell, from repo root):
