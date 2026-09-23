@@ -14,7 +14,25 @@ public interface IRegistryReader
 public sealed class WindowsRegistryReader : IRegistryReader
 {
     public string? ReadString(string keyPath, string? valueName) =>
-        Registry.GetValue(keyPath, valueName ?? "", null) as string;
+        Read(RegistryView.Registry64, keyPath, valueName) ?? Read(RegistryView.Registry32, keyPath, valueName);
+
+    /// <summary>
+    /// Both views. FG Scanner is 64-bit, and a 32-bit classic Outlook registers under
+    /// WOW6432Node — so reading only this process's view missed the very station the MAPI route
+    /// exists for, and it fell through to a Share sheet that has no Outlook in it.
+    /// </summary>
+    private static string? Read(RegistryView view, string keyPath, string? valueName)
+    {
+        const string prefix = "HKEY_LOCAL_MACHINE\\";
+        if (!keyPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return Registry.GetValue(keyPath, valueName ?? "", null) as string;
+        }
+
+        using var root = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
+        using var key = root.OpenSubKey(keyPath[prefix.Length..]);
+        return key?.GetValue(valueName ?? "") as string;
+    }
 }
 
 /// <summary>

@@ -1057,14 +1057,164 @@ public sealed class EmailCommandTests : IDisposable
         Assert.All(written, l => Assert.False(LooksLikeAddressing(l), l));
     }
 
+    /// <summary>
+    /// The exception is part of the line: Serilog's default file template ends with {Exception},
+    /// so whatever an exception says reaches %LOCALAPPDATA%\FGScanner\logs. Rendering only the
+    /// message made every privacy test below blind to the one path that actually leaked — the
+    /// attachment's file name, which is the subject, inside an IOException.
+    /// </summary>
     private sealed class CapturingSink(List<string> lines) : Serilog.Core.ILogEventSink
     {
         public void Emit(Serilog.Events.LogEvent logEvent)
         {
             using var writer = new StringWriter();
             logEvent.RenderMessage(writer, System.Globalization.CultureInfo.InvariantCulture);
-            lines.Add($"[{logEvent.Level}] {writer}");
+            var exception = logEvent.Exception is { } ex ? Environment.NewLine + ex : "";
+            lines.Add($"[{logEvent.Level}] {writer}{exception}");
         }
+    }
+
+    private static List<string> CaptureLog(Action work)
+    {
+        var written = new List<string>();
+        var previous = Serilog.Log.Logger;
+        Serilog.Log.Logger = new Serilog.LoggerConfiguration()
+            .MinimumLevel.Verbose()
+            .WriteTo.Sink(new CapturingSink(written))
+            .CreateLogger();
+        try
+        {
+            work();
+        }
+        finally
+        {
+            (Serilog.Log.Logger as IDisposable)?.Dispose();
+            Serilog.Log.Logger = previous;
+        }
+
+        return written;
+    }
+
+    private const string SubjectNamingSomeone = "Box 14 deeds for jsmith@firm.com";
+
+    /// <summary>
+    /// §14 forbids recording who case material went to. The subject becomes the attachment's file
+    /// name, and a failed clean-up logs an IOException that quotes that name — the ordinary case,
+    /// since the mail client is usually still holding the PDF. So the exception must not reach the
+    /// log at all; the operator gets the reason on screen instead.
+    /// </summary>
+    [Fact]
+    public async Task A_locked_attachment_does_not_put_the_subject_in_the_log()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var builder = Builder();
+        var built = await builder.BuildAsync([MakePage("locked.png")], SubjectNamingSomeone, EmailAttachment.Pdf, ct);
+        Assert.True(built.Ok, built.Message);
+
+        // Held open the way a mail client holds an attachment it has not finished with.
+        using var hold = new FileStream(built.FilePaths[0], FileMode.Open, FileAccess.Read, FileShare.None);
+        var written = CaptureLog(builder.CleanUp);
+
+        Assert.NotEmpty(written);
+        Assert.All(written, l => Assert.DoesNotContain("jsmith", l, StringComparison.OrdinalIgnoreCase));
+        Assert.All(written, l => Assert.DoesNotContain("Box 14", l, StringComparison.Ordinal));
+        Assert.All(written, l => Assert.False(LooksLikeAddressing(l), l));
+    }
+
+    /// <summary>
+    /// The compose URL carries the subject and the operator's own account. A browser that fails to
+    /// start throws a Win32Exception quoting the whole command — so that exception must not be
+    /// logged either.
+    /// </summary>
+    [Fact]
+    public void A_browser_failure_does_not_put_the_compose_url_in_the_log()
+    {
+        var url = "";
+        var service = new WindowsShareService(
+            shareSheet: _ => false,
+            mapi: _ => MapiDraft.Failed,
+            mapiAvailable: () => false,
+            revealInExplorer: _ => true,
+            openInBrowser: u =>
+            {
+                url = u;
+                throw new System.ComponentModel.Win32Exception(
+                    $"An error occurred trying to start process '{u}' with working directory '.'.");
+            });
+
+        var written = CaptureLog(() => service.Open(
+            new ShareRequest([MakePage("url.png")], SubjectNamingSomeone, MailPath.Gmail, "fgerster@fgmaker.com")));
+
+        Assert.Contains("jsmith", url, StringComparison.OrdinalIgnoreCase);
+        Assert.NotEmpty(written);
+        Assert.All(written, l => Assert.DoesNotContain("jsmith", l, StringComparison.OrdinalIgnoreCase));
+        Assert.All(written, l => Assert.DoesNotContain("fgerster", l, StringComparison.OrdinalIgnoreCase));
+        Assert.All(written, l => Assert.False(LooksLikeAddressing(l), l));
+    }
+
+    /// <summary>
+    /// A send whose attachment cannot be built logs the failure — and the exception's message names
+    /// the file, which is the subject. Same rule: the type, not the exception.
+    /// </summary>
+    [Fact]
+    public async Task A_failed_build_does_not_put_the_subject_in_the_log()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var corrupt = Path.Combine(_root, "corrupt-log.jpg");
+        await File.WriteAllBytesAsync(corrupt, [0xFF, 0xD8, 0xFF, 0xE0, 0x00], ct);
+        var sender = new EmailSender(Builder(), new FakeShareService(ShareRoute.Explorer), Settings())
+        {
+            Ask = (_, _, _, format, _) => EmailChoice.Go(format, SubjectNamingSomeone),
+        };
+
+        var written = CaptureLog(() => sender.SendAsync([corrupt], "Farm Folder", "this scan").GetAwaiter().GetResult());
+
+        Assert.NotEmpty(written);
+        Assert.All(written, l => Assert.DoesNotContain("jsmith", l, StringComparison.OrdinalIgnoreCase));
+        Assert.All(written, l => Assert.False(LooksLikeAddressing(l), l));
+    }
+
+    /// <summary>
+    /// The descriptors are freed in a finally that used to run over every slot, including those the
+    /// loop never wrote — freeing pointers out of uninitialised memory, which fail-fasts the
+    /// process past every catch. A path that cannot be resolved throws part-way through that loop.
+    /// </summary>
+    [Fact]
+    public void A_path_that_throws_part_way_through_the_attachments_does_not_take_the_process_with_it()
+    {
+        var request = new ShareRequest(
+            [MakePage("first.png"), "C:\\a\0b", MakePage("third.png")], "Farm Folder");
+
+        Assert.ThrowsAny<Exception>(() => SimpleMapiRoute.TryOpen(request));
+    }
+
+    /// <summary>
+    /// Launched by bare name, Windows searches the app's own folder — and the file-association
+    /// launch path means that folder can be one the operator merely opened a scan from.
+    /// </summary>
+    [Fact]
+    public void Explorer_is_launched_from_the_Windows_folder()
+    {
+        var expected = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+
+        Assert.Equal(expected, ExplorerSelect.Executable);
+        Assert.True(File.Exists(ExplorerSelect.Executable));
+    }
+
+    /// <summary>
+    /// "It stays there until FG Scanner closes" promised a deletion the app cannot guarantee: a
+    /// killed session never reaches its clean-up, and on this station most sessions are killed.
+    /// The startup sweep is the real guarantee, so the sentence says both.
+    /// </summary>
+    [Fact]
+    public void The_fallback_is_honest_about_when_the_copy_goes()
+    {
+        var service = new WindowsShareService(
+            shareSheet: _ => false, mapi: _ => MapiDraft.Failed, mapiAvailable: () => false, revealInExplorer: _ => true);
+
+        var message = service.Open(Request()).Message;
+
+        Assert.Contains("next time it starts", message, StringComparison.Ordinal);
     }
 
     private AttachmentBuilder Builder() => new(

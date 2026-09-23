@@ -66,7 +66,11 @@ public sealed class EmailSender(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            Log.Error(ex, "Email from {Source} failed while building or opening the message", source);
+            // The type, never the exception: its message names the attachment, whose file name is
+            // the subject (§14). The operator gets the full reason on screen instead.
+            Log.Error(
+                "Email from {Source} failed while building or opening the message ({Error})",
+                source, ex.GetType().Name);
             return $"The attachment could not be built, so nothing left the app. ({ex.Message})";
         }
     }

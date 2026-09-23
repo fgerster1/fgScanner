@@ -181,10 +181,13 @@ public sealed class WindowsShareService(
     }
 
     /// <summary>
-    /// The attachment folder is removed when the app closes (AttachmentBuilder.CleanUp), so the
-    /// operator sent to it is told — or they close FG Scanner and find the file gone.
+    /// The attachment folder is removed when the app closes (AttachmentBuilder.CleanUp) and, for
+    /// a session that was killed and never reached that, at the next startup. The operator sent to
+    /// the folder is told both halves: promising only "until FG Scanner closes" claimed a deletion
+    /// a killed session cannot perform.
     /// </summary>
-    private const string StaysUntilClose = "It stays there until FG Scanner closes.";
+    private const string StaysUntilClose =
+        "It stays there until FG Scanner closes, and is removed the next time it starts.";
 
     /// <summary>
     /// A route that throws is a route that did not work. The reason goes to the log, where it can
@@ -198,7 +201,10 @@ public sealed class WindowsShareService(
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "{Route} was not available", what);
+            // The type, never the exception: a browser that fails to start throws a Win32Exception
+            // quoting the whole command line — which for the webmail route is the compose URL,
+            // carrying both the subject and the operator's own address (§14).
+            Log.Warning("{Route} was not available ({Error})", what, ex.GetType().Name);
             return false;
         }
     }

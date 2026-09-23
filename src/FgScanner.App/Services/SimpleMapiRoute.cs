@@ -26,7 +26,7 @@ public enum MapiDraft
 /// Re-implemented from the documented API, following the `SHFileOperationW` precedent in
 /// <see cref="RecycleBinDiscarder"/>. NAPS2's own email code is GPL and was not read (CLAUDE.md).
 /// </summary>
-internal static class SimpleMapiRoute
+public static class SimpleMapiRoute
 {
     private const uint MapiDialog = 0x00000008;
     private const uint MapiLogonUi = 0x00000001;
@@ -38,7 +38,16 @@ internal static class SimpleMapiRoute
     public static MapiDraft TryOpen(ShareRequest request)
     {
         var descriptorSize = Marshal.SizeOf<MapiFileDescriptor>();
-        var files = Marshal.AllocHGlobal(descriptorSize * request.FilePaths.Count);
+
+        // Zeroed, not AllocHGlobal's uninitialised block: the finally below frees the string
+        // pointers in every slot it was told about, and over a slot the loop never reached that
+        // meant calling free on whatever the heap happened to hold — heap corruption, which
+        // fail-fasts the process past every catch in the send. Zeros make DestroyStructure a
+        // no-op, and `written` means it is not asked about unwritten slots in the first place.
+        var total = descriptorSize * request.FilePaths.Count;
+        var files = Marshal.AllocHGlobal(total);
+        Marshal.Copy(new byte[total], 0, files, total);
+        var written = 0;
         try
         {
             for (var i = 0; i < request.FilePaths.Count; i++)
@@ -55,6 +64,7 @@ internal static class SimpleMapiRoute
                     },
                     files + (i * descriptorSize),
                     fDeleteOld: false);
+                written++;
             }
 
             var message = new MapiMessage
@@ -80,7 +90,7 @@ internal static class SimpleMapiRoute
         }
         finally
         {
-            for (var i = 0; i < request.FilePaths.Count; i++)
+            for (var i = 0; i < written; i++)
             {
                 Marshal.DestroyStructure<MapiFileDescriptor>(files + (i * descriptorSize));
             }
@@ -117,6 +127,9 @@ internal static class SimpleMapiRoute
         public IntPtr FileType;
     }
 
+    // System32 only: mapi32 is not a KnownDLL, so the loader would otherwise probe the app's own
+    // directory first and load a planted mapi32.dll into this process.
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("mapi32", EntryPoint = "MAPISendMailW", CharSet = CharSet.Unicode)]
     private static extern uint MAPISendMail(
         IntPtr session, IntPtr uiParam, ref MapiMessage message, uint flags, uint reserved);

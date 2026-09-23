@@ -119,9 +119,12 @@ renamed profile and an imported copy.
 **Every send is logged** — surface, page count, format and route — and **never a recipient or the
 subject**. The app does not know who a message goes to, and it must not start recording who case
 material was sent to as a side effect of logging that it was sent. The subject is free text, and
-naming the recipient in it is an ordinary thing to type. One known gap: when building an
-attachment fails, the error is logged with its exception, and an exception that names a file path
-names the attachment — whose file name is the sanitised subject.
+naming the recipient in it is an ordinary thing to type. **No exception object reaches the log on
+this path**, only its type name: an IOException names the file it could not delete, a failed
+browser launch quotes the whole compose URL, and Serilog's file template ends with `{Exception}` —
+so a locked attachment, the ordinary case at exit, wrote the subject (and any address in it) to
+disk for 14 days. The security review of 2026-09-22 found it; the operator still gets the full
+reason on screen.
 
 ## Consequences
 

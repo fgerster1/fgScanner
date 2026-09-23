@@ -282,7 +282,15 @@ public sealed class AttachmentBuilder(
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 // Still open in the mail client, usually. The next startup tries again.
-                Log.Warning(ex, "Could not remove the attachment folder {Folder}; retrying next start", folder);
+                //
+                // The type, never the exception: an IOException names the file it could not
+                // delete, and that file is named after the subject — which §14 keeps out of the
+                // log precisely because an operator may name a recipient in it. Serilog's file
+                // template ends with {Exception}, so passing ex here wrote the subject to disk for
+                // 14 days on the failure the comment above calls the ordinary one.
+                Log.Warning(
+                    "Could not remove the attachment folder {Folder} ({Error}); retrying next start",
+                    folder, ex.GetType().Name);
             }
         }
     }

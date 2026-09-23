@@ -78,6 +78,16 @@ public static class ShareSheetRoute
 
                 data.SetStorageItems(items);
             }
+            catch (Exception ex)
+            {
+                // A sheet that opens with nothing in it is §14's silent failure: the status line
+                // says the sheet is open and the operator sends an empty message. Say so instead.
+                // The count and the type only — the file names are the subject (§14).
+                args.Request.FailWithDisplayText("FG Scanner could not attach the pages.");
+                Log.Warning(
+                    "The Share sheet asked for {Count} file(s) and none could be read ({Error})",
+                    request.FilePaths.Count, ex.GetType().Name);
+            }
             finally
             {
                 deferral.Complete();
@@ -85,7 +95,20 @@ public static class ShareSheetRoute
         }
 
         manager.DataRequested += OnDataRequested;
-        DataTransferManagerInterop.ShowShareUIForWindow(window);
+        try
+        {
+            DataTransferManagerInterop.ShowShareUIForWindow(window);
+        }
+        catch
+        {
+            // The handler unsubscribes itself when it runs, so one that never ran would stay on
+            // the manager — and the manager is the same object for every send to this window. The
+            // next send would then also carry this send's files, whose temp copies still exist:
+            // the pages of an earlier message going out with a later one.
+            manager.DataRequested -= OnDataRequested;
+            throw;
+        }
+
         return true;
     }
 }

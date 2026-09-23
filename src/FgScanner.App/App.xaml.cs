@@ -191,7 +191,15 @@ public partial class App : Application
 
         // Attachment copies a crashed session left in the temp folder. Safe to take them all only
         // because this is the one instance: the mutex above is already held.
-        _host.Services.GetRequiredService<AttachmentBuilder>().CleanUp();
+        var attachments = _host.Services.GetRequiredService<AttachmentBuilder>();
+        attachments.CleanUp();
+
+        // OnExit runs only on a clean shutdown. A Windows sign-out or shutdown, and an exit that
+        // skips WPF's own path, still reach these — so the copies go then too rather than waiting
+        // for the next startup. A process killed outright reaches neither, which is what the
+        // startup sweep above is for.
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => attachments.CleanUp();
+        Microsoft.Win32.SystemEvents.SessionEnding += (_, _) => attachments.CleanUp();
 
         // Bundled English lands in the writable tessdata dir; then the durable queue drains.
         _host.Services.GetRequiredService<FgScanner.Ocr.LanguageManager>().EnsureBundledData();
