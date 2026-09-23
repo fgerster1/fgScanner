@@ -45,6 +45,7 @@ FgScanner.Cli  (headless fgscanner.exe; Core/Scanning/Data/Ocr/Ai — never App/
 - Never copy code from NAPS2.Lib / NAPS2 app layer (GPL). Reading for reference is fine; re-implement.
 - Never reference: `NAPS2.Images.ImageSharp`, `FluentAssertions` ≥8, `iText*`, `EPPlus` ≥5, `Emgu.CV`, `System.Data.SQLite`.
 - Never merge/bundle NAPS2.* DLLs into a single file (LGPL separation); publish profile stays non-single-file, non-trimmed.
+- **The CLI publishes to `cli\`, never beside the app.** `fgscanner.exe` and `FgScanner.exe` differ only in case, so one folder means the CLI overwrites the app — release 0.5.2 shipped that way, unnoticed because local builds never publish the CLI. `build/verify-publish.ps1` guards it in `release.yml`; install and start a draft release before publishing it.
 
 **Code:**
 - Comments explain *why*, never what. Validate at boundaries (user input, files, external APIs) only. No features beyond the task.

@@ -115,3 +115,5 @@ Type: filesandordirs; Name: "{app}\_win64"
 Type: filesandordirs; Name: "{app}\_win32"
 Type: filesandordirs; Name: "{app}\_winarm"
 Type: filesandordirs; Name: "{app}\tessdata"
+; The command line tool's own folder (0.5.3 on): the *.dll purge above reaches only the top level.
+Type: filesandordirs; Name: "{app}\cli"
