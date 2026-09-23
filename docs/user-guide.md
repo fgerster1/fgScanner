@@ -202,8 +202,9 @@ and originals are what make it evidence, and the folder itself is not changed. T
 
 - **A mail program on this PC** (Outlook, Thunderbird…) — the pages are attached for you.
 - **Gmail in the browser** or **Yahoo Mail in the browser** — a new message opens in your browser
-  with the subject filled in, and the file is already copied for you. **Click in the message and
-  press Ctrl+V** — the file attaches. That one keystroke is the only thing FG Scanner cannot do for
+  with the subject filled in, and the file is already copied for you — a small **"PDF copied"**
+  notice in the corner of the screen says so. **Click in the message and press Ctrl+V** — the file
+  attaches. The notice goes away by itself, or click it. That one keystroke is the only thing FG Scanner cannot do for
   you: no program can attach a file to a web page. Several images paste together. Whatever you had
   copied before is replaced.
 - **Gmail account** (optional, beside the list) — with several Google accounts signed in, the

@@ -26,7 +26,8 @@ public sealed class WindowsShareService(
     Func<bool>? mapiAvailable = null,
     Func<string, bool>? revealInExplorer = null,
     Func<string, bool>? openInBrowser = null,
-    Func<IReadOnlyList<string>, bool>? copyToClipboard = null) : IShareService
+    Func<IReadOnlyList<string>, bool>? copyToClipboard = null,
+    Action<string, string>? announcePaste = null) : IShareService
 {
     private readonly Func<ShareRequest, bool> _shareSheet = shareSheet ?? ShareSheetRoute.TryOpen;
     private readonly Func<ShareRequest, MapiDraft> _mapi = mapi ?? SimpleMapiRoute.TryOpen;
@@ -36,6 +37,7 @@ public sealed class WindowsShareService(
     private readonly Func<string, bool> _revealInExplorer = revealInExplorer ?? ExplorerSelect.Reveal;
     private readonly Func<string, bool> _openInBrowser = openInBrowser ?? OpenInBrowser;
     private readonly Func<IReadOnlyList<string>, bool> _copyToClipboard = copyToClipboard ?? CopyToClipboard;
+    private readonly Action<string, string> _announcePaste = announcePaste ?? Views.Dialogs.PasteNotice.Show;
 
     public ShareOutcome Open(ShareRequest request)
     {
@@ -147,6 +149,19 @@ public sealed class WindowsShareService(
                 ? "the file is ready to paste — click in the message and press Ctrl+V to attach it."
                 : $"the {request.FilePaths.Count} files are ready to paste — click in the message and press "
                     + "Ctrl+V to attach them all.";
+
+            // After the browser, so the notice is on top of the message it is about. A notice that
+            // cannot be shown costs only the reminder; the status line says the same.
+            Try(
+                () =>
+                {
+                    _announcePaste(
+                        Copied(request.FilePaths),
+                        $"Click in the {name} message and press Ctrl+V to attach "
+                            + (request.FilePaths.Count == 1 ? "it." : "them."));
+                    return true;
+                },
+                "the paste notice");
             return new ShareOutcome(
                 ShareRoute.Webmail, $"A new {name} message is open in your browser, and {paste} {StaysUntilClose}");
         }
@@ -202,6 +217,14 @@ public sealed class WindowsShareService(
         using var started = Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
         return true;
     }
+
+    /// <summary>What went on the clipboard, in the operator's words: one PDF, or the page images.</summary>
+    private static string Copied(IReadOnlyList<string> files) =>
+        files.Count == 1
+            ? (string.Equals(Path.GetExtension(files[0]), ".pdf", StringComparison.OrdinalIgnoreCase)
+                ? "PDF copied"
+                : "Image copied")
+            : $"{files.Count} images copied";
 
     /// <summary>
     /// The file list Explorer's Ctrl+C puts on the clipboard, which is what a browser reads on

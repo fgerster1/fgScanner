@@ -1485,6 +1485,7 @@ public sealed class EmailCommandTests : IDisposable
 
     private static WindowsShareService WebmailStation(
         List<string> order, bool browser = true, bool explorer = true, bool clipboard = true) => new(
+        announcePaste: (headline, detail) => order.Add($"notice:{headline} | {detail}"),
         shareSheet: _ => { order.Add("sheet"); return true; },
         mapi: _ => { order.Add("mapi"); return MapiDraft.Sent; },
         mapiAvailable: () => true,
@@ -1513,13 +1514,49 @@ public sealed class EmailCommandTests : IDisposable
             new ShareRequest([MakePage("farm.png")], "Farm Folder", MailPath.Gmail));
 
         Assert.Equal(ShareRoute.Webmail, outcome.Route);
-        Assert.Equal(
-            ["clipboard:farm.png", "browser:https://mail.google.com/mail/?view=cm&fs=1&su=Farm%20Folder"],
-            order);
+        Assert.Equal("clipboard:farm.png", order[0]);
+        Assert.Equal("browser:https://mail.google.com/mail/?view=cm&fs=1&su=Farm%20Folder", order[1]);
         Assert.Contains("Gmail", outcome.Message, StringComparison.Ordinal);
         Assert.Contains("Ctrl+V", outcome.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("drag", outcome.Message, StringComparison.Ordinal);
         Assert.Contains("until FG Scanner closes", outcome.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Once the message is open the operator is looking at the browser, not at FG Scanner's status
+    /// line — so the paste went unannounced where it mattered (Franz, 2026-09-23). A notice that
+    /// stays on top says what was copied and which key attaches it. Last, after the browser, so it
+    /// is not waiting behind a window that has not opened yet.
+    /// </summary>
+    [Theory]
+    [InlineData("deed.pdf", 1, "notice:PDF copied | Click in the Gmail message and press Ctrl+V to attach it.")]
+    [InlineData("page.jpg", 1, "notice:Image copied | Click in the Gmail message and press Ctrl+V to attach it.")]
+    [InlineData("page.jpg", 3, "notice:3 images copied | Click in the Gmail message and press Ctrl+V to attach them.")]
+    public void The_paste_is_announced_where_the_operator_is_looking(string file, int count, string expected)
+    {
+        var order = new List<string>();
+        var files = Enumerable.Range(1, count)
+            .Select(i => MakePage($"{i}-{file}"))
+            .ToList();
+
+        WebmailStation(order).Open(new ShareRequest(files, "Farm Folder", MailPath.Gmail));
+
+        Assert.Equal(expected, order[^1]);
+        Assert.StartsWith("browser:", order[^2], StringComparison.Ordinal);
+    }
+
+    /// <summary>Nothing was copied, or there is no message to paste into: a notice saying Ctrl+V would be wrong.</summary>
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void No_paste_notice_when_there_is_nothing_to_paste_or_nowhere_to_paste_it(bool clipboard, bool browser)
+    {
+        var order = new List<string>();
+
+        WebmailStation(order, browser: browser, clipboard: clipboard).Open(
+            new ShareRequest([MakePage("farm.png")], "Farm Folder", MailPath.Gmail));
+
+        Assert.DoesNotContain(order, o => o.StartsWith("notice:", StringComparison.Ordinal));
     }
 
     /// <summary>

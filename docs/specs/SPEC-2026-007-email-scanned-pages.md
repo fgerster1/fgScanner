@@ -265,6 +265,13 @@ interface; the same reasoning applies to shell UI).
 > back to Explorer-then-browser in that order; a failed browser still opens Explorer; the status
 > says Ctrl+V; the log carries the clipboard outcome and no path. *Not in this change* — the
 > mail-app routes, the Share sheet, the subject, anything that could attach without the operator.
+>
+> *Same day, after the first paste send (Franz):* the status line saying Ctrl+V is behind the
+> browser, so nothing in view said a paste was waiting. A small notice now opens in the bottom
+> corner of FG Scanner's monitor, over the browser — **"PDF copied"** (or "Image copied", "3 images
+> copied") and *"Click in the Gmail message and press Ctrl+V to attach it."* It stays on top, never
+> takes focus from the message, and closes after 20 seconds or on a click. Only when the paste is
+> really waiting: not for the Explorer fallback, not when the browser did not open.
 
 1. **Windows Share sheet** — `DataTransferManager` via `IDataTransferManagerInterop.GetForWindow`,
    which is supported for unpackaged WPF. Real file attachments, and new Outlook is a

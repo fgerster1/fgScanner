@@ -579,8 +579,12 @@ Settings → Email → "Send email with" on each station first.
       first. The wrong-account case is the row below and is still open.
 - [ ] **Yahoo Mail on Jim's station.** The same. **The Yahoo compose link is undocumented** — if
       the subject does not fill in, or the page is not a new message, record what Yahoo shows.
-- [ ] **Paste, not drag (amended 2026-09-23).** A PDF to Gmail: no Explorer window opens, the
-      status says to press Ctrl+V, and Ctrl+V in the message attaches the PDF.
+- [x] **Paste, not drag (amended 2026-09-23).** A PDF to Gmail: no Explorer window opens, the
+      status says to press Ctrl+V, and Ctrl+V in the message attaches the PDF — 2026-09-23,
+      Franz's station, "It worked".
+- [ ] **The "PDF copied" notice**: appears in the bottom-right corner over the Gmail window, does
+      not take the cursor (click into the message and type straight away), and closes after about
+      20 seconds or on a click. With FG Scanner on a second monitor, it is on that monitor.
 - [ ] **Three images to Gmail**: the status says 3 files are ready to paste; one Ctrl+V attaches
       all three.
 - [ ] **Yahoo takes a paste** — part of the Yahoo row above. If it does not, record what Yahoo
