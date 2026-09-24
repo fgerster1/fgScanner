@@ -11,7 +11,8 @@
    the local check below never publishes the CLI, so it cannot catch what only the
    pipeline does. 0.5.2 passed every local check and shipped with the CLI written over
    the app. Publishing is what puts it in front of every station's auto-update.
-4. Publishing the release triggers `winget.yml` (needs `WINGET_TOKEN`).
+4. Publishing the release triggers `winget.yml`, which is skipped unless
+   `WINGET_ENABLED=true` (see winget below).
 
 Local installer check (PowerShell, from repo root):
 
@@ -38,6 +39,7 @@ only searches the two Program Files roots.
 | `SPARKLE_ED25519_PRIVATE_KEY` | secret | signs the auto-update appcast |
 | `APPCAST_ENABLED` | variable | `true` enables appcast generation |
 | `WINGET_TOKEN` | secret | PAT with `public_repo` for winget-releaser |
+| `WINGET_ENABLED` | variable | `true` enables `winget.yml` (unset: the job is skipped) |
 
 ## Code signing (SignPath Foundation)
 
@@ -67,9 +69,20 @@ netsparkle-generate-appcast --generate-keys
 
 ## winget
 
-First submission is manual (`wingetcreate new` with the release URL,
-identifier `FranzGerster.FGScanner`); after the package exists,
-`winget.yml` auto-submits version updates on every published release.
+**Off.** FG Scanner is not in winget-pkgs yet, and `winget.yml` is skipped
+until `WINGET_ENABLED=true`. The action can only update a package that
+already exists there, so 0.5.2 and 0.5.3 each showed a failed Winget run
+that meant nothing. The stations don't need winget: they update from the
+appcast.
+
+To turn it on, in this order:
+
+1. First submission by hand: `wingetcreate new` with the release's installer
+   URL, identifier `FranzGerster.FGScanner`. This opens a public PR to
+   microsoft/winget-pkgs; wait for it to merge.
+2. Add the `WINGET_TOKEN` secret (classic PAT, `public_repo` scope).
+3. Set `WINGET_ENABLED=true`. From the next published release on,
+   `winget.yml` submits each version update itself.
 
 ## Upgrade safety
 

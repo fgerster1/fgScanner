@@ -1,14 +1,17 @@
 name: Winget
 
 # Publishes the released installer to winget (microsoft/winget-pkgs) once a
-# GitHub Release leaves draft. Needs the WINGET_TOKEN secret (docs/release.md);
-# without it the job fails visibly rather than silently skipping.
+# GitHub Release leaves draft. Off until the repo variable WINGET_ENABLED=true:
+# the action can only update a package that already exists in winget-pkgs, so
+# before the first manual submission every release showed a failure that meant
+# nothing. Setup, including the WINGET_TOKEN secret, is in docs/release.md.
 on:
   release:
     types: [published]
 
 jobs:
   winget:
+    if: vars.WINGET_ENABLED == 'true'
     runs-on: windows-latest
     steps:
       - uses: vedantmgoyal9/winget-releaser@v2
