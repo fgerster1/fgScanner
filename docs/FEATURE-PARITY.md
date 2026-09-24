@@ -23,7 +23,7 @@ Tracks FG Scanner against the NAPS2 8.3.2 inventory (docs/research/research-1-na
 | AI descriptions (Gemini, BYO-key, queue, cost) | FG core | ☑ (gemini-2.5-flash-lite; CredMan key; durable queue; estimate + spend tracking; blank-page skip) | 6 |
 | Retro-process existing folder + reconcile | FG core | ☑ (in-place adoption, PDF render, checksum re-match, foreign-index warn, selective re-run; idempotent) | 7 |
 | Batch dialog + CLI + shortcuts + profiles import/export | [P] | ☑ (scan/process/export/list-devices; batch modes; rebindable NAPS2 defaults; .fgprofile) | 8 |
-| Installer, auto-update, signing, winget | [F] | ◐ (installer complete: associations/StillImage/AutoPlay/privacy+AI-opt-out; auto-update live: Ed25519 keys generated 2026-08-20, appcast enabled; SignPath+winget workflows ready pending accounts) | 0,9 |
+| Installer, auto-update, signing, winget | [F] | ◐ (installer complete: associations/StillImage/AutoPlay/privacy+AI-opt-out; auto-update live: Ed25519 keys generated 2026-08-20, appcast enabled; SignPath workflow ready pending account; winget off behind WINGET_ENABLED until a first manual submission) | 0,9 |
 | Email / print / clipboard | [P] | ☑ (print + clipboard + drag-out; email from the Scan page and a group: MAPI draft when a client is probed, else Windows Share sheet, else Explorer — or Gmail/Yahoo Mail compose in the browser with the file on the clipboard to paste, chosen in Settings; PDF or the page files as-is; never sends, never logs a recipient; SPEC-2026-007, ADR-0012) | 4,9,26 |
 | Crash recovery + session restore + single instance | [F] | ☑ | 1,8 |
 | Dark/light theme | [F] | ☑ | 0 |
