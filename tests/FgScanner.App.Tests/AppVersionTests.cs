@@ -39,4 +39,16 @@ public sealed class AppVersionTests
             Assert.Equal(app, assembly.GetName().Version);
         }
     }
+
+    [Fact]
+    public void The_version_the_updater_reads_is_the_bare_release_number()
+    {
+        // NetSparkle compares the appcast's "0.5.3" with the exe's informational version. The SDK
+        // appends "+<commit>" to that by default, and NetSparkle ranks "0.5.3" above
+        // "0.5.3+4f1360f…", so 0.5.3 offered itself as an update to 0.5.3 on every start.
+        var app = typeof(FgScanner.App.App).Assembly;
+        var informational = app.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+
+        Assert.Equal(app.GetName().Version?.ToString(3), informational);
+    }
 }
