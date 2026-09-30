@@ -11,15 +11,25 @@ namespace FgScanner.Core.IndexPackages;
 /// `seq` is positional within THIS file; an answer's identity at the portal
 /// is its full content, so a revised answer that keeps its position still
 /// imports as a new decision (the importer dedupes exact rows, never
-/// positions). This slice cannot express a withdrawal (an empty value):
-/// deliberate scope — the writer emits fresh doc_type verdicts only, and
-/// the withdraw capability arrives with the phase-4 UI, test-first
-/// (JimsStuff SPEC-2026-005 contract-slice, §22 finding 5).
+/// positions). Every answer is validated here, before any file is written —
+/// a batch Jim answered over days must never be refused by the portal for
+/// a shape this writer could have caught at entry (SPEC-2026-008 AC-5).
 /// </summary>
 public static class PackageWriter
 {
+    /// <summary>The phase-2 doc-type-only surface, kept for the golden
+    /// tests; delegates to the full surface and must stay byte-identical.</summary>
     public static void WriteResults(
         IndexPackage package, IReadOnlyList<DocTypeAnswer> answers, string outputPath)
+        => WriteResults(
+            package,
+            answers.Select(a => new IndexAnswer(
+                a.AnchorPageId, IndexAnswerVocabulary.DocType, Qualifier: null,
+                a.DocTypeId, a.DecidedBy, a.DecidedAt)).ToArray(),
+            outputPath);
+
+    public static void WriteResults(
+        IndexPackage package, IReadOnlyList<IndexAnswer> answers, string outputPath)
     {
         if (string.IsNullOrWhiteSpace(package.AppVersionAtOpen) || package.VocabularyVersion < 1)
         {
@@ -33,51 +43,13 @@ public static class PackageWriter
         // Membership, not activity: vocabularies ship soft-deleted rows
         // precisely so old values stay valid ("any older vocabulary stays
         // importable forever"), and the portal importer accepts them.
-        // Hiding inactive ids from a picker is the phase-4 UI's job.
+        // Hiding inactive ids from a picker is the UI's job.
         var docTypes = package.DocTypes.Select(d => d.Id).ToHashSet(StringComparer.Ordinal);
+        var subjects = package.Subjects.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
+        var people = package.People.Select(p => p.Id).ToHashSet(StringComparer.Ordinal);
         foreach (var answer in answers)
         {
-            if (!anchors.Contains(answer.AnchorPageId))
-            {
-                throw new ArgumentException(
-                    $"answer for {answer.AnchorPageId}, which is not a document in {package.PackageId}");
-            }
-
-            if (!docTypes.Contains(answer.DocTypeId))
-            {
-                throw new ArgumentException(
-                    $"\"{answer.DocTypeId}\" is not a doc type in this package's vocabulary");
-            }
-
-            if (string.IsNullOrWhiteSpace(answer.DecidedBy))
-            {
-                // results.schema.json requires decidedBy minLength 1 — fail
-                // here, not at the portal after the whole batch is answered.
-                throw new ArgumentException(
-                    $"answer for {answer.AnchorPageId} names no decider (decidedBy is empty)");
-            }
-
-            foreach (var ch in answer.DecidedBy)
-            {
-                // The one free-text field: .NET's encoder and Python's
-                // json.dumps agree byte-for-byte on ordinary BMP letters
-                // and punctuation but not on controls, line separators,
-                // exotic spaces (NBSP pasted from Word, the French narrow
-                // NBSP), BOMs, surrogate pairs, or private-use/unassigned
-                // code points — those would break the contract's byte
-                // rule, so a decider name is plain text or refused.
-                var category = char.GetUnicodeCategory(ch);
-                if (char.IsControl(ch) || char.IsSurrogate(ch)
-                    || (char.IsWhiteSpace(ch) && ch != ' ')
-                    || category is System.Globalization.UnicodeCategory.Format
-                        or System.Globalization.UnicodeCategory.PrivateUse
-                        or System.Globalization.UnicodeCategory.OtherNotAssigned)
-                {
-                    throw new ArgumentException(
-                        $"decidedBy \"{answer.DecidedBy}\" contains a character that cannot " +
-                        "round-trip the contract's byte rules — use plain text");
-                }
-            }
+            Validate(answer, package.PackageId, anchors, docTypes, subjects, people);
         }
 
         using var buffer = new MemoryStream();
@@ -102,10 +74,18 @@ public static class PackageWriter
                     answer.DecidedAt.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'",
                         System.Globalization.CultureInfo.InvariantCulture));
                 writer.WriteString("decidedBy", answer.DecidedBy);
-                writer.WriteString("field", "doc_type");
-                writer.WriteNull("qualifier");
+                writer.WriteString("field", answer.Field);
+                if (answer.Qualifier is null)
+                {
+                    writer.WriteNull("qualifier");
+                }
+                else
+                {
+                    writer.WriteString("qualifier", answer.Qualifier);
+                }
+
                 writer.WriteNumber("seq", seq);
-                writer.WriteString("value", answer.DocTypeId);
+                writer.WriteString("value", answer.Value);
                 writer.WriteEndObject();
             }
 
@@ -133,6 +113,118 @@ public static class PackageWriter
         if (outcome != Index.ExportOutcome.Success)
         {
             throw new IOException(message ?? "results.json could not be written");
+        }
+    }
+
+    private static void Validate(
+        IndexAnswer answer, string packageId, HashSet<string> anchors,
+        HashSet<string> docTypes, HashSet<string> subjects, HashSet<string> people)
+    {
+        if (!anchors.Contains(answer.AnchorPageId))
+        {
+            throw new ArgumentException(
+                $"answer for {answer.AnchorPageId}, which is not a document in {packageId}");
+        }
+
+        if (!IndexAnswerVocabulary.Fields.Contains(answer.Field))
+        {
+            throw new ArgumentException(
+                $"\"{answer.Field}\" is not an index answer field this contract carries");
+        }
+
+        // The qualifier names the decision slot (anchor, field, qualifier),
+        // so it is validated even on a withdrawal.
+        switch (answer.Field)
+        {
+            case IndexAnswerVocabulary.Person:
+                if (answer.Qualifier is null
+                    || !IndexAnswerVocabulary.PersonQualifiers.Contains(answer.Qualifier))
+                {
+                    throw new ArgumentException(
+                        $"a person answer needs a qualifier from " +
+                        $"{{{string.Join(", ", IndexAnswerVocabulary.PersonQualifiers)}}}, " +
+                        $"got \"{answer.Qualifier}\"");
+                }
+
+                break;
+            case IndexAnswerVocabulary.Date:
+                if (answer.Qualifier is null
+                    || !IndexAnswerVocabulary.DateQualifiers.Contains(answer.Qualifier))
+                {
+                    throw new ArgumentException(
+                        $"a date answer needs a qualifier from " +
+                        $"{{{string.Join(", ", IndexAnswerVocabulary.DateQualifiers)}}}, " +
+                        $"got \"{answer.Qualifier}\"");
+                }
+
+                break;
+            default:
+                if (answer.Qualifier is not null)
+                {
+                    throw new ArgumentException(
+                        $"a {answer.Field} answer carries no qualifier, got \"{answer.Qualifier}\"");
+                }
+
+                break;
+        }
+
+        if (string.IsNullOrWhiteSpace(answer.DecidedBy))
+        {
+            // results.schema.json requires decidedBy minLength 1 — fail
+            // here, not at the portal after the whole batch is answered.
+            throw new ArgumentException(
+                $"answer for {answer.AnchorPageId} names no decider (decidedBy is empty)");
+        }
+
+        foreach (var ch in answer.DecidedBy)
+        {
+            // The one free-text field: .NET's encoder and Python's
+            // json.dumps agree byte-for-byte on ordinary BMP letters
+            // and punctuation but not on controls, line separators,
+            // exotic spaces (NBSP pasted from Word, the French narrow
+            // NBSP), BOMs, surrogate pairs, or private-use/unassigned
+            // code points — those would break the contract's byte
+            // rule, so a decider name is plain text or refused.
+            var category = char.GetUnicodeCategory(ch);
+            if (char.IsControl(ch) || char.IsSurrogate(ch)
+                || (char.IsWhiteSpace(ch) && ch != ' ')
+                || category is System.Globalization.UnicodeCategory.Format
+                    or System.Globalization.UnicodeCategory.PrivateUse
+                    or System.Globalization.UnicodeCategory.OtherNotAssigned)
+            {
+                throw new ArgumentException(
+                    $"decidedBy \"{answer.DecidedBy}\" contains a character that cannot " +
+                    "round-trip the contract's byte rules — use plain text");
+            }
+        }
+
+        if (answer.Value.Length == 0)
+        {
+            // A withdrawal: the empty value is the contract's own spelling
+            // for "remove the current decision in this slot".
+            return;
+        }
+
+        switch (answer.Field)
+        {
+            case IndexAnswerVocabulary.DocType when !docTypes.Contains(answer.Value):
+                throw new ArgumentException(
+                    $"\"{answer.Value}\" is not a doc type in this package's vocabulary");
+            case IndexAnswerVocabulary.Subject when !subjects.Contains(answer.Value):
+                throw new ArgumentException(
+                    $"\"{answer.Value}\" is not a subject in this package's vocabulary");
+            case IndexAnswerVocabulary.Person when !people.Contains(answer.Value):
+                throw new ArgumentException(
+                    $"\"{answer.Value}\" is not a person in this package's vocabulary");
+            case IndexAnswerVocabulary.Date when !DateOnly.TryParseExact(
+                answer.Value, "yyyy-MM-dd", out _):
+                throw new ArgumentException(
+                    $"a date answer must be yyyy-MM-dd and a real calendar date, " +
+                    $"got \"{answer.Value}\"");
+            case IndexAnswerVocabulary.KeyFlag when answer.Value != IndexAnswerVocabulary.KeyFlagTrue:
+                throw new ArgumentException(
+                    $"a key_flag answer is \"{IndexAnswerVocabulary.KeyFlagTrue}\" or a " +
+                    $"withdrawal, got \"{answer.Value}\"");
         }
     }
 }
