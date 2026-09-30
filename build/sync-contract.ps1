@@ -22,15 +22,23 @@ if (-not (Test-Path (Join-Path $Source 'schemas\manifest.schema.json'))) {
 }
 $target = Join-Path $repoRoot 'docs\contract-vendored'
 
-# Contract content only: the manifest never lists itself, and .gitattributes
-# is repo plumbing.
-$excluded = @('sync-manifest.json', '.gitattributes')
-$files = Get-ChildItem -Path $Source -Recurse -File |
+# Contract content only: the manifest never lists itself, .gitattributes is
+# repo plumbing, and Thumbs.db/desktop.ini are Explorer droppings — excluded
+# here AND in both drift tests, and listed with -Force so a hidden dropping
+# is excluded rather than invisible (invisible-to-the-sync but visible-to-
+# the-tests was a red no re-sync could clear).
+$excluded = @('sync-manifest.json', '.gitattributes', 'Thumbs.db', 'desktop.ini')
+$files = @(Get-ChildItem -Path $Source -Recurse -File -Force |
     Where-Object { $excluded -notcontains $_.Name } |
     ForEach-Object {
         $rel = [IO.Path]::GetRelativePath($Source, $_.FullName) -replace '\\', '/'
         [pscustomobject]@{ Rel = $rel; Full = $_.FullName }
-    } | Sort-Object { $_.Rel }
+    })
+# Ordinal, not culture, sort: the manifest's bytes must not depend on the
+# machine's locale tables, and code-point order is the folder's own
+# json.dumps(sort_keys=True) convention.
+[Array]::Sort($files, [System.Comparison[object]]{
+    param($a, $b) [string]::CompareOrdinal($a.Rel, $b.Rel) })
 
 # Manifest JSON built by hand: sorted keys, two-space indent, LF, trailing
 # newline -- the contract's own byte rules, so both suites can hash the exact

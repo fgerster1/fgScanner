@@ -30,6 +30,14 @@ public static class PackageWriter
                 throw new ArgumentException(
                     $"\"{answer.DocTypeId}\" is not an active doc type in this package's vocabulary");
             }
+
+            if (string.IsNullOrWhiteSpace(answer.DecidedBy))
+            {
+                // results.schema.json requires decidedBy minLength 1 — fail
+                // here, not at the portal after the whole batch is answered.
+                throw new ArgumentException(
+                    $"answer for {answer.AnchorPageId} names no decider (decidedBy is empty)");
+            }
         }
 
         using var buffer = new MemoryStream();
@@ -71,6 +79,22 @@ public static class PackageWriter
         }
 
         buffer.WriteByte((byte)'\n');
-        File.WriteAllBytes(outputPath, buffer.ToArray());
+
+        // Atomic write (CLAUDE.md hard rule): temp beside the target, then
+        // replace — a crash mid-write must never destroy a previous
+        // complete results.json.
+        var tempPath = outputPath + ".tmp";
+        try
+        {
+            File.WriteAllBytes(tempPath, buffer.ToArray());
+            File.Move(tempPath, outputPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
     }
 }

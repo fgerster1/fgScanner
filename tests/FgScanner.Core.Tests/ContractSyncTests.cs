@@ -14,24 +14,19 @@ namespace FgScanner.Core.Tests;
 /// </summary>
 public sealed class ContractSyncTests
 {
-    private static readonly string[] Excluded = ["sync-manifest.json", ".gitattributes"];
+    // The manifest never lists itself; .gitattributes is repo plumbing; the
+    // last two are Explorer droppings — excluded HERE, in the sync script
+    // and in JimsStuff's test alike, so an OS-minted hidden file cannot
+    // wedge the drift check into a red no re-sync can clear.
+    private static readonly string[] Excluded =
+        ["sync-manifest.json", ".gitattributes", "Thumbs.db", "desktop.ini"];
 
-    private static string VendoredRoot()
-    {
-        // Walk up from bin/ to the repo root (folder containing FgScanner.slnx).
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "FgScanner.slnx")))
-        {
-            dir = dir.Parent;
-        }
-
-        Assert.NotNull(dir);
-        return Path.Combine(dir.FullName, "docs", "contract-vendored");
-    }
+    private static string VendoredRoot() =>
+        Path.Combine(TestPaths.RepoRoot(), "docs", "contract-vendored");
 
     private static IEnumerable<string> VendoredFiles(string root) =>
         Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
-            .Where(p => !Excluded.Contains(Path.GetFileName(p)))
+            .Where(p => !Excluded.Contains(Path.GetFileName(p), StringComparer.OrdinalIgnoreCase))
             .Select(p => Path.GetRelativePath(root, p).Replace('\\', '/'))
             .Order(StringComparer.Ordinal);
 
