@@ -159,6 +159,21 @@ the JimsStuff portal (`JimsStuff/pipeline/import_fgscanner.py`) parses committed
   seeing Memo on screen is not evidence the stored enum gained a member, and neither direction of
   that mapping may fall through to a default, because absorbing an unknown type rewrites the name
   the export hands the importer.
+- **The Index section (SPEC-2026-008, `Feature.IndexMode`, default OFF)** opens a
+  portal package through the production `PackageReader` (refusals shown VERBATIM —
+  they are the contract's own operator-facing words), stages Jim's five answers per
+  document, and exports `results.json` through the widened `PackageWriter`. The rules
+  that keep it honest: suggestions never auto-apply; drafts autosave to
+  `%APPDATA%\FGScanner\index-drafts\` tied to the package checksum and the package
+  folder is NEVER written; `decidedAt` is staging time, never export time (the
+  portal's dedupe key includes it — export-time stamps would duplicate rows on a
+  partial-then-full send-back); person/subject are multi-value slots (value joins the
+  slot, SPEC-2026-003 §07 amendment 2026-09-30) and their withdrawal is refused — an
+  empty value cannot name its target, removal is phase 5's web UI; delete-after-
+  confirm arms only while an export covers every current answer. The flag stays OFF
+  in every published release until the portal's phase 5 can import the results
+  (Jim's station auto-updates — the flag, not release discipline, is the fence).
+  ADR-0014.
 - FG Scanner deliberately has **no Bates support** and none should be added to the capture
   path — identifiers live in the portal's register and display layer; stamped pixels can never
   be reorganized, and re-stamping is evidence alteration.
