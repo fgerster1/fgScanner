@@ -238,6 +238,11 @@
                           IsChecked="{Binding FeatureSearch}" Margin="0,0,0,4" />
                 <CheckBox Content="Index section (open a portal package and answer its index questions — stays off until the portal can import the results)"
                           IsChecked="{Binding FeatureIndexMode}" Margin="0,0,0,4" />
+                <DockPanel Margin="20,0,0,4">
+                    <TextBlock Text="Indexer name" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <TextBox Text="{Binding IndexerName}" Width="200" HorizontalAlignment="Left"
+                             ToolTip="Signed onto every index answer (decidedBy)" />
+                </DockPanel>
                 <CheckBox Content="Commit hook (run a command and/or POST a webhook when a group is committed)"
                           IsChecked="{Binding FeatureCommitHook}" Margin="0,0,0,4" />
             </StackPanel>

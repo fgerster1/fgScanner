@@ -169,6 +169,11 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _featureIndexMode;
 
+    /// <summary>Who signs index answers (results decidedBy) — seeded from the Windows
+    /// username, editable because "Owner" on every legal decision helps nobody.</summary>
+    [ObservableProperty]
+    private string _indexerName = "";
+
     [ObservableProperty]
     private bool _featureCommitHook;
 
@@ -192,6 +197,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             FeatureBlankPolicy = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.BlankPolicy);
             FeatureSearch = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.Search);
             FeatureIndexMode = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.IndexMode);
+            IndexerName = await _appSettings.GetAsync("Index.DeciderName", Environment.UserName);
             FeatureCommitHook = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.CommitHook);
             FeatureAutoOrient = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.AutoOrient);
             FeaturePreserveOriginals = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.PreserveOriginals);
@@ -796,6 +802,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             await _appSettings.SetAsync(FeatureFlags.BlankPolicy, FeatureBlankPolicy ? "true" : "false");
             await _appSettings.SetAsync(FeatureFlags.Search, FeatureSearch ? "true" : "false");
             await _appSettings.SetAsync(FeatureFlags.IndexMode, FeatureIndexMode ? "true" : "false");
+            await _appSettings.SetAsync("Index.DeciderName", IndexerName.Trim());
             await _appSettings.SetAsync(FeatureFlags.CommitHook, FeatureCommitHook ? "true" : "false");
             await _appSettings.SetAsync(FeatureFlags.AutoOrient, FeatureAutoOrient ? "true" : "false");
             await _appSettings.SetAsync(FeatureFlags.PreserveOriginals, FeaturePreserveOriginals ? "true" : "false");

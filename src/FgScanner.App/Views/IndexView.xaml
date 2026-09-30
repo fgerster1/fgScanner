@@ -36,6 +36,18 @@
                    Text="{Binding PackageSummary}"
                    Visibility="{Binding PackageSummary, Converter={x:Static views:StringToVisibilityConverter.Instance}}" />
 
+        <!-- A failed draft save means the answer on screen is NOT on disk. -->
+        <Border DockPanel.Dock="Top" Background="#55D13438" CornerRadius="4" Padding="10,8"
+                Margin="0,0,0,6"
+                Visibility="{Binding DraftError, Converter={x:Static views:StringToVisibilityConverter.Instance}}">
+            <TextBlock Text="{Binding DraftError}" TextWrapping="Wrap" FontWeight="SemiBold" />
+        </Border>
+        <Border DockPanel.Dock="Top" Background="#33808080" CornerRadius="4" Padding="10,8"
+                Margin="0,0,0,6"
+                Visibility="{Binding DraftNotice, Converter={x:Static views:StringToVisibilityConverter.Instance}}">
+            <TextBlock Text="{Binding DraftNotice}" TextWrapping="Wrap" />
+        </Border>
+
         <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="280" />

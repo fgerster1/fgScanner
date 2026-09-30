@@ -36,6 +36,8 @@ public sealed class IndexViewModelTests : IDisposable
 
     /// <summary>Same anchor walk as Core.Tests' TestPaths (surgical rule:
     /// per-project copies stay local).</summary>
+    internal static string GoldenDir() => GoldenPackageDir();
+
     private static string GoldenPackageDir()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
@@ -63,7 +65,8 @@ public sealed class IndexViewModelTests : IDisposable
         return target;
     }
 
-    private static IndexViewModel CreateViewModel() => new() { AppVersion = "0.6.0-test" };
+    private IndexViewModel CreateViewModel() =>
+        new(draftDirectory: Path.Combine(_root, "drafts")) { AppVersion = "0.6.0-test" };
 
     [Fact]
     public async Task Something_that_is_not_a_package_shows_the_readers_refusal_verbatim()

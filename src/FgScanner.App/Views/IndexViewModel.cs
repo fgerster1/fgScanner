@@ -1,3 +1,4 @@
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FgScanner.Core.IndexPackages;
@@ -51,9 +52,45 @@ public sealed partial class IndexViewModel : ObservableObject
 
     private int _pageIndex;
 
-    public IndexViewModel()
+    private readonly IndexDraftStore _drafts;
+
+    public IndexViewModel(string? draftDirectory = null)
     {
-        Staging.Changed += () => OnPropertyChanged(nameof(StagedAnswers));
+        _drafts = new IndexDraftStore(draftDirectory ?? IndexDraftStore.DefaultDirectory);
+        Staging.Changed += () =>
+        {
+            OnPropertyChanged(nameof(StagedAnswers));
+            SaveDraft();
+        };
+    }
+
+    /// <summary>Something worth knowing about the draft (a mismatched or
+    /// damaged one left untouched) — informational, not a refusal.</summary>
+    [ObservableProperty]
+    private string? _draftNotice;
+
+    /// <summary>A draft save FAILED: the answer on screen is not on disk.
+    /// Surfaced the moment it happens (SPEC-2026-008 §14).</summary>
+    [ObservableProperty]
+    private string? _draftError;
+
+    private void SaveDraft()
+    {
+        if (Package is not { } package)
+        {
+            return;
+        }
+
+        try
+        {
+            _drafts.Save(package.PackageId, package.PackageChecksum, Staging.Snapshot());
+            DraftError = null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            DraftError = "This answer is NOT saved: " + ex.Message;
+            Log.Error(ex, "Index draft save failed for {PackageId}", package.PackageId);
+        }
     }
 
     partial void OnSelectedDocumentChanged(SeedDocument? value)
@@ -367,6 +404,12 @@ public sealed partial class IndexViewModel : ObservableObject
             OnPropertyChanged(nameof(Documents));
             OnPropertyChanged(nameof(ActiveDocTypes));
             OnPropertyChanged(nameof(People));
+            var restored = _drafts.Load(
+                package.PackageId, package.PackageChecksum, out var draftNotice);
+            Staging.Restore(restored
+                ?? new Dictionary<string, IReadOnlyList<StagedAnswer>>());
+            DraftNotice = draftNotice;
+            OnPropertyChanged(nameof(StagedAnswers));
             RefusalMessage = null;
             PackageSummary = string.Format(
                 System.Globalization.CultureInfo.InvariantCulture,

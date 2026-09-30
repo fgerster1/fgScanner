@@ -78,6 +78,23 @@ public sealed class AnswerStaging
         Changed?.Invoke();
     }
 
+    /// <summary>Everything staged, for the draft store to persist.</summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<StagedAnswer>> Snapshot() =>
+        _byAnchor.Where(kv => kv.Value.Count > 0)
+            .ToDictionary(kv => kv.Key, kv => (IReadOnlyList<StagedAnswer>)kv.Value.ToArray(),
+                StringComparer.Ordinal);
+
+    /// <summary>Replaces the staged state from a draft. No Changed event:
+    /// restoring what was already saved must not immediately re-save it.</summary>
+    public void Restore(IReadOnlyDictionary<string, IReadOnlyList<StagedAnswer>> snapshot)
+    {
+        _byAnchor.Clear();
+        foreach (var (anchor, answers) in snapshot)
+        {
+            _byAnchor[anchor] = [.. answers];
+        }
+    }
+
     public void Unstage(string anchorPageId, string field, string? qualifier, string value)
     {
         if (_byAnchor.TryGetValue(anchorPageId, out var list)
