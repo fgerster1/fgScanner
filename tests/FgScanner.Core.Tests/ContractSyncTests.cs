@@ -5,12 +5,15 @@ using Xunit;
 namespace FgScanner.Core.Tests;
 
 /// <summary>
-/// SPEC-2026-005 AC-6, scanner half. The vendored contract copy under
-/// docs/contract-vendored/ is synced from JimsStuff by build/sync-contract.ps1,
-/// never edited by hand. The sync writes the same sync-manifest.json to both
-/// repos; this test checks the vendored bytes against it, so a hand edit or a
-/// stale vendor is a red build here, and a portal-side edit without a re-sync
-/// is a red build in the JimsStuff suite (tests/test_contract_sync.py).
+/// JimsStuff SPEC-2026-005 (contract-slice) AC-6, scanner half. The vendored
+/// contract copy under docs/contract-vendored/ is synced from JimsStuff by
+/// build/sync-contract.ps1, never edited by hand. The sync writes the same
+/// sync-manifest.json to both repos; the per-repo test proves the vendored
+/// bytes against the vendored manifest (a hand edit reds this build; a
+/// portal-side edit without a re-sync reds JimsStuff's suite). A vendor that
+/// went stale WITH its manifest is self-consistent, which only the
+/// cross-repo manifest comparison below can catch — it runs wherever the
+/// JimsStuff repo sits beside this one, which the dev machine always has.
 /// </summary>
 public sealed class ContractSyncTests
 {
@@ -55,6 +58,19 @@ public sealed class ContractSyncTests
                 $"{rel} drifted from the sync manifest — the vendored copy is " +
                 "synced, never edited; re-run build/sync-contract.ps1");
         }
+    }
+
+    [Fact]
+    public void BothRepositoriesCarryTheSameSyncManifest()
+    {
+        var sibling = Path.Combine(Path.GetDirectoryName(TestPaths.RepoRoot())!,
+            "JimsStuff", "docs", "contract", "sync-manifest.json");
+        Assert.SkipWhen(!File.Exists(sibling),
+            "JimsStuff repo not beside this one (CI) — the cross-repo check runs on the dev machine");
+        Assert.True(File.ReadAllBytes(sibling).SequenceEqual(
+                File.ReadAllBytes(Path.Combine(VendoredRoot(), "sync-manifest.json"))),
+            "the two repos' sync manifests differ — one side's sync output was lost; " +
+            "re-run build/sync-contract.ps1 and commit BOTH repos");
     }
 
     [Fact]

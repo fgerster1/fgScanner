@@ -38,6 +38,21 @@ public static class PackageWriter
                 throw new ArgumentException(
                     $"answer for {answer.AnchorPageId} names no decider (decidedBy is empty)");
             }
+
+            foreach (var ch in answer.DecidedBy)
+            {
+                // The one free-text field: .NET's encoder and Python's
+                // json.dumps agree byte-for-byte on ordinary BMP text but
+                // not on controls, U+2028/29 or surrogate pairs — those
+                // would break the contract's byte rule, so a decider name
+                // is plain text or refused.
+                if (char.IsControl(ch) || char.IsSurrogate(ch) || ch is '\u2028' or '\u2029')
+                {
+                    throw new ArgumentException(
+                        $"decidedBy \"{answer.DecidedBy}\" contains a character that cannot " +
+                        "round-trip the contract's byte rules — use plain text");
+                }
+            }
         }
 
         using var buffer = new MemoryStream();

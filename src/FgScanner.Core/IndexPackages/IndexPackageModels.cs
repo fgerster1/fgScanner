@@ -1,7 +1,7 @@
 namespace FgScanner.Core.IndexPackages;
 
 /// <summary>
-/// An opened index package (SPEC-2026-005; the contract lives in JimsStuff
+/// An opened index package (JimsStuff SPEC-2026-005, contract-slice; the contract lives in JimsStuff
 /// docs/contract/, vendored here under docs/contract-vendored/). This is the
 /// portal→scanner half of the index batch loop and shares nothing with the
 /// capture evidence contract. Plain models, paths passed in, no EF — the
@@ -47,7 +47,7 @@ public sealed record PackageDocType(string Id, string Label, string Family, bool
 
 /// <summary>
 /// One doc-type verdict for one document — the single field type this slice
-/// carries (SPEC-2026-005 §03.4); more field types are later phases.
+/// carries (JimsStuff SPEC-2026-005 contract-slice §03.4); more field types are later phases.
 /// </summary>
 public sealed record DocTypeAnswer(
     string AnchorPageId, string DocTypeId, string DecidedBy, DateTimeOffset DecidedAt);

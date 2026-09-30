@@ -1,9 +1,12 @@
 # Sync the index-package contract from JimsStuff into this repo's vendored
-# copy (SPEC-2026-005 AC-6). ONE-WAY: JimsStuff docs/contract/ is the law's
+# copy (JimsStuff SPEC-2026-005 contract-slice, AC-6). ONE-WAY: JimsStuff docs/contract/ is the law's
 # home; docs/contract-vendored/ here is a synced copy that is never edited by
-# hand. The script writes the same sync-manifest.json to BOTH repos, and a
-# hash test in each suite (tests/test_contract_sync.py there,
-# ContractSyncTests.cs here) turns any drift into a red build.
+# hand. The script writes the same sync-manifest.json to BOTH repos. Each
+# suite's per-repo hash test (tests/test_contract_sync.py there,
+# ContractSyncTests.cs here) reds an edit made without re-syncing; the
+# cross-repo manifest comparison in both suites catches the case a per-repo
+# check cannot see — a vendor gone stale together with its own manifest —
+# wherever the two repos sit side by side, so commit BOTH repos after a sync.
 #
 #   pwsh -File build/sync-contract.ps1
 #   pwsh -File build/sync-contract.ps1 -Source C:\path\to\JimsStuff\docs\contract
@@ -21,6 +24,11 @@ if (-not (Test-Path (Join-Path $Source 'schemas\manifest.schema.json'))) {
     throw "no contract at $Source -- pass -Source pointing at JimsStuff's docs\contract"
 }
 $target = Join-Path $repoRoot 'docs\contract-vendored'
+if ((Resolve-Path $Source).Path -eq [IO.Path]::GetFullPath($target)) {
+    # The vendored copy passes the sanity check above too; without this
+    # guard a reversed -Source would delete the target == source mid-script.
+    throw "-Source points at the vendored copy itself -- the sync is one-way FROM JimsStuff"
+}
 
 # Contract content only: the manifest never lists itself, .gitattributes is
 # repo plumbing, and Thumbs.db/desktop.ini are Explorer droppings — excluded

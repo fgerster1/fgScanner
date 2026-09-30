@@ -4,7 +4,7 @@ using Xunit;
 namespace FgScanner.Core.Tests;
 
 /// <summary>
-/// SPEC-2026-005 AC-3 (behaviour half). The reader refuses before it opens:
+/// JimsStuff SPEC-2026-005 (contract-slice) AC-3 (behaviour half). The reader refuses before it opens:
 /// a damaged file or an unknown formatVersion never gets as far as showing
 /// Jim a document. The writer echoes provenance pinned at open time and
 /// refuses answers the package cannot support. Golden byte-fidelity is
@@ -223,6 +223,54 @@ public sealed class PackageReaderTests : IDisposable
     }
 
     [Fact]
+    public void ACoreFileTheManifestDoesNotCoverRefuses()
+    {
+        // A manifest listing only the images is schema-valid (minProperties
+        // 1); seed.json would then be read UNVERIFIED — or crash with
+        // FileNotFoundException when absent. Both must be the refusal.
+        EditJson("manifest.json", m => m["sha256"]!.AsObject().Remove("seed.json"));
+        var ex = Assert.Throws<PackageRefusedException>(Open);
+        Assert.Contains("seed.json", ex.Message);
+
+        CopyGoldenFresh();
+        EditJson("manifest.json", m => m["sha256"]!.AsObject().Remove("people.json"));
+        File.Delete(Path.Combine(_root, "people.json"));
+        Assert.Throws<PackageRefusedException>(Open);
+    }
+
+    [Fact]
+    public void AFileAnotherProgramHoldsRefusesInsteadOfCrashing()
+    {
+        // AV or an open Explorer preview holding a file mid-verification is
+        // an operator situation, not a crash dialog.
+        using var hold = new FileStream(Path.Combine(_root, "images", "TOM99003.jpg"),
+            FileMode.Open, FileAccess.Read, FileShare.None);
+        var ex = Assert.Throws<PackageRefusedException>(Open);
+        Assert.Contains("TOM99003", ex.Message);
+    }
+
+    [Fact]
+    public void AFileThatIsNotJsonRefusesAsUnreadable()
+    {
+        // Checksum-valid but unparseable (the hash is fixed up to match the
+        // damage): the parse refusal must fire, not a raw JsonException.
+        var seed = Path.Combine(_root, "seed.json");
+        File.WriteAllText(seed, File.ReadAllText(seed)[..40]);
+        EditJson("manifest.json", m => m["sha256"]!["seed.json"] =
+            Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+                File.ReadAllBytes(seed))));
+        var ex = Assert.Throws<PackageRefusedException>(Open);
+        Assert.Contains("seed.json", ex.Message);
+        Assert.Contains("damaged", ex.Message);
+
+        // And a manifest that is not JSON at all — the file no checksum
+        // protects — refuses the same way.
+        CopyGoldenFresh();
+        File.WriteAllText(Path.Combine(_root, "manifest.json"), "{ \"indexPackage\": ");
+        Assert.Throws<PackageRefusedException>(Open);
+    }
+
+    [Fact]
     public void ASeedImageTheManifestDoesNotCoverRefuses()
     {
         // "Passed all three checks" must mean every page Jim will be shown
@@ -254,6 +302,28 @@ public sealed class PackageReaderTests : IDisposable
                 new DateTimeOffset(2026, 9, 30, 12, 0, 0, TimeSpan.Zero))], output);
         Assert.Contains("TOM99001", File.ReadAllText(output));
         Assert.Empty(Directory.GetFiles(_root, "*.tmp"));
+    }
+
+    [Fact]
+    public void WriterRefusesADecidedByThatWouldBreakByteFidelity()
+    {
+        // .NET's relaxed encoder and Python's json.dumps agree on BMP text
+        // but not on non-BMP characters (emoji), U+2028/U+2029 or controls
+        // — the one free-text field must not be able to violate the
+        // contract's byte rule. Accented names stay fine.
+        var package = Open();
+        var output = Path.Combine(_root, "results.json");
+        foreach (var decider in new[] { "jim \U0001F600", "jim\u2028", "jim\u001b" })
+        {
+            Assert.Throws<ArgumentException>(() => PackageWriter.WriteResults(package,
+                [new DocTypeAnswer("TOM99001", "letter", decider,
+                    DateTimeOffset.UnixEpoch)], output));
+        }
+
+        PackageWriter.WriteResults(package,
+            [new DocTypeAnswer("TOM99001", "letter", "Jürgen Müller",
+                new DateTimeOffset(2026, 9, 30, 12, 0, 0, TimeSpan.Zero))], output);
+        Assert.Contains("Jürgen Müller", File.ReadAllText(output));
     }
 
     [Fact]

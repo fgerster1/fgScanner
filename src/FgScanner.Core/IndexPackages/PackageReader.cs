@@ -68,6 +68,20 @@ public static class PackageReader
 
         var listed = VerifyChecksums(packageDirectory, manifest);
 
+        // A manifest listing only some files is schema-valid (additive
+        // formats may add files), but the four core files are this
+        // version's package: unlisted means unverified content in front of
+        // Jim, and VerifyChecksums has already proven every listed file
+        // exists and matches.
+        foreach (var core in (string[])["seed.json", "people.json", "subjects.json", "doctypes.json"])
+        {
+            if (!listed.Contains(core))
+            {
+                throw new PackageRefusedException(
+                    $"{core} is not covered by the package's checksums — the package is damaged; download it again.");
+            }
+        }
+
         var documents = ReadSeed(Path.Combine(packageDirectory, "seed.json"));
         foreach (var page in documents.SelectMany(d => d.Pages))
         {
@@ -151,8 +165,19 @@ public static class PackageReader
                     $"{entry.Name} is missing from the package — the package is damaged; download it again.");
             }
 
-            using var stream = File.OpenRead(full);
-            var digest = Convert.ToHexStringLower(SHA256.HashData(stream));
+            string digest;
+            try
+            {
+                using var stream = File.OpenRead(full);
+                digest = Convert.ToHexStringLower(SHA256.HashData(stream));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // AV or an open preview holding a file is an operator
+                // situation, not a crash dialog.
+                throw new PackageRefusedException(
+                    $"{entry.Name} cannot be read ({ex.Message}) — close other programs using the package and try again.");
+            }
             if (digest != entry.Value.GetString())
             {
                 throw new PackageRefusedException(

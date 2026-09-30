@@ -86,10 +86,14 @@ the JimsStuff portal (`JimsStuff/pipeline/import_fgscanner.py`) parses committed
 - **The index-package contract is vendored, never edited.** `docs/contract-vendored/` is a
   one-way copy of JimsStuff `docs/contract/` made by `build/sync-contract.ps1`, which writes
   the same `sync-manifest.json` to both repos; `ContractSyncTests` reds this build on a hand
-  edit or a stale vendor, and JimsStuff's `tests/test_contract_sync.py` reds that build on a
-  portal-side edit without a re-sync. The index-package loop (`indexPackage: 1` manifests,
-  `FgScanner.Core` PackageReader/PackageWriter — SPEC-2026-005) shares no files, folders, or
-  writer code with the capture evidence contract above; the two must never touch.
+  edit, and JimsStuff's `tests/test_contract_sync.py` reds that build on a portal-side edit
+  without a re-sync. A vendor gone stale *together with its manifest* is self-consistent and
+  invisible to either per-repo check — the cross-repo manifest comparison in both suites
+  catches it wherever the two repos sit side by side, so a sync is always committed in BOTH
+  repos. The index-package loop (`indexPackage: 1` manifests, `FgScanner.Core`
+  PackageReader/PackageWriter — JimsStuff `SPEC-2026-005-contract-slice`, a different spec
+  from this repo's own SPEC-2026-005) shares no files, folders, or writer code with the
+  capture evidence contract above; the two must never touch.
 - **Annotated sheets (sticky notes) are captured twice: as-found, then clean**, per
   `JimsStuff/docs/superpowers/plans/2026-08-27-annotated-pages-sticky-notes.md`. Neither
   image alone is a duplicate of the whole thing under Ohio Evid.R. 1001/1003, and lifting a

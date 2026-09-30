@@ -4,7 +4,7 @@ using Xunit;
 namespace FgScanner.Core.Tests;
 
 /// <summary>
-/// SPEC-2026-005 AC-3 (golden half). The reader opens the COMMITTED golden
+/// JimsStuff SPEC-2026-005 (contract-slice) AC-3 (golden half). The reader opens the COMMITTED golden
 /// package byte-for-byte as JimsStuff's exporter wrote it, and the writer
 /// reproduces the COMMITTED golden results.json — each side's suite consumes
 /// the other side's committed output, which is how the round trip is proven
@@ -86,7 +86,14 @@ public sealed class ContractGoldenTests
         Assert.SkipWhen(string.IsNullOrEmpty(target),
             "regolden only runs when FG_REGOLDEN_RESULTS points at the contract's golden dir");
 
+        // The var overwrites contract law, so the target must actually BE a
+        // golden dir — pointed one level up it would mint a stray
+        // results.json that the next sync hashes into both manifests.
         Assert.True(Directory.Exists(target), $"no directory at {target}");
+        Assert.True(string.Equals(Path.GetFileName(Path.TrimEndingDirectorySeparator(target!)),
+                "golden", StringComparison.OrdinalIgnoreCase)
+            && File.Exists(Path.Combine(target!, "package", "PKG-0001", "manifest.json")),
+            $"{target} is not a contract golden directory (expected .../golden with package/PKG-0001 inside)");
         var package = PackageReader.Open(PackageReaderTests.GoldenPackageDir(), GoldenAppVersion);
         PackageWriter.WriteResults(package, GoldenAnswers, Path.Combine(target!, "results.json"));
     }
