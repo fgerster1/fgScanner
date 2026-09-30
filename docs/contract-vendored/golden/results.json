@@ -1,0 +1,45 @@
+{
+  "answers": [
+    {
+      "anchorPageId": "TOM99005",
+      "decidedAt": "2026-09-30T12:00:00Z",
+      "decidedBy": "jim",
+      "field": "doc_type",
+      "qualifier": null,
+      "seq": 1,
+      "value": "card-note"
+    },
+    {
+      "anchorPageId": "TOM99007",
+      "decidedAt": "2026-09-30T12:05:00Z",
+      "decidedBy": "jim",
+      "field": "doc_type",
+      "qualifier": null,
+      "seq": 2,
+      "value": "trust-amendment"
+    },
+    {
+      "anchorPageId": "TOM99009",
+      "decidedAt": "2026-09-30T12:10:00Z",
+      "decidedBy": "jim",
+      "field": "doc_type",
+      "qualifier": null,
+      "seq": 3,
+      "value": "invoice-bill"
+    },
+    {
+      "anchorPageId": "TOM99011",
+      "decidedAt": "2026-09-30T12:15:00Z",
+      "decidedBy": "jim",
+      "field": "doc_type",
+      "qualifier": null,
+      "seq": 4,
+      "value": "unidentified"
+    }
+  ],
+  "appVersion": "0.0.0-golden",
+  "formatVersion": 1,
+  "packageChecksum": "4c37bf615d4044e6ede0a657029d64774649d686e15879930403953b82c3d370",
+  "packageId": "PKG-0001",
+  "vocabularyVersion": 2
+}
