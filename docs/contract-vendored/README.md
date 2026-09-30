@@ -3,8 +3,12 @@
 This folder is the law for every byte that moves between the JimsStuff portal and
 FG Scanner in the case-index batch loop (SPEC-2026-003 §08, made real by
 SPEC-2026-005). Both programs' test suites parse the files here; FG Scanner carries
-a **vendored copy** synced one-way by `build/sync-contract.ps1` in its own repo, and
-a SHA-256 manifest test in *each* suite turns any drift into a red build.
+a **vendored copy** synced one-way by `build/sync-contract.ps1` in its own repo.
+Each suite's SHA-256 manifest test reds an edit made without re-syncing; a vendor
+gone stale *together with* its manifest is self-consistent and invisible to a
+per-repo check, which is why both suites also compare the two repos' sync
+manifests wherever the repos sit side by side — a sync is always committed in
+BOTH repos.
 
 > **formatVersion 1 is provisional** until phase 4 ships FG Scanner's package mode
 > to Jim. Until then, changing the format is an ordinary edit of the schemas and the
@@ -31,8 +35,9 @@ FG Scanner opens the folder, Jim answers, and FG Scanner writes **`results.json`
 
 `manifest.json` is deliberately **not** part of the capture evidence contract: its
 marker key is `indexPackage: 1`, never `evidenceExport`, and no file or folder is
-shared with the capture flow. The two contracts must never touch (FG Scanner
-CLAUDE.md, regression R1).
+shared with the capture flow. The two contracts must never touch (the rule lives
+in FG Scanner's CLAUDE.md, "The index-package contract is vendored, never
+edited").
 
 ## Byte rules (what makes the golden tests possible)
 

@@ -24,11 +24,17 @@ if (-not (Test-Path (Join-Path $Source 'schemas\manifest.schema.json'))) {
     throw "no contract at $Source -- pass -Source pointing at JimsStuff's docs\contract"
 }
 $target = Join-Path $repoRoot 'docs\contract-vendored'
-if ((Resolve-Path $Source).Path -eq [IO.Path]::GetFullPath($target)) {
-    # The vendored copy passes the sanity check above too; without this
-    # guard a reversed -Source would delete the target == source mid-script.
-    throw "-Source points at the vendored copy itself -- the sync is one-way FROM JimsStuff"
+# Normalise BOTH sides before comparing: a trailing separator, an 8.3
+# short name or a relative spelling must not slip past this guard (a
+# reversed -Source would otherwise delete the tree it is also reading
+# from -- which a live probe confirmed). Any Source inside this repo is
+# refused outright: the sync is one-way FROM JimsStuff.
+$sourceFull = ([IO.Path]::GetFullPath((Convert-Path -LiteralPath $Source))).TrimEnd('\', '/')
+$repoFull = ([IO.Path]::GetFullPath($repoRoot)).TrimEnd('\', '/')
+if ($sourceFull.StartsWith($repoFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "-Source is inside this repo ($sourceFull) -- the sync is one-way FROM JimsStuff"
 }
+$Source = $sourceFull
 
 # Contract content only: the manifest never lists itself, .gitattributes is
 # repo plumbing, and Thumbs.db/desktop.ini are Explorer droppings — excluded
@@ -62,17 +68,22 @@ $lines += ($entries -join ",`n")
 $lines += @('  }', '}')
 $manifestText = ($lines -join "`n") + "`n"
 
-# Mirror: start clean so a file deleted from the contract disappears from the
-# vendored copy too.
-if (Test-Path $target) { Remove-Item -Recurse -Force $target }
+# Mirror via stage-then-swap: the new tree is built beside the target and
+# only swapped in whole, so a mid-script failure leaves the existing
+# vendored copy untouched instead of half-deleted. -LiteralPath
+# throughout: [ ] in a file name must never act as a wildcard.
+$staging = "$target.staging"
+if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
 foreach ($f in $files) {
-    $dest = Join-Path $target ($f.Rel -replace '/', '\')
+    $dest = Join-Path $staging ($f.Rel -replace '/', '\')
     New-Item -ItemType Directory -Force (Split-Path -Parent $dest) | Out-Null
-    Copy-Item $f.Full $dest
+    Copy-Item -LiteralPath $f.Full -Destination $dest
 }
 
 $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-[IO.File]::WriteAllText((Join-Path $target 'sync-manifest.json'), $manifestText, $utf8NoBom)
+[IO.File]::WriteAllText((Join-Path $staging 'sync-manifest.json'), $manifestText, $utf8NoBom)
+if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+Move-Item -LiteralPath $staging -Destination $target
 [IO.File]::WriteAllText((Join-Path $Source 'sync-manifest.json'), $manifestText, $utf8NoBom)
 
 Write-Host ("synced {0} contract file(s)" -f $files.Count)

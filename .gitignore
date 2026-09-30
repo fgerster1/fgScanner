@@ -35,3 +35,8 @@ build/output/
 ss1.html
 dist/
 *.received.*
+
+# The contract folders must never lose a file to these depth-insensitive
+# ignore rules: a vendored file missing from a commit is a fresh-clone red
+# that re-running the sync cannot fix (SPEC-2026-005 review).
+!docs/contract-vendored/**

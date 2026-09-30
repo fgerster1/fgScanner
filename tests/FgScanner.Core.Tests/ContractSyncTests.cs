@@ -63,10 +63,23 @@ public sealed class ContractSyncTests
     [Fact]
     public void BothRepositoriesCarryTheSameSyncManifest()
     {
-        var sibling = Path.Combine(Path.GetDirectoryName(TestPaths.RepoRoot())!,
-            "JimsStuff", "docs", "contract", "sync-manifest.json");
-        Assert.SkipWhen(!File.Exists(sibling),
-            "JimsStuff repo not beside this one (CI) — the cross-repo check runs on the dev machine");
+        // FG_CONTRACT_SIBLING overrides the sibling-folder guess (worktrees,
+        // unusual layouts). The skip is honest about its blind spots: it
+        // skips only when the JimsStuff repo or its docs/contract does not
+        // exist at all (absent checkout, or parked on a pre-contract
+        // branch); a contract folder WITHOUT a manifest is a broken state
+        // and fails loudly instead of hiding a stale vendor.
+        var jimsStuff = Environment.GetEnvironmentVariable("FG_CONTRACT_SIBLING")
+            ?? Path.Combine(Path.GetDirectoryName(TestPaths.RepoRoot())!, "JimsStuff");
+        Assert.SkipWhen(!Directory.Exists(jimsStuff),
+            $"JimsStuff repo not found at {jimsStuff} (set FG_CONTRACT_SIBLING to point at it)");
+        var contract = Path.Combine(jimsStuff, "docs", "contract");
+        Assert.SkipWhen(!Directory.Exists(contract),
+            "JimsStuff has no docs/contract on its current branch — cross-repo check has nothing to compare");
+
+        var sibling = Path.Combine(contract, "sync-manifest.json");
+        Assert.True(File.Exists(sibling),
+            $"{contract} exists but carries no sync-manifest.json — run build/sync-contract.ps1 and commit BOTH repos");
         Assert.True(File.ReadAllBytes(sibling).SequenceEqual(
                 File.ReadAllBytes(Path.Combine(VendoredRoot(), "sync-manifest.json"))),
             "the two repos' sync manifests differ — one side's sync output was lost; " +

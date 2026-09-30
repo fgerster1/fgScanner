@@ -85,8 +85,10 @@ public sealed class ContractGoldenTests
         var target = Environment.GetEnvironmentVariable("FG_REGOLDEN_RESULTS");
         Assert.SkipWhen(string.IsNullOrEmpty(target),
             "regolden only runs when FG_REGOLDEN_RESULTS points at the contract's golden dir");
+        Assert.SkipWhen(Environment.GetEnvironmentVariable("FG_REGOLDEN_CONFIRM") != "yes",
+            "set FG_REGOLDEN_CONFIRM=yes too — one lingering variable must not rewrite contract law");
 
-        // The var overwrites contract law, so the target must actually BE a
+        // The vars overwrite contract law, so the target must actually BE a
         // golden dir — pointed one level up it would mint a stray
         // results.json that the next sync hashes into both manifests.
         Assert.True(Directory.Exists(target), $"no directory at {target}");
@@ -94,7 +96,17 @@ public sealed class ContractGoldenTests
                 "golden", StringComparison.OrdinalIgnoreCase)
             && File.Exists(Path.Combine(target!, "package", "PKG-0001", "manifest.json")),
             $"{target} is not a contract golden directory (expected .../golden with package/PKG-0001 inside)");
-        var package = PackageReader.Open(PackageReaderTests.GoldenPackageDir(), GoldenAppVersion);
+
+        // Never this repo's own vendored copy: synced, never written.
+        var repoRoot = Path.GetFullPath(TestPaths.RepoRoot()) + Path.DirectorySeparatorChar;
+        Assert.False(Path.GetFullPath(target!).StartsWith(repoRoot, StringComparison.OrdinalIgnoreCase),
+            "FG_REGOLDEN_RESULTS points inside this repo — the vendored copy is synced, never regenerated here");
+
+        // Open the TARGET's own package: after the Python side regenerates
+        // the package, the results must echo the NEW checksum and anchors,
+        // never the stale vendored ones.
+        var package = PackageReader.Open(
+            Path.Combine(target!, "package", "PKG-0001"), GoldenAppVersion);
         PackageWriter.WriteResults(package, GoldenAnswers, Path.Combine(target!, "results.json"));
     }
 }
