@@ -484,8 +484,8 @@ C1 staging TDD, C2 draft store TDD, D1 export+share+delete, D2 `/code-review max
 
 ## 21 · Definition of done
 
-- [x] AC-1..10 green, failing tests first — AC-11 (Franz's real-window walkthrough,
-  `docs/index-mode-walkthrough.md`) still open
+- [x] AC-1..10 green, failing tests first; AC-11 walked by Franz on the real window
+  2026-09-30 against the real PKG-0001 — every step passed
 - [x] Scanner suite 985/986 (the one red is the pre-existing `AnnotatedScanTests`
   failure on untouched main); portal suite 3,173 green; `dotnet format` clean
 - [x] `/code-review max` run; 15 findings, all 15 fixed — record below
@@ -499,7 +499,7 @@ C1 staging TDD, C2 draft store TDD, D1 export+share+delete, D2 `/code-review max
 |---|---|
 | **Review round answered** | ☑ 2026-09-30 — round A, https://claude.ai/artifact/6tFmTBm8TbFzruzSESdQ2b (docId SPEC-2026-008-rA) |
 | **Franz approved** | ☑ 2026-09-30 — verdict approve on round A; all recommendations taken |
-| **Built** | ☑ 2026-09-30 — branch `phase-4-index-mode`, NOT merged (merge is Franz's call; AC-11 open) |
+| **Built** | ☑ 2026-09-30 — branch `phase-4-index-mode`, merged to main after Franz's AC-11 walkthrough passed |
 | **Verified in production** | ☐ date: |
 
 **Code review record (2026-09-30, `/code-review max` at `0ab9d49`).** Ten finder
