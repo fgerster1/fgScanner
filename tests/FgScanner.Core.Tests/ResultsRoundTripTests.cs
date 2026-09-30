@@ -82,22 +82,29 @@ public sealed class ResultsRoundTripTests
         // fails loudly instead of hiding drift (the sync-test stance).
         Assert.True(File.Exists(fixture),
             $"shared fixture missing at {fixture} — regolden it with " +
-            "FG_REGOLDEN_WIDENED_RESULTS=yes");
+            "FG_REGOLDEN_WIDENED_RESULTS=yes FG_REGOLDEN_CONFIRM=yes");
         Assert.Equal(File.ReadAllBytes(fixture), WriteCanonical());
     }
 
     [Fact]
-    public void RegoldenWidenedResults()
+    public async Task RegoldenWidenedResults()
     {
+        // Two variables, like ContractGoldenTests: one leftover setting must
+        // never make every test run rewrite another repo's fixture.
         Assert.SkipWhen(
-            Environment.GetEnvironmentVariable("FG_REGOLDEN_WIDENED_RESULTS") != "yes",
-            "set FG_REGOLDEN_WIDENED_RESULTS=yes to rewrite the shared fixture " +
-            "in the sibling repo");
+            Environment.GetEnvironmentVariable("FG_REGOLDEN_WIDENED_RESULTS") != "yes"
+                || Environment.GetEnvironmentVariable("FG_REGOLDEN_CONFIRM") != "yes",
+            "set FG_REGOLDEN_WIDENED_RESULTS=yes AND FG_REGOLDEN_CONFIRM=yes to " +
+            "rewrite the shared fixture in the sibling repo");
         var fixture = SiblingFixturePath();
         // Target-validated: the fixture directory must already exist in the
         // sibling — this never creates trees in a repo it only guessed at.
         Assert.True(Directory.Exists(Path.GetDirectoryName(fixture)),
             $"fixture directory missing: {Path.GetDirectoryName(fixture)}");
-        File.WriteAllBytes(fixture, WriteCanonical());
+        var bytes = WriteCanonical();
+        var (outcome, message) = await new Index.AtomicFileWriter().WriteAsync(
+            fixture, s => s.WriteAsync(bytes, 0, bytes.Length),
+            TestContext.Current.CancellationToken);
+        Assert.True(outcome == Index.ExportOutcome.Success, message);
     }
 }

@@ -86,11 +86,68 @@ public sealed class PackageWriterTests : IDisposable
     }
 
     [Fact]
-    public void AWithdrawalIsAnEmptyValueAndSkipsVocabularyChecks()
+    public void ASingleValueWithdrawalIsAnEmptyValueAndSkipsVocabularyChecks()
     {
-        Write(Answer("doc_type", null, ""), Answer("person", "mentioned", ""));
+        Write(Answer("doc_type", null, ""), Answer("key_flag", null, ""),
+            Answer("date", "about", ""));
         var rows = WrittenAnswers();
         Assert.All(rows, r => Assert.Equal("", r.GetProperty("value").GetString()));
+    }
+
+    [Fact]
+    public void AMultiValueWithdrawalIsRefusedBecauseItCannotNameItsTarget()
+    {
+        // Review finding 14: the Core gate must hold on its own; a Core-only
+        // producer (the CLI may reference Core, never App) gets no App guard.
+        Assert.Throws<ArgumentException>(() => Write(Answer("person", "mentioned", "")));
+        Assert.Throws<ArgumentException>(() => Write(Answer("subject", null, "")));
+        Assert.False(File.Exists(Out()));
+    }
+
+    [Fact]
+    public void TheDocTypeOverloadStillRefusesAMissingDocType()
+    {
+        // main refused an empty DocTypeId (not in the vocabulary); the
+        // delegating overload must not turn it into a withdrawal.
+        Assert.Throws<ArgumentException>(() => PackageWriter.WriteResults(_package,
+            [new DocTypeAnswer("TOM99001", "", "jim", When)], Out()));
+        Assert.Throws<ArgumentException>(() => PackageWriter.WriteResults(_package,
+            [new DocTypeAnswer("TOM99001", null!, "jim", When)], Out()));
+        Assert.Throws<ArgumentException>(() => Write(Answer("doc_type", null, null!)));
+    }
+
+    [Fact]
+    public void DatesValidateInvariantlyWhateverTheStationCulture()
+    {
+        // Review finding 15 / CLAUDE.md: dates ISO-8601, invariant. Under a
+        // culture whose default calendar is not Gregorian, 2021 is out of
+        // range and a culture-bound parse refuses every real date.
+        var saved = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = new("ar-SA");
+            Write(Answer("date", "exact", "2021-07-18"));
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = saved;
+        }
+
+        Assert.Equal("2021-07-18", WrittenAnswers()[0].GetProperty("value").GetString());
+    }
+
+    [Fact]
+    public void ALockedResultsFileSaysCloseAndRetryNeverThatTheDataIsSafe()
+    {
+        // Review finding 12: the atomic writer's Locked text was written for
+        // the group index ("The data is safe in the database") and is false
+        // here — no database holds index answers.
+        File.WriteAllText(Out(), "held");
+        using var holder = new FileStream(Out(), FileMode.Open, FileAccess.Read, FileShare.None);
+        var ex = Assert.Throws<IOException>(() => Write(Answer("doc_type", null, "letter")));
+        Assert.DoesNotContain("database", ex.Message);
+        Assert.Contains("close", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("widened-results.json", ex.Message);
     }
 
     [Fact]

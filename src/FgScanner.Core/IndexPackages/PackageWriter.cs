@@ -21,12 +21,25 @@ public static class PackageWriter
     /// tests; delegates to the full surface and must stay byte-identical.</summary>
     public static void WriteResults(
         IndexPackage package, IReadOnlyList<DocTypeAnswer> answers, string outputPath)
-        => WriteResults(
+    {
+        foreach (var answer in answers)
+        {
+            // This surface emits fresh verdicts only: an empty or missing doc
+            // type is a caller mistake here, never a withdrawal (main refused it).
+            if (string.IsNullOrEmpty(answer.DocTypeId))
+            {
+                throw new ArgumentException(
+                    $"answer for {answer.AnchorPageId} names no doc type");
+            }
+        }
+
+        WriteResults(
             package,
             answers.Select(a => new IndexAnswer(
                 a.AnchorPageId, IndexAnswerVocabulary.DocType, Qualifier: null,
                 a.DocTypeId, a.DecidedBy, a.DecidedAt)).ToArray(),
             outputPath);
+    }
 
     public static void WriteResults(
         IndexPackage package, IReadOnlyList<IndexAnswer> answers, string outputPath)
@@ -39,17 +52,10 @@ public static class PackageWriter
                 "the package carries no usable provenance (appVersion/vocabularyVersion)");
         }
 
-        var anchors = package.Documents.Select(d => d.AnchorPageId).ToHashSet(StringComparer.Ordinal);
-        // Membership, not activity: vocabularies ship soft-deleted rows
-        // precisely so old values stay valid ("any older vocabulary stays
-        // importable forever"), and the portal importer accepts them.
-        // Hiding inactive ids from a picker is the UI's job.
-        var docTypes = package.DocTypes.Select(d => d.Id).ToHashSet(StringComparer.Ordinal);
-        var subjects = package.Subjects.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
-        var people = package.People.Select(p => p.Id).ToHashSet(StringComparer.Ordinal);
+        var validator = new AnswerValidator(package);
         foreach (var answer in answers)
         {
-            Validate(answer, package.PackageId, anchors, docTypes, subjects, people);
+            validator.Validate(answer);
         }
 
         using var buffer = new MemoryStream();
@@ -110,16 +116,64 @@ public static class PackageWriter
         var (outcome, message) = new Index.AtomicFileWriter()
             .WriteAsync(outputPath, stream => stream.WriteAsync(bytes, 0, bytes.Length))
             .GetAwaiter().GetResult();
+        if (outcome == Index.ExportOutcome.Locked)
+        {
+            // Not the writer's own Locked text: that was written for the group
+            // index ("the data is safe in the database"), and no database holds
+            // index answers.
+            throw new IOException(
+                $"\"{Path.GetFileName(outputPath)}\" is open in another program. " +
+                "Close it and export again — nothing was written.");
+        }
+
         if (outcome != Index.ExportOutcome.Success)
         {
-            throw new IOException(message ?? "results.json could not be written");
+            throw new IOException(
+                $"\"{Path.GetFileName(outputPath)}\" could not be written ({message}). " +
+                "Nothing was written; close any program holding it and export again.");
         }
+    }
+
+    /// <summary>
+    /// The per-answer rules, against one package's own vocabularies — public
+    /// so a UI can refuse an answer when it is ENTERED, not days later when
+    /// the batch is exported (SPEC-2026-008 AC-5).
+    /// </summary>
+    public sealed class AnswerValidator
+    {
+        private readonly string _packageId;
+        private readonly HashSet<string> _anchors;
+        private readonly HashSet<string> _docTypes;
+        private readonly HashSet<string> _subjects;
+        private readonly HashSet<string> _people;
+
+        public AnswerValidator(IndexPackage package)
+        {
+            _packageId = package.PackageId;
+            _anchors = package.Documents.Select(d => d.AnchorPageId).ToHashSet(StringComparer.Ordinal);
+            // Membership, not activity: vocabularies ship soft-deleted rows
+            // precisely so old values stay valid ("any older vocabulary stays
+            // importable forever"), and the portal importer accepts them.
+            // Hiding inactive ids from a picker is the UI's job.
+            _docTypes = package.DocTypes.Select(d => d.Id).ToHashSet(StringComparer.Ordinal);
+            _subjects = package.Subjects.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
+            _people = package.People.Select(p => p.Id).ToHashSet(StringComparer.Ordinal);
+        }
+
+        public void Validate(IndexAnswer answer) =>
+            PackageWriter.Validate(answer, _packageId, _anchors, _docTypes, _subjects, _people);
     }
 
     private static void Validate(
         IndexAnswer answer, string packageId, HashSet<string> anchors,
         HashSet<string> docTypes, HashSet<string> subjects, HashSet<string> people)
     {
+        if (answer.Value is null)
+        {
+            throw new ArgumentException(
+                $"answer for {answer.AnchorPageId} has no value (use \"\" to withdraw)");
+        }
+
         if (!anchors.Contains(answer.AnchorPageId))
         {
             throw new ArgumentException(
@@ -200,8 +254,17 @@ public static class PackageWriter
 
         if (answer.Value.Length == 0)
         {
-            // A withdrawal: the empty value is the contract's own spelling
-            // for "remove the current decision in this slot".
+            if (answer.Field is IndexAnswerVocabulary.Person or IndexAnswerVocabulary.Subject)
+            {
+                // Multi-value slots include the value (SPEC-2026-003 §07 as
+                // amended 2026-09-30), so an empty one cannot say WHICH person
+                // or subject it withdraws; removal there is the portal's job.
+                throw new ArgumentException(
+                    $"an empty {answer.Field} answer cannot name what it withdraws");
+            }
+
+            // A single-value withdrawal: the empty value is the contract's own
+            // spelling for "remove the current decision in this slot".
             return;
         }
 
@@ -217,7 +280,8 @@ public static class PackageWriter
                 throw new ArgumentException(
                     $"\"{answer.Value}\" is not a person in this package's vocabulary");
             case IndexAnswerVocabulary.Date when !DateOnly.TryParseExact(
-                answer.Value, "yyyy-MM-dd", out _):
+                answer.Value, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out _):
                 throw new ArgumentException(
                     $"a date answer must be yyyy-MM-dd and a real calendar date, " +
                     $"got \"{answer.Value}\"");
