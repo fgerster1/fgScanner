@@ -182,4 +182,134 @@ public sealed class IndexViewModelTests : IDisposable
         Assert.Equal("1 of 2", vm.PagePositionText);
         Assert.Contains("TOM99003", vm.CurrentPageImagePath);
     }
+
+    [Fact]
+    public async Task Accepting_a_suggestion_stages_it_and_nothing_stages_itself()
+    {
+        var vm = CreateViewModel();
+        await vm.OpenPackageAsync(CopyOfGolden());
+        vm.SelectedDocument = vm.Documents.Single(d => d.AnchorPageId == "TOM99005");
+        Assert.Empty(vm.StagedAnswers);
+
+        vm.AcceptSuggestionCommand.Execute(vm.SelectedDocument.Suggestions[0]);
+
+        var staged = Assert.Single(vm.StagedAnswers);
+        Assert.Equal(new StagedAnswer("doc_type", null, "card-note"), staged);
+        Assert.Null(vm.AnswerError);
+    }
+
+    [Fact]
+    public async Task The_panel_prefills_from_the_seeds_current_decisions()
+    {
+        var vm = CreateViewModel();
+        await vm.OpenPackageAsync(CopyOfGolden());
+
+        // TOM99001 arrives with doc_type=letter decided on the portal.
+        vm.SelectedDocument = vm.Documents.Single(d => d.AnchorPageId == "TOM99001");
+
+        Assert.Equal("letter", vm.SelectedDocType?.Id);
+        // Pre-filling must not have staged anything: showing the current
+        // state is not deciding it again.
+        Assert.Empty(vm.StagedAnswers);
+    }
+
+    [Fact]
+    public async Task Choosing_a_doc_type_by_hand_stages_it()
+    {
+        var vm = CreateViewModel();
+        await vm.OpenPackageAsync(CopyOfGolden());
+        vm.SelectedDocument = vm.Documents.Single(d => d.AnchorPageId == "TOM99009");
+
+        vm.SelectedDocType = vm.ActiveDocTypes.First(d => d.Id == "invoice-bill");
+
+        var staged = Assert.Single(vm.StagedAnswers);
+        Assert.Equal("invoice-bill", staged.Value);
+    }
+
+    [Fact]
+    public async Task Subject_checkboxes_stage_and_unstage_individually()
+    {
+        var vm = CreateViewModel();
+        await vm.OpenPackageAsync(CopyOfGolden());
+        // TOM99009 arrives with no subject decisions, so both checks stage.
+        vm.SelectedDocument = vm.Documents.Single(d => d.AnchorPageId == "TOM99009");
+        var tractor = vm.SubjectChoices.Single(c => c.Subject.Id == "tractor");
+        var fees = vm.SubjectChoices.Single(c => c.Subject.Id == "lawyer-fees");
+
+        tractor.IsChecked = true;
+        fees.IsChecked = true;
+        Assert.Equal(2, vm.StagedAnswers.Count);
+
+        tractor.IsChecked = false;
+        var staged = Assert.Single(vm.StagedAnswers);
+        Assert.Equal("lawyer-fees", staged.Value);
+    }
+
+    [Fact]
+    public async Task A_decided_subject_shows_checked_and_refuses_the_uncheck()
+    {
+        var vm = CreateViewModel();
+        await vm.OpenPackageAsync(CopyOfGolden());
+        // TOM99001 arrives with subject=tractor decided on the portal.
+        vm.SelectedDocument = vm.Documents.Single(d => d.AnchorPageId == "TOM99001");
+        var tractor = vm.SubjectChoices.Single(c => c.Subject.Id == "tractor");
+        Assert.True(tractor.IsChecked);
+        Assert.Empty(vm.StagedAnswers);
+
+        // Unchecking a PORTAL decision would need a withdrawal that can
+        // name its target, which the contract cannot express -- the box
+        // springs back and the reason is shown.
+        tractor.IsChecked = false;
+        Assert.True(tractor.IsChecked);
+        Assert.NotNull(vm.AnswerError);
+        Assert.Empty(vm.StagedAnswers);
+    }
+
+    [Fact]
+    public async Task A_bad_date_surfaces_the_refusal_and_stages_nothing()
+    {
+        var vm = CreateViewModel();
+        await vm.OpenPackageAsync(CopyOfGolden());
+        vm.SelectedDocument = vm.Documents[0];
+
+        vm.DateText = "07/18/2021";
+        vm.SetDateCommand.Execute(null);
+
+        Assert.NotNull(vm.AnswerError);
+        Assert.Empty(vm.StagedAnswers);
+    }
+
+    [Fact]
+    public async Task Adding_two_people_in_roles_stages_each_and_chips_remove()
+    {
+        var vm = CreateViewModel();
+        await vm.OpenPackageAsync(CopyOfGolden());
+        vm.SelectedDocument = vm.Documents[0];
+
+        vm.PersonToAdd = vm.People.Single(p => p.Id == "P0001");
+        vm.PersonQualifierToAdd = "mentioned";
+        vm.AddPersonCommand.Execute(null);
+        vm.PersonToAdd = vm.People.Single(p => p.Id == "P0002");
+        vm.AddPersonCommand.Execute(null);
+        Assert.Equal(2, vm.StagedAnswers.Count);
+
+        vm.RemoveStagedAnswerCommand.Execute(vm.StagedAnswers[0]);
+        Assert.Single(vm.StagedAnswers);
+    }
+
+    [Fact]
+    public async Task Withdraw_stages_an_empty_single_value_and_refuses_multi_value()
+    {
+        var vm = CreateViewModel();
+        await vm.OpenPackageAsync(CopyOfGolden());
+        vm.SelectedDocument = vm.Documents.Single(d => d.AnchorPageId == "TOM99001");
+
+        vm.WithdrawCommand.Execute("doc_type");
+        var staged = Assert.Single(vm.StagedAnswers);
+        Assert.Equal(new StagedAnswer("doc_type", null, ""), staged);
+
+        vm.WithdrawCommand.Execute("subject");
+        Assert.NotNull(vm.AnswerError);
+        Assert.Single(vm.StagedAnswers);
+    }
 }

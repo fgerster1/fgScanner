@@ -79,30 +79,121 @@
                 </Border>
             </DockPanel>
 
-            <!-- The AI's proposals, read-only here; Accept controls are the
-                 answer panel's (next prompt). Nothing auto-applies. -->
-            <DockPanel Grid.Column="2">
-                <TextBlock DockPanel.Dock="Top" Text="Suggestions" FontWeight="SemiBold"
-                           Margin="0,0,0,4" />
-                <ItemsControl ItemsSource="{Binding SelectedDocument.Suggestions}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border BorderThickness="1" BorderBrush="#33808080" CornerRadius="4"
-                                    Padding="8,6" Margin="0,0,0,6">
-                                <StackPanel>
+            <!-- The answer panel: five questions, nothing auto-applies —
+                 an untouched suggestion is not an answer. -->
+            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                <StackPanel IsEnabled="{Binding SelectedDocument,
+                    Converter={x:Static views:NotNullToBoolConverter.Instance}}">
+
+                    <Border Background="#33D83B01" CornerRadius="4" Padding="8,6" Margin="0,0,0,6"
+                            Visibility="{Binding AnswerError, Converter={x:Static views:StringToVisibilityConverter.Instance}}">
+                        <TextBlock Text="{Binding AnswerError}" TextWrapping="Wrap" />
+                    </Border>
+
+                    <TextBlock Text="Suggestions" FontWeight="SemiBold" Margin="0,0,0,4" />
+                    <ItemsControl ItemsSource="{Binding SelectedDocument.Suggestions}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderThickness="1" BorderBrush="#33808080" CornerRadius="4"
+                                        Padding="8,6" Margin="0,0,0,6">
+                                    <DockPanel>
+                                        <Button DockPanel.Dock="Right" Content="Accept"
+                                                VerticalAlignment="Top" Padding="8,3" Margin="6,0,0,0"
+                                                AutomationProperties.Name="{Binding Value, StringFormat=Accept suggestion {0}}"
+                                                Command="{Binding DataContext.AcceptSuggestionCommand,
+                                                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}" />
+                                        <StackPanel>
+                                            <TextBlock>
+                                                <Run Text="{Binding Field, Mode=OneWay}" FontWeight="SemiBold" />
+                                                <Run Text="→" />
+                                                <Run Text="{Binding Value, Mode=OneWay}" />
+                                            </TextBlock>
+                                            <TextBlock Text="{Binding ReasonQuote}" TextWrapping="Wrap"
+                                                       FontStyle="Italic" Opacity="0.8" Margin="0,2,0,0" />
+                                        </StackPanel>
+                                    </DockPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Text="Document type" FontWeight="SemiBold" Margin="0,8,0,2" />
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="Withdraw" Padding="8,3" Margin="6,0,0,0"
+                                ToolTip="Record that the portal's document type decision was wrong (an empty answer)"
+                                Command="{Binding WithdrawCommand}" CommandParameter="doc_type" />
+                        <ComboBox ItemsSource="{Binding ActiveDocTypes}"
+                                  SelectedItem="{Binding SelectedDocType}"
+                                  DisplayMemberPath="Label"
+                                  AutomationProperties.Name="Document type" />
+                    </DockPanel>
+
+                    <TextBlock Text="Date" FontWeight="SemiBold" Margin="0,8,0,2" />
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="Set" Padding="8,3" Margin="6,0,0,0"
+                                Command="{Binding SetDateCommand}" />
+                        <ComboBox DockPanel.Dock="Right" Width="80" Margin="6,0,0,0"
+                                  ItemsSource="{Binding DateQualifiers}"
+                                  SelectedItem="{Binding SelectedDateQualifier}"
+                                  AutomationProperties.Name="Date qualifier" />
+                        <TextBox Text="{Binding DateText, UpdateSourceTrigger=PropertyChanged}"
+                                 AutomationProperties.Name="Date (yyyy-mm-dd)"
+                                 ToolTip="yyyy-mm-dd — never reformatted for you" />
+                    </DockPanel>
+
+                    <TextBlock Text="People" FontWeight="SemiBold" Margin="0,8,0,2" />
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="Add" Padding="8,3" Margin="6,0,0,0"
+                                Command="{Binding AddPersonCommand}" />
+                        <ComboBox DockPanel.Dock="Right" Width="100" Margin="6,0,0,0"
+                                  ItemsSource="{Binding PersonQualifiers}"
+                                  SelectedItem="{Binding PersonQualifierToAdd}"
+                                  AutomationProperties.Name="Person role" />
+                        <ComboBox ItemsSource="{Binding People}"
+                                  SelectedItem="{Binding PersonToAdd}"
+                                  DisplayMemberPath="DisplayName"
+                                  IsEditable="True" IsTextSearchEnabled="True"
+                                  AutomationProperties.Name="Person" />
+                    </DockPanel>
+                    <TextBlock Opacity="0.7" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap"
+                               Text="Someone missing from the list? Note it for Franz below — never type a name; the person register is the single source of names." />
+
+                    <TextBlock Text="Subjects" FontWeight="SemiBold" Margin="0,8,0,2" />
+                    <ItemsControl ItemsSource="{Binding SubjectChoices}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox Content="{Binding Label}"
+                                          IsChecked="{Binding IsChecked}" Margin="0,1" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <CheckBox Content="Key document" IsChecked="{Binding KeyFlagChecked}"
+                              FontWeight="SemiBold" Margin="0,10,0,0" />
+
+                    <TextBlock Text="Staged answers for this document" FontWeight="SemiBold"
+                               Margin="0,10,0,2" />
+                    <ItemsControl ItemsSource="{Binding StagedAnswers}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <DockPanel Margin="0,1">
+                                    <Button DockPanel.Dock="Right" Content="✕" Padding="6,0"
+                                            AutomationProperties.Name="Remove staged answer"
+                                            Command="{Binding DataContext.RemoveStagedAnswerCommand,
+                                                      RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}" />
                                     <TextBlock>
-                                        <Run Text="{Binding Field, Mode=OneWay}" FontWeight="SemiBold" />
-                                        <Run Text="→" />
-                                        <Run Text="{Binding Value, Mode=OneWay}" />
+                                        <Run Text="{Binding Field, Mode=OneWay}" />
+                                        <Run Text="{Binding Qualifier, Mode=OneWay}" Foreground="Gray" />
+                                        <Run Text="{Binding Value, Mode=OneWay}" FontWeight="SemiBold" />
                                     </TextBlock>
-                                    <TextBlock Text="{Binding ReasonQuote}" TextWrapping="Wrap"
-                                               FontStyle="Italic" Opacity="0.8" Margin="0,2,0,0" />
-                                </StackPanel>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </DockPanel>
+                                </DockPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
         </Grid>
     </DockPanel>
 </UserControl>

@@ -51,10 +51,16 @@ public sealed partial class IndexViewModel : ObservableObject
 
     private int _pageIndex;
 
+    public IndexViewModel()
+    {
+        Staging.Changed += () => OnPropertyChanged(nameof(StagedAnswers));
+    }
+
     partial void OnSelectedDocumentChanged(SeedDocument? value)
     {
         _pageIndex = 0;
         RaisePageChanged();
+        RefreshAnswerPanel();
     }
 
     /// <summary>Absolute path of the page on screen; null with nothing open.</summary>
@@ -98,6 +104,246 @@ public sealed partial class IndexViewModel : ObservableObject
         OnPropertyChanged(nameof(PagePositionText));
     }
 
+    // ----- answering (SPEC-2026-008 AC-3) ------------------------------
+
+    /// <summary>The staged-but-not-exported answers; the draft store
+    /// persists it (Prompt 6) and the export drains it (Prompt 7).</summary>
+    public AnswerStaging Staging { get; } = new();
+
+    [ObservableProperty]
+    private string? _answerError;
+
+    /// <summary>What is staged for the document on screen, for the
+    /// panel's summary and chips.</summary>
+    public IReadOnlyList<StagedAnswer> StagedAnswers =>
+        SelectedDocument is { } document ? Staging.ForDocument(document.AnchorPageId) : [];
+
+    /// <summary>Doc types with soft-deleted rows hidden — membership stays
+    /// valid at the writer; hiding inactive ids is this picker's job.</summary>
+    public IReadOnlyList<PackageDocType> ActiveDocTypes =>
+        Package?.DocTypes.Where(d => d.Active).ToArray() ?? [];
+
+    public IReadOnlyList<PackagePerson> People => Package?.People ?? [];
+
+    public IReadOnlyList<string> PersonQualifiers { get; } =
+        [.. IndexAnswerVocabulary.PersonQualifiers.Order(StringComparer.Ordinal)];
+
+    public IReadOnlyList<string> DateQualifiers { get; } =
+        [.. IndexAnswerVocabulary.DateQualifiers.Order(StringComparer.Ordinal)];
+
+    public sealed partial class SubjectChoice(
+        IndexViewModel owner, PackageSubject subject) : ObservableObject
+    {
+        public PackageSubject Subject { get; } = subject;
+
+        public string Label { get; } = subject.ParentId is null
+            ? subject.Label
+            : "    " + subject.Label;
+
+        [ObservableProperty]
+        private bool _isChecked;
+
+        partial void OnIsCheckedChanged(bool value) =>
+            owner.OnSubjectToggled(Subject.Id, value);
+    }
+
+    public IReadOnlyList<SubjectChoice> SubjectChoices { get; private set; } = [];
+
+    private bool _refreshingPanel;
+
+    private void OnSubjectToggled(string subjectId, bool isChecked)
+    {
+        if (_refreshingPanel || SelectedDocument is not { } document)
+        {
+            return;
+        }
+
+        var decidedOnPortal = document.Decisions.Any(
+            d => d.Field == IndexAnswerVocabulary.Subject && d.Value == subjectId);
+        if (isChecked)
+        {
+            // A subject the portal already decided is already current;
+            // re-checking it stages nothing.
+            if (!decidedOnPortal)
+            {
+                TryStage(document.AnchorPageId, IndexAnswerVocabulary.Subject, null, subjectId);
+            }
+        }
+        else if (decidedOnPortal && !Staging.ForDocument(document.AnchorPageId)
+            .Any(a => a.Field == IndexAnswerVocabulary.Subject && a.Value == subjectId))
+        {
+            // Unchecking a portal decision would need a withdrawal that can
+            // name its target, which the contract cannot express (§03
+            // non-goal) — the box springs back and says why.
+            AnswerError =
+                "This subject was decided on the portal; removing it is done there (phase 5).";
+            SubjectChoices.Single(c => c.Subject.Id == subjectId).IsChecked = true;
+        }
+        else
+        {
+            Staging.Unstage(
+                document.AnchorPageId, IndexAnswerVocabulary.Subject, null, subjectId);
+        }
+    }
+
+    [ObservableProperty]
+    private PackageDocType? _selectedDocType;
+
+    partial void OnSelectedDocTypeChanged(PackageDocType? value)
+    {
+        if (!_refreshingPanel && value is not null && SelectedDocument is { } document)
+        {
+            TryStage(document.AnchorPageId, IndexAnswerVocabulary.DocType, null, value.Id);
+        }
+    }
+
+    [ObservableProperty]
+    private string _dateText = "";
+
+    [ObservableProperty]
+    private string _selectedDateQualifier = "about";
+
+    [RelayCommand]
+    public void SetDate()
+    {
+        if (SelectedDocument is { } document)
+        {
+            TryStage(document.AnchorPageId, IndexAnswerVocabulary.Date,
+                SelectedDateQualifier, DateText.Trim());
+        }
+    }
+
+    [ObservableProperty]
+    private bool _keyFlagChecked;
+
+    partial void OnKeyFlagCheckedChanged(bool value)
+    {
+        if (_refreshingPanel || SelectedDocument is not { } document)
+        {
+            return;
+        }
+
+        if (value)
+        {
+            TryStage(document.AnchorPageId, IndexAnswerVocabulary.KeyFlag, null,
+                IndexAnswerVocabulary.KeyFlagTrue);
+        }
+        else
+        {
+            // Unchecking un-stages this batch's answer; withdrawing a
+            // PORTAL-decided key flag is the explicit Withdraw button.
+            Staging.Unstage(document.AnchorPageId, IndexAnswerVocabulary.KeyFlag, null,
+                IndexAnswerVocabulary.KeyFlagTrue);
+        }
+    }
+
+    [ObservableProperty]
+    private PackagePerson? _personToAdd;
+
+    [ObservableProperty]
+    private string _personQualifierToAdd = "mentioned";
+
+    [RelayCommand]
+    public void AddPerson()
+    {
+        if (SelectedDocument is { } document && PersonToAdd is { } person)
+        {
+            TryStage(document.AnchorPageId, IndexAnswerVocabulary.Person,
+                PersonQualifierToAdd, person.Id);
+        }
+    }
+
+    [RelayCommand]
+    public void RemoveStagedAnswer(StagedAnswer answer)
+    {
+        if (SelectedDocument is { } document)
+        {
+            Staging.Unstage(
+                document.AnchorPageId, answer.Field, answer.Qualifier, answer.Value);
+        }
+    }
+
+    /// <summary>Withdraw the portal's earlier single-value decision —
+    /// legal only for single-value fields (an empty person/subject cannot
+    /// name its target; AnswerStaging refuses it).</summary>
+    [RelayCommand]
+    public void Withdraw(string field)
+    {
+        if (SelectedDocument is { } document)
+        {
+            TryStage(document.AnchorPageId, field, null, "");
+        }
+    }
+
+    [RelayCommand]
+    public void AcceptSuggestion(SeedSuggestion suggestion)
+    {
+        if (SelectedDocument is { } document)
+        {
+            TryStage(document.AnchorPageId, suggestion.Field,
+                suggestion.Qualifier, suggestion.Value);
+        }
+    }
+
+    private void TryStage(string anchor, string field, string? qualifier, string value)
+    {
+        try
+        {
+            Staging.Stage(anchor, field, qualifier, value);
+            AnswerError = null;
+        }
+        catch (ArgumentException ex)
+        {
+            AnswerError = ex.Message;
+        }
+    }
+
+    /// <summary>Re-reads the panel's controls from staging + the seed's
+    /// current decisions, without those setters staging anything back.</summary>
+    private void RefreshAnswerPanel()
+    {
+        _refreshingPanel = true;
+        try
+        {
+            var staged = StagedAnswers;
+            var decisions = SelectedDocument?.Decisions ?? [];
+
+            string? CurrentSingle(string field) =>
+                staged.FirstOrDefault(a => a.Field == field)?.Value
+                ?? decisions.FirstOrDefault(d => d.Field == field)?.Value;
+
+            var docTypeId = CurrentSingle(IndexAnswerVocabulary.DocType);
+            SelectedDocType = ActiveDocTypes.FirstOrDefault(d => d.Id == docTypeId);
+
+            var stagedDate = staged.FirstOrDefault(a => a.Field == IndexAnswerVocabulary.Date);
+            var seedDate = decisions.FirstOrDefault(d => d.Field == IndexAnswerVocabulary.Date);
+            DateText = stagedDate?.Value ?? seedDate?.Value ?? "";
+            SelectedDateQualifier =
+                stagedDate?.Qualifier ?? seedDate?.Qualifier ?? "about";
+
+            KeyFlagChecked = CurrentSingle(IndexAnswerVocabulary.KeyFlag)
+                == IndexAnswerVocabulary.KeyFlagTrue;
+
+            var subjects = staged
+                .Where(a => a.Field == IndexAnswerVocabulary.Subject)
+                .Select(a => a.Value)
+                .Concat(decisions
+                    .Where(d => d.Field == IndexAnswerVocabulary.Subject)
+                    .Select(d => d.Value))
+                .ToHashSet(StringComparer.Ordinal);
+            foreach (var choice in SubjectChoices)
+            {
+                choice.IsChecked = subjects.Contains(choice.Subject.Id);
+            }
+
+            OnPropertyChanged(nameof(StagedAnswers));
+        }
+        finally
+        {
+            _refreshingPanel = false;
+        }
+    }
+
     [RelayCommand]
     public async Task OpenPackageAsync(string packageDirectory)
     {
@@ -110,7 +356,17 @@ public sealed partial class IndexViewModel : ObservableObject
             _packageDirectory = packageDirectory;
             SelectedDocument = null;
             Package = package;
+            SubjectChoices = package.Subjects
+                .Where(s => s.Active)
+                .OrderBy(s => s.ParentId ?? s.Id, StringComparer.Ordinal)
+                .ThenBy(s => s.ParentId is null ? 0 : 1)
+                .ThenBy(s => s.Label, StringComparer.Ordinal)
+                .Select(s => new SubjectChoice(this, s))
+                .ToArray();
+            OnPropertyChanged(nameof(SubjectChoices));
             OnPropertyChanged(nameof(Documents));
+            OnPropertyChanged(nameof(ActiveDocTypes));
+            OnPropertyChanged(nameof(People));
             RefusalMessage = null;
             PackageSummary = string.Format(
                 System.Globalization.CultureInfo.InvariantCulture,
