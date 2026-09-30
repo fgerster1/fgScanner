@@ -88,6 +88,12 @@
 - **No new AI calls** — the suggestions in the package are the AI's contribution.
 - **No bulk answering** ("apply to all") in v1 — a wrong bulk answer on a legal
   index outweighs the keystrokes saved; revisit with real usage data.
+- **No withdrawal of an already-decided person or subject.** Discovered mid-build
+  and decided by Franz in-terminal (2026-09-30): for the multi-value fields the
+  value joins the decision slot (SPEC-2026-003 §07 amendment), and the contract's
+  empty-value withdrawal cannot NAME which person/subject it withdraws — so phase 4
+  stages multi-value ADDS only, and removal of a decided person/subject belongs to
+  phase 5's web UI. Single-value withdrawals (doc type, date, key flag) stay.
 
 ## 04 · Current state
 
@@ -142,6 +148,14 @@
 approve; every item on the recommended option, no notes). Recorded per question
 below; C1–C4 (no auto-apply, drafts outside the package, no free-text person, no
 bulk answering) all confirmed “Agreed”.
+
+**Mid-build amendment (2026-09-30, AskUserQuestion):** multi-value current
+decisions. The approved parent-§07 slot rule — latest per (anchor, field,
+qualifier) — silently collapsed a second mentioned person or second subject.
+Franz chose “value joins the slot” for person and subject; the portal reader is
+amended (test-first, 3,173 portal tests green), the planner follows, and the
+phase-4 UI stages multi-value fields as independent chips. See the §03 non-goal
+this creates for withdrawals.
 
 1. **ANSWERED (a settings box): Who signs the answers (`decidedBy`)?** — *Options:* (a) Windows username
    automatically (precedent: `capturedBy`); (b) **recommended:** a Settings box
