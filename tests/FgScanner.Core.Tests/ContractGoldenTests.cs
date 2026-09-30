@@ -19,14 +19,20 @@ public sealed class ContractGoldenTests
     /// </summary>
     private static readonly DocTypeAnswer[] GoldenAnswers =
     [
-        new("TOM99005", "card-note", "jim",
+        // One answer per golden document: a complete batch, so the portal's
+        // golden import (AC-4) flips the package to imported, not partial.
+        new("TOM99001", "letter", "jim",
             new DateTimeOffset(2026, 9, 30, 12, 0, 0, TimeSpan.Zero)),
-        new("TOM99007", "trust-amendment", "jim",
+        new("TOM99003", "attorney-invoice", "jim",
             new DateTimeOffset(2026, 9, 30, 12, 5, 0, TimeSpan.Zero)),
-        new("TOM99009", "invoice-bill", "jim",
+        new("TOM99005", "card-note", "jim",
             new DateTimeOffset(2026, 9, 30, 12, 10, 0, TimeSpan.Zero)),
-        new("TOM99011", "unidentified", "jim",
+        new("TOM99007", "trust-amendment", "jim",
             new DateTimeOffset(2026, 9, 30, 12, 15, 0, TimeSpan.Zero)),
+        new("TOM99009", "invoice-bill", "jim",
+            new DateTimeOffset(2026, 9, 30, 12, 20, 0, TimeSpan.Zero)),
+        new("TOM99011", "unidentified", "jim",
+            new DateTimeOffset(2026, 9, 30, 12, 25, 0, TimeSpan.Zero)),
     ];
 
     private const string GoldenAppVersion = "0.0.0-golden";

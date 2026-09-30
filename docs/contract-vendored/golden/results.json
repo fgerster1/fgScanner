@@ -1,39 +1,57 @@
 {
   "answers": [
     {
-      "anchorPageId": "TOM99005",
+      "anchorPageId": "TOM99001",
       "decidedAt": "2026-09-30T12:00:00Z",
       "decidedBy": "jim",
       "field": "doc_type",
       "qualifier": null,
       "seq": 1,
-      "value": "card-note"
+      "value": "letter"
     },
     {
-      "anchorPageId": "TOM99007",
+      "anchorPageId": "TOM99003",
       "decidedAt": "2026-09-30T12:05:00Z",
       "decidedBy": "jim",
       "field": "doc_type",
       "qualifier": null,
       "seq": 2,
-      "value": "trust-amendment"
+      "value": "attorney-invoice"
     },
     {
-      "anchorPageId": "TOM99009",
+      "anchorPageId": "TOM99005",
       "decidedAt": "2026-09-30T12:10:00Z",
       "decidedBy": "jim",
       "field": "doc_type",
       "qualifier": null,
       "seq": 3,
-      "value": "invoice-bill"
+      "value": "card-note"
     },
     {
-      "anchorPageId": "TOM99011",
+      "anchorPageId": "TOM99007",
       "decidedAt": "2026-09-30T12:15:00Z",
       "decidedBy": "jim",
       "field": "doc_type",
       "qualifier": null,
       "seq": 4,
+      "value": "trust-amendment"
+    },
+    {
+      "anchorPageId": "TOM99009",
+      "decidedAt": "2026-09-30T12:20:00Z",
+      "decidedBy": "jim",
+      "field": "doc_type",
+      "qualifier": null,
+      "seq": 5,
+      "value": "invoice-bill"
+    },
+    {
+      "anchorPageId": "TOM99011",
+      "decidedAt": "2026-09-30T12:25:00Z",
+      "decidedBy": "jim",
+      "field": "doc_type",
+      "qualifier": null,
+      "seq": 6,
       "value": "unidentified"
     }
   ],
