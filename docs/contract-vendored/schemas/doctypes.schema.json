@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "jimsstuff-contract/doctypes.schema.json",
+  "title": "Index package document-type vocabulary",
+  "description": "The two-level doc-type taxonomy as data, soft-deleted rows included and marked inactive.",
+  "type": "object",
+  "required": ["vocabularyVersion", "docTypes"],
+  "properties": {
+    "vocabularyVersion": { "type": "integer", "minimum": 1 },
+    "docTypes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "family", "active"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+          "label": { "type": "string", "minLength": 1 },
+          "family": { "type": "string", "minLength": 1 },
+          "active": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

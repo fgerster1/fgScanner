@@ -1,0 +1,161 @@
+{
+  "subjects": [
+    {
+      "active": true,
+      "id": "accounting-distributions",
+      "label": "Accounting & distributions",
+      "parentId": "trust-administration"
+    },
+    {
+      "active": true,
+      "id": "brothers-communications",
+      "label": "Communications among the brothers",
+      "parentId": "people-conduct"
+    },
+    {
+      "active": true,
+      "id": "case-costs",
+      "label": "Other case costs",
+      "parentId": "jims-claims"
+    },
+    {
+      "active": true,
+      "id": "court",
+      "label": "Court",
+      "parentId": null
+    },
+    {
+      "active": true,
+      "id": "court-proceedings",
+      "label": "Court proceedings",
+      "parentId": "court"
+    },
+    {
+      "active": true,
+      "id": "depositions",
+      "label": "Depositions",
+      "parentId": "court"
+    },
+    {
+      "active": true,
+      "id": "domicile",
+      "label": "Domicile",
+      "parentId": "trust-administration"
+    },
+    {
+      "active": true,
+      "id": "hospice-caretaking",
+      "label": "Hospice & caretaking",
+      "parentId": "mom"
+    },
+    {
+      "active": true,
+      "id": "house-sale",
+      "label": "House sale (364 N. Munroe)",
+      "parentId": "trust-administration"
+    },
+    {
+      "active": true,
+      "id": "instruments",
+      "label": "Instruments",
+      "parentId": null
+    },
+    {
+      "active": true,
+      "id": "jims-claims",
+      "label": "Jim's claims",
+      "parentId": null
+    },
+    {
+      "active": true,
+      "id": "jims-dental",
+      "label": "Jim's dental",
+      "parentId": "jims-claims"
+    },
+    {
+      "active": true,
+      "id": "lawyer-fees",
+      "label": "Lawyer fees (Loepp)",
+      "parentId": "jims-claims"
+    },
+    {
+      "active": true,
+      "id": "loepp-conduct",
+      "label": "Loepp's conduct / bar complaint",
+      "parentId": "people-conduct"
+    },
+    {
+      "active": true,
+      "id": "mom",
+      "label": "Mom",
+      "parentId": null
+    },
+    {
+      "active": true,
+      "id": "moms-medical",
+      "label": "Mom's medical & capacity",
+      "parentId": "mom"
+    },
+    {
+      "active": true,
+      "id": "people-conduct",
+      "label": "People & conduct",
+      "parentId": null
+    },
+    {
+      "active": true,
+      "id": "power-of-attorney",
+      "label": "Power of attorney",
+      "parentId": "instruments"
+    },
+    {
+      "active": true,
+      "id": "property",
+      "label": "Property",
+      "parentId": null
+    },
+    {
+      "active": true,
+      "id": "statements-moms-health",
+      "label": "Statements about Mom's health",
+      "parentId": "mom"
+    },
+    {
+      "active": true,
+      "id": "tractor",
+      "label": "Farmall Cub tractor",
+      "parentId": "property"
+    },
+    {
+      "active": true,
+      "id": "travel-moving",
+      "label": "Florida→Ohio travel & moving",
+      "parentId": "jims-claims"
+    },
+    {
+      "active": true,
+      "id": "trust-administration",
+      "label": "Trust administration",
+      "parentId": null
+    },
+    {
+      "active": true,
+      "id": "trust-amendments",
+      "label": "Trust & amendments",
+      "parentId": "instruments"
+    },
+    {
+      "active": true,
+      "id": "will",
+      "label": "Will",
+      "parentId": "instruments"
+    },
+    {
+      "active": false,
+      "id": "yard-sale",
+      "label": "Yard sale & personal property",
+      "parentId": "property"
+    }
+  ],
+  "vocabularyVersion": 2
+}

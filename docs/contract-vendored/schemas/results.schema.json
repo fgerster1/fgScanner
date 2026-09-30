@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "jimsstuff-contract/results.schema.json",
+  "title": "Index package results",
+  "description": "What FG Scanner writes back. packageChecksum is the SHA-256 of the opened package's manifest.json bytes; appVersion is pinned at package-open time so an auto-update mid-batch cannot lie about provenance. An empty value is a withdrawal. seq is the per-package tie-breaker (the portal never trusts the laptop clock alone).",
+  "type": "object",
+  "required": [
+    "packageId",
+    "formatVersion",
+    "vocabularyVersion",
+    "packageChecksum",
+    "appVersion",
+    "answers"
+  ],
+  "properties": {
+    "packageId": { "type": "string", "pattern": "^PKG-[0-9]{4}[0-9]*$" },
+    "formatVersion": { "type": "integer", "minimum": 1 },
+    "vocabularyVersion": { "type": "integer", "minimum": 1 },
+    "packageChecksum": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "appVersion": { "type": "string", "minLength": 1 },
+    "answers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "seq",
+          "anchorPageId",
+          "field",
+          "value",
+          "decidedBy",
+          "decidedAt"
+        ],
+        "properties": {
+          "seq": { "type": "integer", "minimum": 1 },
+          "anchorPageId": { "type": "string", "minLength": 1 },
+          "field": { "type": "string", "minLength": 1 },
+          "qualifier": { "type": ["string", "null"] },
+          "value": { "type": "string" },
+          "decidedBy": { "type": "string", "minLength": 1 },
+          "decidedAt": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "jimsstuff-contract/people.schema.json",
+  "title": "Index package people vocabulary",
+  "description": "The people pull-down. Merged losers never export — resolution happens at build time, so FG Scanner only ever sees the current register. Ids are the register's permanent P-ids.",
+  "type": "object",
+  "required": ["vocabularyVersion", "people"],
+  "properties": {
+    "vocabularyVersion": { "type": "integer", "minimum": 1 },
+    "people": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "displayName", "kind", "roles", "aliases"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^P[0-9]+$" },
+          "displayName": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["person", "organisation"] },
+          "roles": { "type": "array", "items": { "type": "string" } },
+          "aliases": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

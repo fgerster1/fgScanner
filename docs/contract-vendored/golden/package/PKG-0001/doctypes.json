@@ -1,0 +1,233 @@
+{
+  "docTypes": [
+    {
+      "active": true,
+      "family": "property",
+      "id": "appraisal",
+      "label": "Appraisal or valuation"
+    },
+    {
+      "active": true,
+      "family": "financial",
+      "id": "attorney-invoice",
+      "label": "Attorney invoice or fee agreement"
+    },
+    {
+      "active": true,
+      "family": "financial",
+      "id": "bank-statement",
+      "label": "Bank or brokerage statement"
+    },
+    {
+      "active": true,
+      "family": "instrument",
+      "id": "beneficiary-designation",
+      "label": "Beneficiary designation"
+    },
+    {
+      "active": true,
+      "family": "property",
+      "id": "bill-of-sale",
+      "label": "Bill of sale"
+    },
+    {
+      "active": true,
+      "family": "personal-other",
+      "id": "calendar-diary",
+      "label": "Calendar or diary"
+    },
+    {
+      "active": true,
+      "family": "medical",
+      "id": "capacity-assessment",
+      "label": "Capacity assessment"
+    },
+    {
+      "active": true,
+      "family": "correspondence",
+      "id": "card-note",
+      "label": "Card or note"
+    },
+    {
+      "active": true,
+      "family": "financial",
+      "id": "check",
+      "label": "Check or check image"
+    },
+    {
+      "active": true,
+      "family": "instrument",
+      "id": "deed-title",
+      "label": "Deed or title"
+    },
+    {
+      "active": true,
+      "family": "medical",
+      "id": "dental-record",
+      "label": "Dental record"
+    },
+    {
+      "active": true,
+      "family": "correspondence",
+      "id": "email",
+      "label": "Email (printed)"
+    },
+    {
+      "active": true,
+      "family": "correspondence",
+      "id": "fax",
+      "label": "Fax"
+    },
+    {
+      "active": true,
+      "family": "personal-other",
+      "id": "handwritten-note",
+      "label": "Handwritten note"
+    },
+    {
+      "active": true,
+      "family": "medical",
+      "id": "hospital-discharge",
+      "label": "Hospital or discharge record"
+    },
+    {
+      "active": true,
+      "family": "court-record",
+      "id": "inventory-accounting",
+      "label": "Inventory or accounting filed"
+    },
+    {
+      "active": true,
+      "family": "financial",
+      "id": "invoice-bill",
+      "label": "Invoice or bill"
+    },
+    {
+      "active": true,
+      "family": "correspondence",
+      "id": "letter",
+      "label": "Letter"
+    },
+    {
+      "active": true,
+      "family": "medical",
+      "id": "medical-bill",
+      "label": "Medical bill or EOB"
+    },
+    {
+      "active": true,
+      "family": "medical",
+      "id": "medication-list",
+      "label": "Medication list"
+    },
+    {
+      "active": true,
+      "family": "court-record",
+      "id": "motion-brief",
+      "label": "Motion or brief"
+    },
+    {
+      "active": true,
+      "family": "property",
+      "id": "moving-document",
+      "label": "Moving or shipping document"
+    },
+    {
+      "active": true,
+      "family": "court-record",
+      "id": "notice",
+      "label": "Notice"
+    },
+    {
+      "active": true,
+      "family": "court-record",
+      "id": "order-entry",
+      "label": "Order or entry"
+    },
+    {
+      "active": true,
+      "family": "personal-other",
+      "id": "photo-other",
+      "label": "Photograph (other)"
+    },
+    {
+      "active": true,
+      "family": "property",
+      "id": "photo-property",
+      "label": "Photograph (property)"
+    },
+    {
+      "active": true,
+      "family": "medical",
+      "id": "physician-note",
+      "label": "Physician note / visit record"
+    },
+    {
+      "active": true,
+      "family": "court-record",
+      "id": "pleading",
+      "label": "Pleading / complaint"
+    },
+    {
+      "active": true,
+      "family": "instrument",
+      "id": "power-of-attorney",
+      "label": "Power of attorney"
+    },
+    {
+      "active": true,
+      "family": "financial",
+      "id": "receipt",
+      "label": "Receipt"
+    },
+    {
+      "active": true,
+      "family": "financial",
+      "id": "tax-document",
+      "label": "Tax document"
+    },
+    {
+      "active": true,
+      "family": "correspondence",
+      "id": "text-day",
+      "label": "Text-message day"
+    },
+    {
+      "active": true,
+      "family": "property",
+      "id": "title-registration",
+      "label": "Title or registration"
+    },
+    {
+      "active": true,
+      "family": "court-record",
+      "id": "transcript",
+      "label": "Transcript"
+    },
+    {
+      "active": true,
+      "family": "instrument",
+      "id": "trust-agreement",
+      "label": "Trust agreement"
+    },
+    {
+      "active": true,
+      "family": "instrument",
+      "id": "trust-amendment",
+      "label": "Trust amendment / restatement"
+    },
+    {
+      "active": true,
+      "family": "personal-other",
+      "id": "unidentified",
+      "label": "Unidentified"
+    },
+    {
+      "active": true,
+      "family": "instrument",
+      "id": "will-codicil",
+      "label": "Will or codicil"
+    }
+  ],
+  "vocabularyVersion": 2
+}

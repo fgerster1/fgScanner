@@ -1,0 +1,29 @@
+{
+  "people": [
+    {
+      "aliases": [
+        "J. O. Tomaiko",
+        "Judd",
+        "Judson O. Tomaiko"
+      ],
+      "displayName": "Tomaiko, Judson O.",
+      "id": "P0001",
+      "kind": "person",
+      "roles": [
+        "party"
+      ]
+    },
+    {
+      "aliases": [
+        "Thomas C. Loepp"
+      ],
+      "displayName": "Loepp, Thomas C.",
+      "id": "P0002",
+      "kind": "person",
+      "roles": [
+        "attorney"
+      ]
+    }
+  ],
+  "vocabularyVersion": 2
+}
