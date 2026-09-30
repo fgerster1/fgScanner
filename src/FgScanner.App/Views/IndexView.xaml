@@ -10,6 +10,16 @@
         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
             <Button DockPanel.Dock="Left" Content="Open package…" Click="OnOpenPackage"
                     Padding="14,6" IsEnabled="{Binding CanOpen}" />
+            <Button DockPanel.Dock="Left" Content="Export results" Margin="6,0,0,0" Padding="14,6"
+                    Command="{Binding ExportResultsCommand}"
+                    IsEnabled="{Binding Package, Converter={x:Static views:NotNullToBoolConverter.Instance}}" />
+            <Button DockPanel.Dock="Left" Content="Email the results file" Margin="6,0,0,0" Padding="14,6"
+                    Command="{Binding EmailResultsCommand}"
+                    IsEnabled="{Binding Package, Converter={x:Static views:NotNullToBoolConverter.Instance}}" />
+            <Button DockPanel.Dock="Left" Content="Remove package from this computer" Margin="6,0,0,0"
+                    Padding="14,6" Command="{Binding RequestDeleteCommand}"
+                    IsEnabled="{Binding DeleteEnabled}"
+                    ToolTip="Enabled once an export covers every current answer" />
             <TextBlock VerticalAlignment="Center" Margin="10,0,0,0" Opacity="0.8">
                 <TextBlock.Style>
                     <Style TargetType="TextBlock">
@@ -35,6 +45,24 @@
         <TextBlock DockPanel.Dock="Top" Opacity="0.8" Margin="0,0,0,6"
                    Text="{Binding PackageSummary}"
                    Visibility="{Binding PackageSummary, Converter={x:Static views:StringToVisibilityConverter.Instance}}" />
+
+        <!-- Delete asks here, inside the section, where the counts are visible. -->
+        <Border DockPanel.Dock="Top" Background="#55D13438" CornerRadius="4" Padding="10,8"
+                Margin="0,0,0,6"
+                Visibility="{Binding PendingDeleteText, Converter={x:Static views:StringToVisibilityConverter.Instance}}">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="Cancel" Padding="10,4" Margin="6,0,0,0"
+                        Command="{Binding CancelDeleteCommand}" />
+                <Button DockPanel.Dock="Right" Content="Yes, remove it" Padding="10,4"
+                        Command="{Binding ConfirmDeleteCommand}" />
+                <TextBlock Text="{Binding PendingDeleteText}" TextWrapping="Wrap"
+                           VerticalAlignment="Center" />
+            </DockPanel>
+        </Border>
+
+        <TextBlock DockPanel.Dock="Top" Opacity="0.8" Margin="0,0,0,6" TextWrapping="Wrap"
+                   Text="{Binding ExportMessage}"
+                   Visibility="{Binding ExportMessage, Converter={x:Static views:StringToVisibilityConverter.Instance}}" />
 
         <!-- A failed draft save means the answer on screen is NOT on disk. -->
         <Border DockPanel.Dock="Top" Background="#55D13438" CornerRadius="4" Padding="10,8"

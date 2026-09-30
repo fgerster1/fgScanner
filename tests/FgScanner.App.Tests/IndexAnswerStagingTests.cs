@@ -32,7 +32,8 @@ public sealed class IndexAnswerStagingTests
         _staging.Stage(Anchor, "doc_type", null, "card-note");
 
         var entry = Assert.Single(Staged());
-        Assert.Equal(new StagedAnswer("doc_type", null, "card-note"), entry);
+        Assert.Equal(("doc_type", null, "card-note"),
+            (entry.Field, entry.Qualifier, entry.Value));
     }
 
     [Fact]
@@ -42,7 +43,8 @@ public sealed class IndexAnswerStagingTests
         _staging.Stage(Anchor, "date", "about", "2021-07-01");
 
         var entry = Assert.Single(Staged());
-        Assert.Equal(new StagedAnswer("date", "about", "2021-07-01"), entry);
+        Assert.Equal(("date", "about", "2021-07-01"),
+            (entry.Field, entry.Qualifier, entry.Value));
     }
 
     [Fact]

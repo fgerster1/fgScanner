@@ -6,7 +6,12 @@ namespace FgScanner.App.Views;
 /// <summary>One staged answer; the slot identity is (Field) for
 /// single-value fields and (Field, Qualifier, Value) for person /
 /// (Field, Value) for subject — SPEC-2026-003 §07 as amended 2026-09-30.</summary>
-public sealed record StagedAnswer(string Field, string? Qualifier, string Value);
+/// <summary>DecidedAt is stamped when the answer is STAGED — the moment
+/// Jim decided — never at export: the portal's dedupe key includes it,
+/// and export-time stamps would make a partial-then-full send-back
+/// duplicate every earlier row. Contract format, UTC seconds.</summary>
+public sealed record StagedAnswer(
+    string Field, string? Qualifier, string Value, string DecidedAt = "");
 
 /// <summary>
 /// The answers Jim has staged but not yet exported, per document
@@ -27,6 +32,12 @@ public sealed class AnswerStaging
 
     /// <summary>Raised on every change — the draft store's autosave hook.</summary>
     public event Action? Changed;
+
+    /// <summary>Overridable for deterministic tests and byte-stable exports.</summary>
+    public Func<DateTimeOffset> Clock { get; set; } = () => DateTimeOffset.UtcNow;
+
+    private string Now() => Clock().UtcDateTime.ToString(
+        "yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
 
     public int AnsweredDocumentCount => _byAnchor.Count(kv => kv.Value.Count > 0);
 
@@ -65,7 +76,7 @@ public sealed class AnswerStaging
         var replaced = multiValue
             ? list.FindIndex(a => a.Field == field && a.Qualifier == qualifier && a.Value == value)
             : list.FindIndex(a => a.Field == field);
-        var entry = new StagedAnswer(field, qualifier, value);
+        var entry = new StagedAnswer(field, qualifier, value, Now());
         if (replaced >= 0)
         {
             list[replaced] = entry;

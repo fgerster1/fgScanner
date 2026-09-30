@@ -197,7 +197,8 @@ public sealed class IndexViewModelTests : IDisposable
         vm.AcceptSuggestionCommand.Execute(vm.SelectedDocument.Suggestions[0]);
 
         var staged = Assert.Single(vm.StagedAnswers);
-        Assert.Equal(new StagedAnswer("doc_type", null, "card-note"), staged);
+        Assert.Equal(("doc_type", null, "card-note"),
+            (staged.Field, staged.Qualifier, staged.Value));
         Assert.Null(vm.AnswerError);
     }
 
@@ -309,7 +310,8 @@ public sealed class IndexViewModelTests : IDisposable
 
         vm.WithdrawCommand.Execute("doc_type");
         var staged = Assert.Single(vm.StagedAnswers);
-        Assert.Equal(new StagedAnswer("doc_type", null, ""), staged);
+        Assert.Equal(("doc_type", null, ""),
+            (staged.Field, staged.Qualifier, staged.Value));
 
         vm.WithdrawCommand.Execute("subject");
         Assert.NotNull(vm.AnswerError);

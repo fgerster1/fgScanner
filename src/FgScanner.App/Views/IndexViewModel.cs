@@ -60,6 +60,7 @@ public sealed partial class IndexViewModel : ObservableObject
         Staging.Changed += () =>
         {
             OnPropertyChanged(nameof(StagedAnswers));
+            OnPropertyChanged(nameof(DeleteEnabled));
             SaveDraft();
         };
     }
@@ -320,6 +321,166 @@ public sealed partial class IndexViewModel : ObservableObject
             TryStage(document.AnchorPageId, suggestion.Field,
                 suggestion.Qualifier, suggestion.Value);
         }
+    }
+
+    // ----- export, share, delete (SPEC-2026-008 AC-7/AC-8) -------------
+
+    /// <summary>Who signs the answers — wired at startup to the
+    /// Index.DeciderName setting (Q1); overridable in tests.</summary>
+    public Func<string> DeciderNameProvider { get; set; } =
+        () => Environment.UserName;
+
+    /// <summary>Opens the operator's mail path with a file; never sends
+    /// (SPEC-2026-007). Null hides the email button.</summary>
+    public Func<Core.Sharing.ShareRequest, Core.Sharing.ShareOutcome>? Share { get; set; }
+
+    public Func<Core.Sharing.MailPath> MailPathProvider { get; set; } =
+        () => Core.Sharing.MailPath.MailApp;
+
+    [ObservableProperty]
+    private string? _exportMessage;
+
+    private string? _lastExportPath;
+
+    private string? _exportedCoverage;
+
+    /// <summary>What an export would have to cover to count as current:
+    /// every staged answer plus who signs them.</summary>
+    private string CurrentCoverage() =>
+        System.Text.Json.JsonSerializer.Serialize(Staging.Snapshot())
+        + "|" + DeciderNameProvider().Trim();
+
+    public bool DeleteEnabled =>
+        Package is not null
+        && _exportedCoverage is not null
+        && _exportedCoverage == CurrentCoverage();
+
+    [RelayCommand]
+    public void ExportResults()
+    {
+        if (Package is not { } package || _packageDirectory is not { } packageDir)
+        {
+            return;
+        }
+
+        var decider = DeciderNameProvider().Trim();
+        if (decider.Length == 0)
+        {
+            ExportMessage =
+                "The answers need a decider: set \"Indexer name\" in Settings first.";
+            return;
+        }
+
+        var answers = new List<IndexAnswer>();
+        foreach (var document in Documents)
+        {
+            foreach (var staged in Staging.ForDocument(document.AnchorPageId))
+            {
+                answers.Add(new IndexAnswer(
+                    document.AnchorPageId, staged.Field, staged.Qualifier, staged.Value,
+                    decider,
+                    DateTimeOffset.ParseExact(staged.DecidedAt, "yyyy-MM-dd'T'HH:mm:ss'Z'",
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.AssumeUniversal)));
+            }
+        }
+
+        if (answers.Count == 0)
+        {
+            ExportMessage = "There are no answers to export yet.";
+            return;
+        }
+
+        var output = Path.Combine(
+            Path.GetDirectoryName(Path.GetFullPath(packageDir))!,
+            package.PackageId + "-results.json");
+        try
+        {
+            PackageWriter.WriteResults(package, answers, output);
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException)
+        {
+            ExportMessage = ex.Message;
+            return;
+        }
+
+        _lastExportPath = output;
+        _exportedCoverage = CurrentCoverage();
+        OnPropertyChanged(nameof(DeleteEnabled));
+        ExportMessage = string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            "Exported {0} answer(s) across {1} document(s) to {2}",
+            answers.Count, Staging.AnsweredDocumentCount, output);
+        Log.Information(
+            "Index results exported: {PackageId}, {Answers} answer(s), app {AppVersion}",
+            package.PackageId, answers.Count, AppVersion);
+    }
+
+    [RelayCommand]
+    public void EmailResults()
+    {
+        if (Share is not { } share || _lastExportPath is not { } path || !File.Exists(path))
+        {
+            ExportMessage = "Export the results first, then email the file.";
+            return;
+        }
+
+        var outcome = share(new Core.Sharing.ShareRequest(
+            [path], Package?.PackageId + " index answers", MailPathProvider()));
+        ExportMessage = outcome.Message;
+        // Route and count only — never a recipient, never case content
+        // (SPEC-2026-007 logging rule).
+        Log.Information(
+            "Index results share: surface Index, 1 file, json, route {Route}", outcome.Route);
+    }
+
+    [ObservableProperty]
+    private string? _pendingDeleteText;
+
+    [RelayCommand]
+    public void RequestDelete()
+    {
+        if (Package is not { } package || _packageDirectory is not { } packageDir
+            || !DeleteEnabled)
+        {
+            return;
+        }
+
+        var imagesDir = Path.Combine(packageDir, "images");
+        var images = Directory.Exists(imagesDir)
+            ? Directory.EnumerateFiles(imagesDir).Count() : 0;
+        PendingDeleteText = string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            "{0}: {1} document(s), {2} image(s), results exported — remove the " +
+            "package folder from this computer? The exported results file stays.",
+            package.PackageId, package.Documents.Count, images);
+    }
+
+    [RelayCommand]
+    public void CancelDelete() => PendingDeleteText = null;
+
+    [RelayCommand]
+    public void ConfirmDelete()
+    {
+        if (PendingDeleteText is null || Package is not { } package
+            || _packageDirectory is not { } packageDir || !DeleteEnabled)
+        {
+            return;
+        }
+
+        Directory.Delete(packageDir, recursive: true);
+        _drafts.Delete(package.PackageId);
+        Log.Information("Index package {PackageId} removed after export", package.PackageId);
+        PendingDeleteText = null;
+        Package = null;
+        _packageDirectory = null;
+        SelectedDocument = null;
+        PackageSummary = null;
+        _exportedCoverage = null;
+        Staging.Restore(new Dictionary<string, IReadOnlyList<StagedAnswer>>());
+        OnPropertyChanged(nameof(Documents));
+        OnPropertyChanged(nameof(StagedAnswers));
+        OnPropertyChanged(nameof(DeleteEnabled));
     }
 
     private void TryStage(string anchor, string field, string? qualifier, string value)

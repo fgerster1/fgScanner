@@ -181,6 +181,18 @@ public partial class App : Application
 
         var appVersion = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
         IndexingService.AppVersion = appVersion;
+
+        // The Index section's outward wiring (SPEC-2026-008): the share
+        // path that cannot send, the station's mail path, and who signs
+        // the answers -- all read where used (ADR-0010).
+        var indexViewModel = _host.Services.GetRequiredService<Views.ShellViewModel>().IndexViewModel;
+        var indexSettings = _host.Services.GetRequiredService<AppSettingsService>();
+        indexViewModel.Share = _host.Services
+            .GetRequiredService<FgScanner.Core.Sharing.IShareService>().Open;
+        indexViewModel.DeciderNameProvider = () => indexSettings
+            .GetAsync("Index.DeciderName", Environment.UserName).GetAwaiter().GetResult();
+        indexViewModel.MailPathProvider = () => Services.EmailSettings
+            .ReadSendWithAsync(indexSettings).GetAwaiter().GetResult();
         var backup = DbBootstrapper.MigrateWithBackup(DbBootstrapper.DefaultDbPath, appVersion);
         if (backup is not null)
         {
