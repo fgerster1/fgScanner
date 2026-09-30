@@ -17,3 +17,4 @@ Write the ADR in the same commit as the code that implements the decision.
 | [0010](0010-settings-change-notification.md) | One announced settings change, and a capture in hand wins |
 | [0011](0011-duplex-ordering.md) | A two-pass stack is ordered before adoption, and keeps every back |
 | [0012](0012-email-route-and-evidence-policy.md) | Email opens a message in the operator's own client and never sends; a committed evidence group warns once |
+| [0013](0013-vendored-index-package-contract.md) | The index-package contract is vendored from JimsStuff, never owned or edited here |

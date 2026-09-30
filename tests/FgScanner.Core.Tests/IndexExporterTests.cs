@@ -220,17 +220,8 @@ public sealed class IndexExporterTests : IDisposable
         Assert.Contains("Invoices 2026", await File.ReadAllTextAsync(target, TestContext.Current.CancellationToken));
     }
 
-    private static string FindRepoFile(string relative)
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "FgScanner.slnx")))
-        {
-            dir = dir.Parent;
-        }
-
-        Assert.NotNull(dir);
-        return Path.Combine(dir.FullName, relative);
-    }
+    private static string FindRepoFile(string relative) =>
+        Path.Combine(TestPaths.RepoRoot(), relative);
 
     private static Task VerifyFile(string path) =>
         Verifier.VerifyFile(path)

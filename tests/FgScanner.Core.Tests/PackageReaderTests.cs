@@ -44,7 +44,7 @@ public sealed class PackageReaderTests : IDisposable
         {
             var dest = Path.Combine(target, Path.GetRelativePath(source, file));
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-            File.Copy(file, dest);
+            File.Copy(file, dest, overwrite: true);
         }
     }
 
@@ -271,6 +271,124 @@ public sealed class PackageReaderTests : IDisposable
     }
 
     [Fact]
+    public void EveryParseableButMalformedManifestVariantRefuses()
+    {
+        // Second-review repros: manifest.json is the one file no checksum
+        // protects, so every parseable-but-wrong shape must end in the
+        // refusal, never a raw exception.
+        foreach (Action<System.Text.Json.Nodes.JsonNode> damage in new Action<System.Text.Json.Nodes.JsonNode>[]
+        {
+            m => m["formatVersion"] = "1",
+            m => m["formatVersion"] = null,
+            m => m["vocabularyVersion"] = "two",
+            m => m["packageId"] = 7,
+            m => m["sha256"]!["seed.json"] = null,
+            m => m["sha256"]!.AsObject().Add("bad\u0000name", new string('0', 64)),
+        })
+        {
+            CopyGoldenFresh();
+            EditJson("manifest.json", damage);
+            Assert.Throws<PackageRefusedException>(Open);
+        }
+
+        // A manifest whose root is not even an object.
+        CopyGoldenFresh();
+        File.WriteAllText(Path.Combine(_root, "manifest.json"), "[]");
+        Assert.Throws<PackageRefusedException>(Open);
+    }
+
+    [Fact]
+    public void ChecksumValidButStructurallyMalformedFilesRefuse()
+    {
+        // The same refusal contract covers the post-checksum parse phase:
+        // checksum-valid-but-wrong-shape (hash fixed up by EditJson) is
+        // damage, not a crash.
+        foreach (var (file, damage) in new (string, Action<System.Text.Json.Nodes.JsonNode>)[]
+        {
+            ("seed.json", s => s.AsObject().Remove("documents")),
+            ("seed.json", s => s["documents"]![0]!["anchorPageId"] = 7),
+            ("seed.json", s => s["documents"]![0]!["pages"] =
+                new System.Text.Json.Nodes.JsonArray()),
+            ("seed.json", s => s["documents"]![0]!["suggestions"] =
+                new System.Text.Json.Nodes.JsonArray(
+                    new System.Text.Json.Nodes.JsonObject
+                    {
+                        ["suggestionId"] = 1, ["field"] = "doc_type",
+                        ["value"] = null,
+                    })),
+            ("people.json", p => p["people"]![0]!.AsObject().Remove("id")),
+            ("subjects.json", s => s["subjects"]![0]!["active"] = "yes"),
+            ("doctypes.json", d => d["docTypes"] = "nope"),
+        })
+        {
+            CopyGoldenFresh();
+            EditJson(file, damage);
+            var ex = Assert.Throws<PackageRefusedException>(Open);
+            Assert.Contains(file, ex.Message);
+        }
+    }
+
+    [Fact]
+    public void IncoherentSeedsRefuse()
+    {
+        // A repeated anchor, a page claimed by two documents, an anchor
+        // that is not its document's first page, or a docCount that does
+        // not match the seed — all exportable by a careless CLI call, all
+        // end as a package stuck partial or two conflicting registers.
+        EditJson("seed.json", s =>
+        {
+            var docs = s["documents"]!.AsArray();
+            docs[1]!["anchorPageId"] = docs[0]!["anchorPageId"]!.GetValue<string>();
+        });
+        Assert.Throws<PackageRefusedException>(Open);
+
+        CopyGoldenFresh();
+        EditJson("seed.json", s =>
+        {
+            var docs = s["documents"]!.AsArray();
+            docs[1]!["pages"]![0]!["pageId"] =
+                docs[0]!["pages"]![0]!["pageId"]!.GetValue<string>();
+        });
+        Assert.Throws<PackageRefusedException>(Open);
+
+        CopyGoldenFresh();
+        EditJson("seed.json", s =>
+        {
+            var pages = s["documents"]![0]!["pages"]!.AsArray();
+            var first = pages[0];
+            pages.RemoveAt(0);
+            pages.Add(first);
+        });
+        Assert.Throws<PackageRefusedException>(Open);
+
+        CopyGoldenFresh();
+        EditJson("manifest.json", m => m["docCount"] = 5);
+        Assert.Throws<PackageRefusedException>(Open);
+    }
+
+    [Fact]
+    public void AFormatVersionBelowTheKnownOneIsDamageNotAnUpdatePrompt()
+    {
+        // "Close and reopen to update" on formatVersion 0 is false advice
+        // with no exit — the updater has nothing newer.
+        var manifest = Path.Combine(_root, "manifest.json");
+        File.WriteAllText(manifest,
+            File.ReadAllText(manifest).Replace("\"formatVersion\": 1", "\"formatVersion\": 0"));
+        var ex = Assert.Throws<PackageRefusedException>(Open);
+        Assert.NotEqual(PackageReader.UpdateMessage, ex.Message);
+        Assert.Contains("damaged", ex.Message);
+    }
+
+    [Fact]
+    public void OpenRefusesAnEmptyAppVersion()
+    {
+        // What Open pins is what results.json echoes; an empty pin would
+        // fail the portal's schema only after Jim answered the batch.
+        Assert.Throws<ArgumentException>(
+            () => PackageReader.Open(_root, appVersion: ""));
+    }
+
+    [Fact]
     public void ASeedImageTheManifestDoesNotCoverRefuses()
     {
         // "Passed all three checks" must mean every page Jim will be shown
@@ -283,7 +401,17 @@ public sealed class PackageReaderTests : IDisposable
 
     private void CopyGoldenFresh()
     {
-        Directory.Delete(_root, recursive: true);
+        try
+        {
+            Directory.Delete(_root, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // AV briefly holding a temp JPEG mid-test is the same
+            // non-failure the Dispose comment describes; the fresh copy
+            // below overwrites whatever survived.
+        }
+
         Directory.CreateDirectory(_root);
         CopyGolden(_root);
     }
@@ -324,6 +452,47 @@ public sealed class PackageReaderTests : IDisposable
             [new DocTypeAnswer("TOM99001", "letter", "Jürgen Müller",
                 new DateTimeOffset(2026, 9, 30, 12, 0, 0, TimeSpan.Zero))], output);
         Assert.Contains("Jürgen Müller", File.ReadAllText(output));
+    }
+
+    [Fact]
+    public void WriterAcceptsAnInactiveDocTypeId()
+    {
+        // The vocabulary ships inactive rows precisely so old values stay
+        // valid ("any older vocabulary stays importable forever") — the
+        // portal importer accepts them, so refusing here would strand a
+        // whole answered batch. Hiding inactive ids from a picker is the
+        // phase-4 UI's job, not this library's.
+        EditJson("doctypes.json", d =>
+        {
+            foreach (var row in d["docTypes"]!.AsArray())
+            {
+                if (row!["id"]!.GetValue<string>() == "letter")
+                {
+                    row["active"] = false;
+                }
+            }
+        });
+        var package = Open();
+        var output = Path.Combine(_root, "results.json");
+        PackageWriter.WriteResults(package,
+            [new DocTypeAnswer("TOM99001", "letter", "jim",
+                new DateTimeOffset(2026, 9, 30, 12, 0, 0, TimeSpan.Zero))], output);
+        Assert.Contains("letter", File.ReadAllText(output));
+    }
+
+    [Fact]
+    public void WriterRefusesTheSpacesTheEncodersDisagreeOn()
+    {
+        // NBSP pasted from Word, the French narrow no-break space, a BOM:
+        // .NET escapes them, Python writes them raw — the byte rule breaks.
+        var package = Open();
+        var output = Path.Combine(_root, "results.json");
+        foreach (var decider in new[] { "jim\u00A0tomaiko", "jim\u202Ftomaiko", "\uFEFFjim" })
+        {
+            Assert.Throws<ArgumentException>(() => PackageWriter.WriteResults(package,
+                [new DocTypeAnswer("TOM99001", "letter", decider,
+                    DateTimeOffset.UnixEpoch)], output));
+        }
     }
 
     [Fact]
