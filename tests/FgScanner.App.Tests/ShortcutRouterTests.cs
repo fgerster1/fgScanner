@@ -66,7 +66,9 @@ public sealed class ShortcutRouterTests
     public static TheoryData<string, string> PageKeysOffGroups()
     {
         var data = new TheoryData<string, string>();
-        foreach (var section in new[] { "Search", "Trash", "Settings" })
+        // "Index" (SPEC-2026-008 AC-9): its own controls use focus-local
+        // bindings, so no window-global page key may act while it shows.
+        foreach (var section in new[] { "Search", "Index", "Trash", "Settings" })
         {
             foreach (var action in PageKeys)
             {

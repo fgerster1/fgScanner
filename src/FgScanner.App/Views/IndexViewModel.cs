@@ -36,6 +36,68 @@ public sealed partial class IndexViewModel : ObservableObject
     [ObservableProperty]
     private string? _packageSummary;
 
+    /// <summary>Where the open package lives on disk; image paths in the
+    /// seed are relative to it.</summary>
+    private string? _packageDirectory;
+
+    /// <summary>The seed's documents in the seed's own order — the portal
+    /// exported them by priority, and reordering here would silently
+    /// defeat the planner.</summary>
+    public IReadOnlyList<SeedDocument> Documents =>
+        Package?.Documents ?? [];
+
+    [ObservableProperty]
+    private SeedDocument? _selectedDocument;
+
+    private int _pageIndex;
+
+    partial void OnSelectedDocumentChanged(SeedDocument? value)
+    {
+        _pageIndex = 0;
+        RaisePageChanged();
+    }
+
+    /// <summary>Absolute path of the page on screen; null with nothing open.</summary>
+    public string? CurrentPageImagePath =>
+        SelectedDocument is { } document && _packageDirectory is { } root
+            ? System.IO.Path.Combine(
+                root, document.Pages[_pageIndex].Image.Replace('/', System.IO.Path.DirectorySeparatorChar))
+            : null;
+
+    public string? PagePositionText => SelectedDocument is { } document
+        ? string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            "{0} of {1}", _pageIndex + 1, document.Pages.Count)
+        : null;
+
+    [RelayCommand]
+    public void NextPage()
+    {
+        // Clamped, never wrapped: a viewer that wraps silently is how an
+        // operator reads page 1 believing it is page 3.
+        if (SelectedDocument is { } document && _pageIndex < document.Pages.Count - 1)
+        {
+            _pageIndex++;
+            RaisePageChanged();
+        }
+    }
+
+    [RelayCommand]
+    public void PreviousPage()
+    {
+        if (SelectedDocument is not null && _pageIndex > 0)
+        {
+            _pageIndex--;
+            RaisePageChanged();
+        }
+    }
+
+    private void RaisePageChanged()
+    {
+        OnPropertyChanged(nameof(CurrentPageImagePath));
+        OnPropertyChanged(nameof(PagePositionText));
+    }
+
     [RelayCommand]
     public async Task OpenPackageAsync(string packageDirectory)
     {
@@ -45,7 +107,10 @@ public sealed partial class IndexViewModel : ObservableObject
             // The reader hashes every file in the package; off the UI thread.
             var package = await Task.Run(
                 () => PackageReader.Open(packageDirectory, AppVersion));
+            _packageDirectory = packageDirectory;
+            SelectedDocument = null;
             Package = package;
+            OnPropertyChanged(nameof(Documents));
             RefusalMessage = null;
             PackageSummary = string.Format(
                 System.Globalization.CultureInfo.InvariantCulture,
@@ -57,6 +122,9 @@ public sealed partial class IndexViewModel : ObservableObject
         catch (PackageRefusedException ex)
         {
             Package = null;
+            _packageDirectory = null;
+            SelectedDocument = null;
+            OnPropertyChanged(nameof(Documents));
             PackageSummary = null;
             RefusalMessage = ex.Message;
             Log.Information("Index package refused: {Reason}", ex.Message);

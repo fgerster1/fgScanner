@@ -36,7 +36,73 @@
                    Text="{Binding PackageSummary}"
                    Visibility="{Binding PackageSummary, Converter={x:Static views:StringToVisibilityConverter.Instance}}" />
 
-        <!-- Document list and page viewer arrive with the next prompt. -->
-        <Grid />
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="280" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="300" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Seed order IS priority order; no sorting. -->
+            <ListBox Grid.Column="0" Margin="0,0,6,0"
+                     ItemsSource="{Binding Documents}"
+                     SelectedItem="{Binding SelectedDocument}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="2">
+                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Opacity="0.7" FontSize="11">
+                                <Run Text="{Binding AnchorPageId, Mode=OneWay}" />
+                                <Run Text="·" />
+                                <Run Text="{Binding Pages.Count, Mode=OneWay}" />
+                                <Run Text="page(s)" />
+                            </TextBlock>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <DockPanel Grid.Column="1" Margin="0,0,6,0">
+                <DockPanel DockPanel.Dock="Bottom" Margin="0,6,0,0" LastChildFill="False">
+                    <Button DockPanel.Dock="Left" Content="◀ Previous page"
+                            Command="{Binding PreviousPageCommand}" Padding="10,4" />
+                    <Button DockPanel.Dock="Right" Content="Next page ▶"
+                            Command="{Binding NextPageCommand}" Padding="10,4" />
+                    <TextBlock DockPanel.Dock="Left" Text="{Binding PagePositionText}"
+                               VerticalAlignment="Center" Margin="10,0" Opacity="0.8" />
+                </DockPanel>
+                <Border BorderThickness="1" BorderBrush="#33808080">
+                    <Image Source="{Binding CurrentPageImagePath,
+                                    Converter={x:Static views:PreviewImageConverter.Instance}}"
+                           Stretch="Uniform" StretchDirection="DownOnly" />
+                </Border>
+            </DockPanel>
+
+            <!-- The AI's proposals, read-only here; Accept controls are the
+                 answer panel's (next prompt). Nothing auto-applies. -->
+            <DockPanel Grid.Column="2">
+                <TextBlock DockPanel.Dock="Top" Text="Suggestions" FontWeight="SemiBold"
+                           Margin="0,0,0,4" />
+                <ItemsControl ItemsSource="{Binding SelectedDocument.Suggestions}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border BorderThickness="1" BorderBrush="#33808080" CornerRadius="4"
+                                    Padding="8,6" Margin="0,0,0,6">
+                                <StackPanel>
+                                    <TextBlock>
+                                        <Run Text="{Binding Field, Mode=OneWay}" FontWeight="SemiBold" />
+                                        <Run Text="→" />
+                                        <Run Text="{Binding Value, Mode=OneWay}" />
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding ReasonQuote}" TextWrapping="Wrap"
+                                               FontStyle="Italic" Opacity="0.8" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </DockPanel>
+        </Grid>
     </DockPanel>
 </UserControl>

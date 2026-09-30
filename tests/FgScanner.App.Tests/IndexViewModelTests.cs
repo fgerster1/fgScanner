@@ -124,4 +124,62 @@ public sealed class IndexViewModelTests : IDisposable
         await vm.OpenPackageAsync(CopyOfGolden());
         Assert.Equal("0.6.0-test", vm.Package!.AppVersionAtOpen);
     }
+
+    [Fact]
+    public async Task Documents_keep_the_seed_order_with_their_page_counts()
+    {
+        var vm = CreateViewModel();
+        await vm.OpenPackageAsync(CopyOfGolden());
+
+        // The portal exported them in priority order; reordering them here
+        // would silently defeat the planner (SPEC-2026-008 AC-2).
+        Assert.Equal(
+            ["TOM99001", "TOM99003", "TOM99005", "TOM99007", "TOM99009", "TOM99011"],
+            vm.Documents.Select(d => d.AnchorPageId).ToArray());
+        Assert.All(vm.Documents, d => Assert.Equal(2, d.Pages.Count));
+    }
+
+    [Fact]
+    public async Task Selecting_a_document_shows_its_first_page_and_its_suggestions()
+    {
+        var vm = CreateViewModel();
+        var package = CopyOfGolden();
+        await vm.OpenPackageAsync(package);
+
+        vm.SelectedDocument = vm.Documents.Single(d => d.AnchorPageId == "TOM99005");
+
+        Assert.Equal(
+            Path.GetFullPath(Path.Combine(package, "images", "TOM99005.jpg")),
+            Path.GetFullPath(vm.CurrentPageImagePath!));
+        Assert.True(File.Exists(vm.CurrentPageImagePath));
+        var suggestion = Assert.Single(vm.SelectedDocument.Suggestions);
+        Assert.Equal("card-note", suggestion.Value);
+        Assert.Contains("thinking of you", suggestion.ReasonQuote);
+    }
+
+    [Fact]
+    public async Task Page_navigation_stays_within_the_selected_document()
+    {
+        var vm = CreateViewModel();
+        await vm.OpenPackageAsync(CopyOfGolden());
+        vm.SelectedDocument = vm.Documents[0];
+        Assert.Equal("1 of 2", vm.PagePositionText);
+
+        vm.NextPageCommand.Execute(null);
+        Assert.Equal("2 of 2", vm.PagePositionText);
+        Assert.Contains("TOM99002", vm.CurrentPageImagePath);
+
+        // Past the end stays put; a viewer that wraps silently is how an
+        // operator reads page 1 believing it is page 3.
+        vm.NextPageCommand.Execute(null);
+        Assert.Equal("2 of 2", vm.PagePositionText);
+
+        vm.PreviousPageCommand.Execute(null);
+        Assert.Equal("1 of 2", vm.PagePositionText);
+
+        // Switching documents resets to that document's first page.
+        vm.SelectedDocument = vm.Documents[1];
+        Assert.Equal("1 of 2", vm.PagePositionText);
+        Assert.Contains("TOM99003", vm.CurrentPageImagePath);
+    }
 }
