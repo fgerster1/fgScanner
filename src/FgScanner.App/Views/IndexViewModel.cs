@@ -59,9 +59,16 @@ public sealed partial class IndexViewModel : ObservableObject
         _drafts = new IndexDraftStore(draftDirectory ?? IndexDraftStore.DefaultDirectory);
         Staging.Changed += () =>
         {
-            OnPropertyChanged(nameof(StagedAnswers));
-            OnPropertyChanged(nameof(DeleteEnabled));
             SaveDraft();
+            // Every control re-reads staging, whichever control caused the
+            // change: a chip's remove button or an Accept must move the combo
+            // and the boxes too, or the screen shows what is not staged.
+            if (!_refreshingPanel)
+            {
+                RefreshAnswerPanel();
+            }
+
+            OnPropertyChanged(nameof(DeleteEnabled));
         };
     }
 
@@ -261,15 +268,30 @@ public sealed partial class IndexViewModel : ObservableObject
             return;
         }
 
+        var portalFlagged = document.Decisions.Any(d =>
+            d.Field == IndexAnswerVocabulary.KeyFlag && d.Value == IndexAnswerVocabulary.KeyFlagTrue);
         if (value)
         {
-            TryStage(document.AnchorPageId, IndexAnswerVocabulary.KeyFlag, null,
-                IndexAnswerVocabulary.KeyFlagTrue);
+            if (portalFlagged)
+            {
+                // Back to the portal's own state: drop a staged withdrawal.
+                Staging.Unstage(document.AnchorPageId, IndexAnswerVocabulary.KeyFlag, null, "");
+            }
+            else
+            {
+                TryStage(document.AnchorPageId, IndexAnswerVocabulary.KeyFlag, null,
+                    IndexAnswerVocabulary.KeyFlagTrue);
+            }
+        }
+        else if (portalFlagged)
+        {
+            // Unchecking a flag the portal decided is a withdrawal, and it
+            // must reach the portal: a silent no-op here left the document
+            // flagged while the screen said it was not.
+            TryStage(document.AnchorPageId, IndexAnswerVocabulary.KeyFlag, null, "");
         }
         else
         {
-            // Unchecking un-stages this batch's answer; withdrawing a
-            // PORTAL-decided key flag is the explicit Withdraw button.
             Staging.Unstage(document.AnchorPageId, IndexAnswerVocabulary.KeyFlag, null,
                 IndexAnswerVocabulary.KeyFlagTrue);
         }
@@ -307,10 +329,18 @@ public sealed partial class IndexViewModel : ObservableObject
     [RelayCommand]
     public void Withdraw(string field)
     {
-        if (SelectedDocument is { } document)
+        if (SelectedDocument is not { } document)
         {
-            TryStage(document.AnchorPageId, field, null, "");
+            return;
         }
+
+        // A date's portal slot includes its qualifier, so its withdrawal must
+        // name the qualifier the portal's date carries.
+        var qualifier = field == IndexAnswerVocabulary.Date
+            ? document.Decisions.FirstOrDefault(d => d.Field == IndexAnswerVocabulary.Date)?.Qualifier
+                ?? SelectedDateQualifier
+            : null;
+        TryStage(document.AnchorPageId, field, qualifier, "");
     }
 
     [RelayCommand]
@@ -337,23 +367,35 @@ public sealed partial class IndexViewModel : ObservableObject
     public Func<Core.Sharing.MailPath> MailPathProvider { get; set; } =
         () => Core.Sharing.MailPath.MailApp;
 
+    public Func<string> WebmailAccountProvider { get; set; } = () => "";
+
     [ObservableProperty]
     private string? _exportMessage;
 
     private string? _lastExportPath;
 
-    private string? _exportedCoverage;
-
-    /// <summary>What an export would have to cover to count as current:
-    /// every staged answer plus who signs them.</summary>
-    private string CurrentCoverage() =>
-        System.Text.Json.JsonSerializer.Serialize(Staging.Snapshot())
-        + "|" + DeciderNameProvider().Trim();
+    /// <summary>Staging's version at the last successful export; delete
+    /// arms only while nothing has changed since.</summary>
+    private int? _exportedVersion;
 
     public bool DeleteEnabled =>
-        Package is not null
-        && _exportedCoverage is not null
-        && _exportedCoverage == CurrentCoverage();
+        Package is not null && _exportedVersion == Staging.Version;
+
+    /// <summary>Everything that belongs to the package on screen and must
+    /// not survive opening another: a stale export path would email one
+    /// package's answers under the next one's name, and a stale delete
+    /// banner would delete the next package's folder.</summary>
+    private void ResetPackageState()
+    {
+        _lastExportPath = null;
+        _exportedVersion = null;
+        ExportMessage = null;
+        PendingDeleteText = null;
+        DraftError = null;
+        DraftNotice = null;
+        AnswerError = null;
+        OnPropertyChanged(nameof(DeleteEnabled));
+    }
 
     [RelayCommand]
     public void ExportResults()
@@ -376,12 +418,30 @@ public sealed partial class IndexViewModel : ObservableObject
         {
             foreach (var staged in Staging.ForDocument(document.AnchorPageId))
             {
+                if (!DateTimeOffset.TryParseExact(staged.DecidedAt, "yyyy-MM-dd'T'HH:mm:ss'Z'",
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.AssumeUniversal, out var decidedAt))
+                {
+                    ExportMessage = $"The saved {staged.Field} answer for {document.AnchorPageId} " +
+                        "has no valid decision time. Remove it and enter it again, then export.";
+                    return;
+                }
+
+                // The portal's date slot includes the qualifier, so an answer in
+                // a new qualifier would sit BESIDE the old date: withdraw the
+                // old slot first.
+                if (staged.Field == IndexAnswerVocabulary.Date
+                    && document.Decisions.FirstOrDefault(d => d.Field == IndexAnswerVocabulary.Date)
+                        is { Qualifier: { } oldQualifier }
+                    && oldQualifier != staged.Qualifier)
+                {
+                    answers.Add(new IndexAnswer(
+                        document.AnchorPageId, staged.Field, oldQualifier, "", decider, decidedAt));
+                }
+
                 answers.Add(new IndexAnswer(
                     document.AnchorPageId, staged.Field, staged.Qualifier, staged.Value,
-                    decider,
-                    DateTimeOffset.ParseExact(staged.DecidedAt, "yyyy-MM-dd'T'HH:mm:ss'Z'",
-                        System.Globalization.CultureInfo.InvariantCulture,
-                        System.Globalization.DateTimeStyles.AssumeUniversal)));
+                    decider, decidedAt));
             }
         }
 
@@ -391,9 +451,16 @@ public sealed partial class IndexViewModel : ObservableObject
             return;
         }
 
-        var output = Path.Combine(
-            Path.GetDirectoryName(Path.GetFullPath(packageDir))!,
-            package.PackageId + "-results.json");
+        if (Path.GetDirectoryName(Path.GetFullPath(packageDir)) is not { } parent)
+        {
+            // The results go BESIDE the package, never inside it (the package
+            // is checksummed law); a package at a drive root has no beside.
+            ExportMessage = "Move the package folder into a folder of its own " +
+                "(not the top of a drive), open it again, and export.";
+            return;
+        }
+
+        var output = Path.Combine(parent, package.PackageId + "-results.json");
         try
         {
             PackageWriter.WriteResults(package, answers, output);
@@ -405,7 +472,7 @@ public sealed partial class IndexViewModel : ObservableObject
         }
 
         _lastExportPath = output;
-        _exportedCoverage = CurrentCoverage();
+        _exportedVersion = Staging.Version;
         OnPropertyChanged(nameof(DeleteEnabled));
         ExportMessage = string.Format(
             System.Globalization.CultureInfo.InvariantCulture,
@@ -425,13 +492,15 @@ public sealed partial class IndexViewModel : ObservableObject
             return;
         }
 
+        // The account matters on webmail: with several signed in, the compose
+        // page otherwise opens in whichever the browser holds first.
         var outcome = share(new Core.Sharing.ShareRequest(
-            [path], Package?.PackageId + " index answers", MailPathProvider()));
+            [path], Package?.PackageId + " index answers", MailPathProvider(),
+            WebmailAccountProvider()));
         ExportMessage = outcome.Message;
-        // Route and count only — never a recipient, never case content
-        // (SPEC-2026-007 logging rule).
-        Log.Information(
-            "Index results share: surface Index, 1 file, json, route {Route}", outcome.Route);
+        // The SPEC-2026-007 section-14 template: never a recipient, never content.
+        Log.Information("Email: {Count} page(s) from {Surface} as {Format} via {Route}",
+            1, "Index", "json", outcome.Route);
     }
 
     [ObservableProperty]
@@ -468,15 +537,29 @@ public sealed partial class IndexViewModel : ObservableObject
             return;
         }
 
-        Directory.Delete(packageDir, recursive: true);
+        PendingDeleteText = null;
+        try
+        {
+            Directory.Delete(packageDir, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Part of the folder may be gone; the draft and the exported
+            // results are kept, so nothing Jim decided is lost.
+            ExportMessage = "The package folder could not be removed completely " +
+                $"({ex.Message}). Your answers and the exported results are kept. Close " +
+                "any program showing a page from it and remove it again.";
+            Log.Warning(ex, "Index package {PackageId} delete incomplete", package.PackageId);
+            return;
+        }
+
         _drafts.Delete(package.PackageId);
         Log.Information("Index package {PackageId} removed after export", package.PackageId);
-        PendingDeleteText = null;
         Package = null;
         _packageDirectory = null;
         SelectedDocument = null;
         PackageSummary = null;
-        _exportedCoverage = null;
+        ResetPackageState();
         Staging.Restore(new Dictionary<string, IReadOnlyList<StagedAnswer>>());
         OnPropertyChanged(nameof(Documents));
         OnPropertyChanged(nameof(StagedAnswers));
@@ -565,12 +648,19 @@ public sealed partial class IndexViewModel : ObservableObject
             OnPropertyChanged(nameof(Documents));
             OnPropertyChanged(nameof(ActiveDocTypes));
             OnPropertyChanged(nameof(People));
+            ResetPackageState();
             var restored = _drafts.Load(
-                package.PackageId, package.PackageChecksum, out var draftNotice);
+                package.PackageId, package.PackageChecksum, out var loaded, out var draftNotice);
+            Staging.Validator = new PackageWriter.AnswerValidator(package);
+            Staging.BlockedReason = loaded == IndexDraftStore.LoadResult.Unreadable
+                ? "Answering is paused: the saved draft could not be read. Close any " +
+                  "program holding it and open the package again."
+                : null;
             Staging.Restore(restored
                 ?? new Dictionary<string, IReadOnlyList<StagedAnswer>>());
             DraftNotice = draftNotice;
             OnPropertyChanged(nameof(StagedAnswers));
+            OnPropertyChanged(nameof(DeleteEnabled));
             RefusalMessage = null;
             PackageSummary = string.Format(
                 System.Globalization.CultureInfo.InvariantCulture,
@@ -581,6 +671,8 @@ public sealed partial class IndexViewModel : ObservableObject
         }
         catch (PackageRefusedException ex)
         {
+            ResetPackageState();
+            Staging.Validator = null;
             Package = null;
             _packageDirectory = null;
             SelectedDocument = null;
