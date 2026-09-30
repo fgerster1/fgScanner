@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "jimsstuff-contract/manifest.schema.json",
+  "title": "Index package manifest",
+  "description": "The package's identity card. indexPackage: 1 is the marker that this is an index package and never the capture evidence contract. The sha256 map covers every other file in the package; the SHA-256 of this file's own bytes is the package checksum.",
+  "type": "object",
+  "required": [
+    "indexPackage",
+    "formatVersion",
+    "vocabularyVersion",
+    "packageId",
+    "docCount",
+    "sha256"
+  ],
+  "properties": {
+    "indexPackage": { "const": 1 },
+    "formatVersion": { "type": "integer", "minimum": 1 },
+    "vocabularyVersion": { "type": "integer", "minimum": 1 },
+    "packageId": { "type": "string", "pattern": "^PKG-[0-9]{4}[0-9]*$" },
+    "docCount": { "type": "integer", "minimum": 1 },
+    "sha256": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[^\\\\]+$" },
+      "additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+    }
+  }
+}

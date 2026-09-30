@@ -1,0 +1,29 @@
+{
+  "files": {
+    "README.md": "befcd16e7b8a83968d567c9b60cff601ab685dcfccaf185a47d455bac476fd23",
+    "golden/package/PKG-0001/doctypes.json": "abe3d1aacc77ce6f9b092a65104fd1484b5c0a4444a0f49020e3424cfbb1dc69",
+    "golden/package/PKG-0001/images/TOM99001.jpg": "3cb15ee05c0bae84301e2bfabee541aa9cf1aef1b837862ba7d5a73e6306a37a",
+    "golden/package/PKG-0001/images/TOM99002.jpg": "8b6d333a4f6e59e584f960d058596962a65347d4904b906faecdab3cae9cb56c",
+    "golden/package/PKG-0001/images/TOM99003.jpg": "b46ef4ef20535b17b63c013a8b4ecc22b6bee4af04577e92453cf74c8737934f",
+    "golden/package/PKG-0001/images/TOM99004.jpg": "804ad1b12978101b38de1f51433a82828d87a755802699c9eddfba00df99ac01",
+    "golden/package/PKG-0001/images/TOM99005.jpg": "1825a736c48102445b6b52457d01df62d29228531846778c7203a9814e604713",
+    "golden/package/PKG-0001/images/TOM99006.jpg": "229ec72418b2b7a9b4c659809f1c07375a4bb4d19e74670c982c1337da1cf637",
+    "golden/package/PKG-0001/images/TOM99007.jpg": "6c4bbf9cf76307377b46957c9cb351ad2863af58c10e6db86b272503d6537ad7",
+    "golden/package/PKG-0001/images/TOM99008.jpg": "415b9238e893ab0bb15647b9e4b0da737e8fce1ed8ccf065f0b5ddb3ecf761c9",
+    "golden/package/PKG-0001/images/TOM99009.jpg": "7aff4d34bc129942cdea48dcb32122f24a313e00d4276e1904ef64dcab9d208d",
+    "golden/package/PKG-0001/images/TOM99010.jpg": "c0ad10e8c5b8f44f07e1bef2354d8dfdc4eb5dd58ffc222c5efef36ced627c5b",
+    "golden/package/PKG-0001/images/TOM99011.jpg": "d327530dacf0ddc196e2b0b32392dd39bc69d4f50790e50b200259275a2388dd",
+    "golden/package/PKG-0001/images/TOM99012.jpg": "51d1cc9e6e180c480459d22eb6f71146e0f74a6db55bfaf8906965ab6bd83c01",
+    "golden/package/PKG-0001/manifest.json": "4c37bf615d4044e6ede0a657029d64774649d686e15879930403953b82c3d370",
+    "golden/package/PKG-0001/people.json": "5b646840700065eafef3c8de7678daa7101b9c004f41e528825f23a833db6bcc",
+    "golden/package/PKG-0001/seed.json": "2f8795357974e87734d6af81806f3660c993856a4f00b3e2d9b8a1ed29b93ec5",
+    "golden/package/PKG-0001/subjects.json": "778002c80cec17f0d205b4af569c3b027bbfd6539ac3b9151c07171c66839540",
+    "golden/results.json": "0ca79fbc8976e98f3f878be5b8bcdd2d9b4a59b3b1703718e86d002641f440b0",
+    "schemas/doctypes.schema.json": "b3bf33ba8d3fd21b2c360fea3b3c88ff1cd6dfd1a0fbee649c83d1b979975ee0",
+    "schemas/manifest.schema.json": "d4521bae5edd8ca612b86718f417fb1e6fb9cd50e15470baf453676b2b2c00da",
+    "schemas/people.schema.json": "880eea8189e5eadc0d2962edf1fed5f131c7bba395b5a45fdf26765d7f81911d",
+    "schemas/results.schema.json": "e2097197ed41f8f4a5a83775002596cbdaf69bb8cbed4d3f6200ddd9e2ced550",
+    "schemas/seed.schema.json": "24c0db4959047bdf3d6e56bca54f9c0305510919f338d30883ea08ae27337902",
+    "schemas/subjects.schema.json": "115e26ad0ecfcebe6d96b487feb5cb0a5d61059d1ab977a1cf3621c04f9776fb"
+  }
+}

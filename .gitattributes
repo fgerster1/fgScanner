@@ -22,3 +22,4 @@
 *.verified.xml text eol=lf working-tree-encoding=UTF-8
 *.verified.csv text eol=lf working-tree-encoding=UTF-8
 *.traineddata binary
+docs/contract-vendored/** -text
