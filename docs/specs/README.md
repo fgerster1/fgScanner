@@ -14,4 +14,4 @@ Read §05 (questions) and §16 (regression risk) first — that is where a spec 
 | [SPEC-2026-007](./SPEC-2026-007-email-scanned-pages.md) | Email scanned pages from the Scan and Groups pages | Feature | Approved — build 4th | 2026-09-20 |
 
 Build order was set on the Round A page (part 1, N5): 004 → 005 → 006 → 007.
-| [SPEC-2026-008](./SPEC-2026-008-index-mode.md) | FG Scanner index mode (case-index phase 4) | Feature | Approved | 2026-09-30 |
+| [SPEC-2026-008](./SPEC-2026-008-index-mode.md) | FG Scanner index mode (case-index phase 4) | Feature | Built (unmerged) | 2026-09-30 |

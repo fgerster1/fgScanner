@@ -484,12 +484,14 @@ C1 staging TDD, C2 draft store TDD, D1 export+share+delete, D2 `/code-review max
 
 ## 21 · Definition of done
 
-- [ ] AC-1..10 green, failing tests first; AC-11 walked by Franz on the real window
-- [ ] Both scanner test projects + portal suite green; `dotnet format` clean
-- [ ] `/code-review max` run, findings resolved or recorded in §22
-- [ ] §18 docs written (ADR-0014, CLAUDE.md, FEATURE-PARITY, memory)
-- [ ] No release published; `Feature.IndexMode` off in any published channel
-- [ ] Golden results bytes byte-identical to phase 2
+- [x] AC-1..10 green, failing tests first — AC-11 (Franz's real-window walkthrough,
+  `docs/index-mode-walkthrough.md`) still open
+- [x] Scanner suite 985/986 (the one red is the pre-existing `AnnotatedScanTests`
+  failure on untouched main); portal suite 3,173 green; `dotnet format` clean
+- [x] `/code-review max` run; 15 findings, all 15 fixed — record below
+- [x] §18 docs written (ADR-0014, CLAUDE.md, FEATURE-PARITY, walkthrough, memory)
+- [x] No release published; `Feature.IndexMode` defaults OFF
+- [x] Golden results bytes byte-identical to phase 2 (`ContractGoldenTests` untouched)
 
 ## 22 · Sign-off
 
@@ -497,5 +499,55 @@ C1 staging TDD, C2 draft store TDD, D1 export+share+delete, D2 `/code-review max
 |---|---|
 | **Review round answered** | ☑ 2026-09-30 — round A, https://claude.ai/artifact/6tFmTBm8TbFzruzSESdQ2b (docId SPEC-2026-008-rA) |
 | **Franz approved** | ☑ 2026-09-30 — verdict approve on round A; all recommendations taken |
-| **Built** | ☐ date: |
+| **Built** | ☑ 2026-09-30 — branch `phase-4-index-mode`, NOT merged (merge is Franz's call; AC-11 open) |
 | **Verified in production** | ☐ date: |
+
+**Code review record (2026-09-30, `/code-review max` at `0ab9d49`).** Ten finder
+angles plus a gap sweep; every surviving finding re-verified against code, finding 1
+reproduced against the Release DLL. Fifteen verified findings, all fixed test-first
+(Core `d33d500`, App `1eb46d7`):
+
+1. **UI-thread hang on the first answer.** `AtomicFileWriter`'s `await using` resumed
+   on the caller's context; a small file's flush-on-dispose posted back to the
+   blocked WPF dispatcher. Headless tests could not see it (no context). Fixed with a
+   configured dispose; pinned by a test running the write under a context that never
+   runs posts. The walkthrough would have frozen at step 8.
+2. **Startup crash on a fresh install.** The Index wiring resolved `ShellViewModel`
+   (which reads flags from the Settings table) before the migration created the
+   schema. Moved below the migration. Composition root — verified by reading
+   `OnStartup`, not by a test.
+3. **A refused draft was overwritten by the next answer.** It is now moved aside
+   under a checksum-tagged name before anything can save, and the notice says where.
+4. **Previous package's export state survived an open** (email of the wrong
+   package's file; a stale delete banner deleting the next folder). Reset on open.
+5. **Chips stopped updating** — the live list was handed to the binding. Copies now.
+6. **Controls did not follow staging** changed from a chip or an Accept. Every
+   staging change re-reads every control.
+7. **Unchecking a portal key flag did nothing; date withdrawal named no slot.**
+   Key flag stages its withdrawal; date withdrawal names the portal's qualifier; a
+   changed date qualifier withdraws the old slot at export (the portal's date slot
+   includes its qualifier).
+8. **Export crashed on a bad draft timestamp or a drive-root package.** Both refuse
+   with a sentence.
+9. **A failed delete crashed half-way.** Reported; draft and results kept.
+10. **Answers the writer would refuse were staged for days.** The writer's rules are
+    public (`PackageWriter.AnswerValidator`) and run at entry.
+11. **An unreadable draft crashed the open.** It is a notice, and answering pauses
+    so nothing overwrites it.
+12. **A locked file claimed "the data is safe in the database".** No database holds
+    index answers; both the draft and the results messages now say close-and-retry.
+13. **The results email omitted the webmail account** and logged off-template. Fixed.
+14. **Core accepted multi-value withdrawals and turned an empty `DocTypeAnswer` into
+    a withdrawal.** Both refused in Core.
+15. **Culture-bound date parse in the writer.** Invariant now.
+
+From the reviewer's below-cap list, also fixed: the regolden gate now needs
+`FG_REGOLDEN_CONFIRM=yes` and writes atomically; delete gating is a staging version
+compare (no settings read per answer); session restore checks the offered sections;
+Index has a minimum size. **Recorded, not fixed:** App.Tests carries four copies of
+the golden-copy helper and three hand-written package-state resets (cleanup, no
+behaviour); the shared `AppSettingsService.GetAsync` has the same unconfigured
+`await using` shape as finding 1 — it has blocked safely on the UI thread since the
+Search flag shipped because the SQLite context's dispose completes synchronously, and
+changing that shared service is outside this spec (surgical rule), flagged for a
+follow-up.
