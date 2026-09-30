@@ -13,6 +13,14 @@ public static class FeatureFlags
     public const string CommitHook = "Feature.CommitHook";
 
     /// <summary>
+    /// The Index section (SPEC-2026-008). Default OFF and it stays off in
+    /// every published release until the portal's phase 5 can take the
+    /// section's output — Jim's station auto-updates, so the flag, not
+    /// release discipline, is the shipping fence.
+    /// </summary>
+    public const string IndexMode = "Feature.IndexMode";
+
+    /// <summary>
     /// Turn a misfed page upright before OCR. On by default, unlike the phase-10 flags: a page fed
     /// the wrong way round reads as confident gibberish that nothing downstream can detect, so the
     /// safe state is correcting it. Off trades that for the OSD pass, roughly 0.8s per page.

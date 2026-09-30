@@ -22,6 +22,7 @@ public partial class ShellWindow : Window
         {
             ["Scan"] = new ScanView { DataContext = viewModel.ScanViewModel },
             ["Groups"] = new GroupsView { DataContext = viewModel.GroupsViewModel },
+            ["Index"] = new IndexView { DataContext = viewModel.IndexViewModel },
             ["Search"] = new SearchView { DataContext = viewModel.SearchViewModel },
             ["Trash"] = new TrashView { DataContext = viewModel.TrashViewModel },
             ["Settings"] = new SettingsView { DataContext = viewModel.SettingsViewModel },
@@ -179,7 +180,9 @@ public partial class ShellWindow : Window
     private async Task RestoreSessionAsync()
     {
         var section = await _settings.GetAsync("Session.LastSection", "Scan");
-        if (_sections.ContainsKey(section))
+        // Offered NOW, not merely known: a section whose flag was turned off
+        // since the last session has a view but no entry in the rail.
+        if (_sections.ContainsKey(section) && _viewModel.Sections.Contains(section))
         {
             _viewModel.SelectedSection = section;
         }
@@ -224,6 +227,7 @@ public partial class ShellWindow : Window
     {
         ["Scan"] = (600, 480),
         ["Groups"] = (760, 520),
+        ["Index"] = (980, 520),
         ["Search"] = (600, 400),
         ["Trash"] = (600, 400),
         ["Settings"] = (700, double.NaN),

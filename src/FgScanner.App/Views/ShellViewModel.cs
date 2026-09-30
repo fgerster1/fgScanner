@@ -22,10 +22,18 @@ public sealed partial class ShellViewModel : ObservableObject
 
         _appSettings = appSettings;
 
-        // Feature.Search flag (PLAN prompt 10): the section is hidden entirely when off. The list
-        // is rebuilt whenever the flag moves, so the setting no longer waits for a relaunch.
-        ApplySections(FeatureFlags
-            .IsEnabledAsync(appSettings, FeatureFlags.Search).GetAwaiter().GetResult());
+        // No injected dependencies yet (the reader is static); built here so the
+        // window can bind it off the shell without another DI registration.
+        IndexViewModel = new IndexViewModel();
+
+        // Feature flags (PLAN prompt 10, SPEC-2026-008): a flagged-off section is hidden
+        // entirely. The list is rebuilt whenever a flag moves, so the setting no longer
+        // waits for a relaunch.
+        ApplySections(
+            FeatureFlags.IsEnabledAsync(appSettings, FeatureFlags.Search)
+                .GetAwaiter().GetResult(),
+            FeatureFlags.IsEnabledAsync(appSettings, FeatureFlags.IndexMode)
+                .GetAwaiter().GetResult());
 
         // A capture in hand wins over a settings change; the Scan page says when it is free again.
         ScanViewModel.CaptureSettled += OnCaptureSettledAsync;
@@ -140,15 +148,27 @@ public sealed partial class ShellViewModel : ObservableObject
         if (change.HasFlag(SettingsChange.Flags))
         {
             await ScanViewModel.LoadFeatureFlagsAsync();
-            ApplySections(await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.Search));
+            ApplySections(
+                await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.Search),
+                await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.IndexMode));
         }
     }
 
-    private void ApplySections(bool searchEnabled)
+    private void ApplySections(bool searchEnabled, bool indexEnabled)
     {
-        string[] wanted = searchEnabled
-            ? ["Scan", "Groups", "Search", "Trash", "Settings"]
-            : ["Scan", "Groups", "Trash", "Settings"];
+        var wanted = new List<string> { "Scan", "Groups" };
+        if (indexEnabled)
+        {
+            wanted.Add("Index");
+        }
+
+        if (searchEnabled)
+        {
+            wanted.Add("Search");
+        }
+
+        wanted.Add("Trash");
+        wanted.Add("Settings");
         if (Sections.SequenceEqual(wanted))
         {
             return;
@@ -166,7 +186,7 @@ public sealed partial class ShellViewModel : ObservableObject
             }
         }
 
-        for (var i = 0; i < wanted.Length; i++)
+        for (var i = 0; i < wanted.Count; i++)
         {
             if (i >= Sections.Count)
             {
@@ -215,6 +235,8 @@ public sealed partial class ShellViewModel : ObservableObject
     public GroupsViewModel GroupsViewModel { get; }
 
     public SearchViewModel SearchViewModel { get; }
+
+    public IndexViewModel IndexViewModel { get; }
 
     public TrashViewModel TrashViewModel { get; }
 

@@ -16,7 +16,12 @@ public sealed class AtomicFileWriter(int maxAttempts = 5, TimeSpan? initialDelay
         var tempPath = targetPath + ".tmp";
         try
         {
-            await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            // The dispose must not resume on the caller's context either: UI-thread
+            // callers block on this method, and a small file's flush-on-dispose is
+            // the one await that really goes async — posting it back to a blocked
+            // dispatcher hangs the app.
+            var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None);
+            await using (stream.ConfigureAwait(false))
             {
                 await writeContent(stream).ConfigureAwait(false);
             }
