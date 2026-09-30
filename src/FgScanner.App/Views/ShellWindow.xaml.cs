@@ -22,6 +22,7 @@ public partial class ShellWindow : Window
         {
             ["Scan"] = new ScanView { DataContext = viewModel.ScanViewModel },
             ["Groups"] = new GroupsView { DataContext = viewModel.GroupsViewModel },
+            ["Index"] = new IndexView { DataContext = viewModel.IndexViewModel },
             ["Search"] = new SearchView { DataContext = viewModel.SearchViewModel },
             ["Trash"] = new TrashView { DataContext = viewModel.TrashViewModel },
             ["Settings"] = new SettingsView { DataContext = viewModel.SettingsViewModel },

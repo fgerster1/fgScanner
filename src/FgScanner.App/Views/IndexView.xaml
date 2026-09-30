@@ -1,0 +1,42 @@
+<UserControl x:Class="FgScanner.App.Views.IndexView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:views="clr-namespace:FgScanner.App.Views"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=views:IndexViewModel}">
+    <DockPanel>
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+            <Button DockPanel.Dock="Left" Content="Open package…" Click="OnOpenPackage"
+                    Padding="14,6" IsEnabled="{Binding CanOpen}" />
+            <TextBlock VerticalAlignment="Center" Margin="10,0,0,0" Opacity="0.8">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Text" Value="Open the package folder the portal exported (it contains manifest.json)." />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Busy}" Value="True">
+                                <Setter Property="Text" Value="Checking the package… every file is verified before anything opens." />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </DockPanel>
+
+        <!-- The reader's refusal, word for word: these messages are the
+             contract's own operator-facing words and are never rephrased. -->
+        <Border DockPanel.Dock="Top" Background="#33D83B01" CornerRadius="4" Padding="10,8"
+                Margin="0,0,0,6"
+                Visibility="{Binding RefusalMessage, Converter={x:Static views:StringToVisibilityConverter.Instance}}">
+            <TextBlock Text="{Binding RefusalMessage}" TextWrapping="Wrap" />
+        </Border>
+
+        <TextBlock DockPanel.Dock="Top" Opacity="0.8" Margin="0,0,0,6"
+                   Text="{Binding PackageSummary}"
+                   Visibility="{Binding PackageSummary, Converter={x:Static views:StringToVisibilityConverter.Instance}}" />
+
+        <!-- Document list and page viewer arrive with the next prompt. -->
+        <Grid />
+    </DockPanel>
+</UserControl>

@@ -165,6 +165,10 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _featureSearch = true;
 
+    /// <summary>Shows or hides the Index section (SPEC-2026-008); default OFF until phase 5 deploys.</summary>
+    [ObservableProperty]
+    private bool _featureIndexMode;
+
     [ObservableProperty]
     private bool _featureCommitHook;
 
@@ -187,6 +191,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             FeaturePatchT = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.PatchT);
             FeatureBlankPolicy = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.BlankPolicy);
             FeatureSearch = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.Search);
+            FeatureIndexMode = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.IndexMode);
             FeatureCommitHook = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.CommitHook);
             FeatureAutoOrient = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.AutoOrient);
             FeaturePreserveOriginals = await FeatureFlags.IsEnabledAsync(_appSettings, FeatureFlags.PreserveOriginals);
@@ -790,6 +795,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             await _appSettings.SetAsync(FeatureFlags.PatchT, FeaturePatchT ? "true" : "false");
             await _appSettings.SetAsync(FeatureFlags.BlankPolicy, FeatureBlankPolicy ? "true" : "false");
             await _appSettings.SetAsync(FeatureFlags.Search, FeatureSearch ? "true" : "false");
+            await _appSettings.SetAsync(FeatureFlags.IndexMode, FeatureIndexMode ? "true" : "false");
             await _appSettings.SetAsync(FeatureFlags.CommitHook, FeatureCommitHook ? "true" : "false");
             await _appSettings.SetAsync(FeatureFlags.AutoOrient, FeatureAutoOrient ? "true" : "false");
             await _appSettings.SetAsync(FeatureFlags.PreserveOriginals, FeaturePreserveOriginals ? "true" : "false");

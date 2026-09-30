@@ -99,6 +99,30 @@ public sealed class ShellTests : IDisposable
         Assert.Equal(["Scan", "Groups", "Trash", "Settings"], shell.Sections);
     }
 
+    /// <summary>
+    /// SPEC-2026-008 AC-10: index mode is fenced behind its flag (default
+    /// OFF — the parent spec ships it to Jim only after phase 5, and his
+    /// station auto-updates, so release discipline alone is not the fence).
+    /// </summary>
+    [Fact]
+    public async Task Index_section_appears_only_when_its_flag_is_on()
+    {
+        var (shell, settings) = CreateShellWithSettings(new AppSettingsService(new TestFactory(_dbPath)));
+        Assert.DoesNotContain("Index", shell.Sections);
+
+        settings.NewProfileName = "Cases";
+        await settings.CreateProfileCommand.ExecuteAsync(null);
+        settings.FeatureIndexMode = true;
+        await settings.SaveCommand.ExecuteAsync(null);
+
+        Assert.Equal(
+            ["Scan", "Groups", "Index", "Search", "Trash", "Settings"], shell.Sections);
+
+        settings.FeatureIndexMode = false;
+        await settings.SaveCommand.ExecuteAsync(null);
+        Assert.DoesNotContain("Index", shell.Sections);
+    }
+
     private (ShellViewModel Shell, SettingsViewModel Settings) CreateShellWithSettings(
         AppSettingsService appSettings)
     {
