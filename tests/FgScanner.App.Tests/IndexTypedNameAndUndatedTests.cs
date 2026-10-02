@@ -7,7 +7,7 @@ namespace FgScanner.App.Tests;
 /// <summary>
 /// JimsStuff SPEC-2026-007 §12, decided by Franz 2026-10-02 (ADR-0016).
 /// Jim can type a person the list does not hold — FG Scanner first matches
-/// it against every name and spelling on the list the way the portal does
+/// it against the spellings on the list the way the portal does
 /// (case and punctuation ignored), and only an unmatched name travels as
 /// typed, for the portal to hold as a proposal for Franz. And a page with
 /// no date at all can be answered "undated", so it can count as fully
@@ -55,7 +55,6 @@ public sealed class IndexTypedNameAndUndatedTests : IDisposable
 
     [Theory]
     [InlineData("judd")]                  // an alias, any case
-    [InlineData("Tomaiko, Judson O.")]    // the display name
     [InlineData("J.O. Tomaiko")]          // a merged person's alias, punctuation aside
     public async Task A_typed_name_on_the_list_becomes_that_person(string typed)
     {

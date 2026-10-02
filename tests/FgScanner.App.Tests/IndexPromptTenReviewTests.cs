@@ -106,4 +106,46 @@ public sealed class IndexPromptTenReviewTests : IDisposable
 
         Assert.Equal("P0003", StagedPerson(vm)?.Value);
     }
+
+    // --- F3: a typed name resolves only the way the portal resolves it ------
+
+    private async Task<string?> StageTyped(string package, string typed)
+    {
+        var vm = await Open(package);
+        vm.PersonText = typed;
+        vm.AddPersonCommand.Execute(null);
+        Assert.Null(vm.AnswerError);
+        return StagedPerson(vm)?.Value;
+    }
+
+    [Fact]
+    public async Task A_display_name_that_is_no_spelling_travels_as_typed()
+    {
+        // The portal's resolve_alias reads its alias table only; a display
+        // name that is not also a spelling is a question for Franz there.
+        Assert.Equal("Tomaiko, Judson O.",
+            await StageTyped(CopyOfGolden(), "Tomaiko, Judson O."));
+    }
+
+    [Fact]
+    public async Task A_spelling_two_listed_people_share_travels_as_typed()
+    {
+        var package = CopyOfGolden();
+        AddPerson(package, "P0003", "Lee, Ann", "Ann Lee");
+        AddPerson(package, "P0004", "Lee, Ann (2)", "ann  lee.");
+
+        Assert.Equal("Ann Lee", await StageTyped(package, "Ann Lee"));
+    }
+
+    [Fact]
+    public async Task A_spelling_beyond_plain_ascii_travels_as_typed()
+    {
+        // Python's \w, \s and lower() differ from .NET's outside printable
+        // ASCII (combining marks, dotted I), so no local match can promise
+        // the portal's answer there.
+        var package = CopyOfGolden();
+        AddPerson(package, "P0003", "Muller, Zoe", "Zoë Müller");
+
+        Assert.Equal("Zoë Müller", await StageTyped(package, "Zoë Müller"));
+    }
 }

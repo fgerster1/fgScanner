@@ -322,10 +322,10 @@ public sealed partial class IndexViewModel : ObservableObject
     [ObservableProperty]
     private string _personQualifierToAdd = "mentioned";
 
-    /// <summary>What is typed in the person box (it is editable). A name on
-    /// the list — display name or any spelling, case and punctuation ignored,
-    /// the portal's own rule — becomes that person; any other name travels as
-    /// typed, and the portal holds it as a proposal for Franz (ADR-0016).</summary>
+    /// <summary>What is typed in the person box (it is editable). A spelling
+    /// on the list, case and punctuation ignored, the portal's own rule —
+    /// becomes that person; any other name travels as typed, and the portal
+    /// resolves it or holds it as a proposal for Franz (ADR-0016).</summary>
     [ObservableProperty]
     private string _personText = "";
 
@@ -363,16 +363,35 @@ public sealed partial class IndexViewModel : ObservableObject
             PersonQualifierToAdd, value);
     }
 
+    /// <summary>
+    /// The person the portal would resolve this spelling to, or null to send
+    /// it as typed. The portal (JimsStuff app/persons.py resolve_alias) reads
+    /// its alias table only — never display names — keyed on a unique
+    /// normalised spelling. A definite id is exported only when the package
+    /// reproduces that answer for certain: printable ASCII on both sides
+    /// (where Python's \w, \s and lower() agree with .NET's) and exactly one
+    /// person holding the spelling. Anything else travels as typed, and the
+    /// portal decides — never an id it would resolve differently.
+    /// </summary>
     private PackagePerson? MatchPerson(string typed)
     {
+        if (!IsPrintableAscii(typed))
+        {
+            return null;
+        }
+
         var wanted = NormaliseName(typed);
-        return People.FirstOrDefault(p => NormaliseName(p.DisplayName) == wanted
-            || p.Aliases.Any(a => NormaliseName(a) == wanted));
+        var hits = People
+            .Where(p => p.Aliases.Any(a => IsPrintableAscii(a) && NormaliseName(a) == wanted))
+            .Take(2)
+            .ToArray();
+        return hits.Length == 1 ? hits[0] : null;
     }
 
+    private static bool IsPrintableAscii(string text) => text.All(c => c is >= ' ' and <= '~');
+
     /// <summary>JimsStuff app/persons.py normalise_alias: punctuation to
-    /// spaces, spaces collapsed, lower-cased. A rare mismatch only means the
-    /// name travels as typed and the portal matches it itself.</summary>
+    /// spaces, spaces collapsed, lower-cased.</summary>
     private static string NormaliseName(string text) =>
         System.Text.RegularExpressions.Regex.Replace(
             System.Text.RegularExpressions.Regex.Replace(text, @"[^\w\s]", " "),

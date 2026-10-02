@@ -17,11 +17,19 @@ Franz chose to close both in FG Scanner (2026-10-02).
 
 ## Decisions
 
-1. **A typed name first tries the list.** It is matched against every display name and
-   spelling in the package's `people.json` the way the portal normalises a spelling
-   (punctuation to spaces, spaces collapsed, lower case). A match stages that person's
-   id. Only an unmatched name travels as typed. A rare normalisation difference only
-   means the portal makes the match itself.
+1. **A typed name first tries the list — exactly as the portal would.** The portal
+   resolves a typed spelling only through its alias table (unique per normalised
+   spelling: punctuation to spaces, spaces collapsed, lower case), never through display
+   names. FG Scanner mirrors that against the aliases in the package's `people.json`, and
+   stages an id only when the package reproduces the portal's answer for certain: the
+   typed name and the spelling are printable ASCII (where Python's and .NET's character
+   classes and lower-casing agree) and exactly one listed person holds it. Anything else —
+   a display name that is no spelling, accented text, a spelling two people share in the
+   package — travels as typed and the portal decides. An id the portal would resolve
+   differently is never exported. *(Corrected 2026-10-02, SPEC-2026-007 Prompt 10 review:
+   the first version also matched display names, first hit in id order.)*
+   A pick from the dropdown is not a typed name: it stages the id picked, even where
+   namesakes share a display name.
 2. **A typed name must be plain, trimmed, at most 120 characters, and never shaped like
    an id.** The plain-text rule is the decider name's, now shared
    (`IndexAnswerVocabulary.IsPlainText`), because both must survive the contract's byte
