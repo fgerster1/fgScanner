@@ -230,26 +230,12 @@ public static class PackageWriter
                 $"answer for {answer.AnchorPageId} names no decider (decidedBy is empty)");
         }
 
-        foreach (var ch in answer.DecidedBy)
+        // A free-text field: plain text or refused (the contract's byte rule).
+        if (!IndexAnswerVocabulary.IsPlainText(answer.DecidedBy))
         {
-            // The one free-text field: .NET's encoder and Python's
-            // json.dumps agree byte-for-byte on ordinary BMP letters
-            // and punctuation but not on controls, line separators,
-            // exotic spaces (NBSP pasted from Word, the French narrow
-            // NBSP), BOMs, surrogate pairs, or private-use/unassigned
-            // code points — those would break the contract's byte
-            // rule, so a decider name is plain text or refused.
-            var category = char.GetUnicodeCategory(ch);
-            if (char.IsControl(ch) || char.IsSurrogate(ch)
-                || (char.IsWhiteSpace(ch) && ch != ' ')
-                || category is System.Globalization.UnicodeCategory.Format
-                    or System.Globalization.UnicodeCategory.PrivateUse
-                    or System.Globalization.UnicodeCategory.OtherNotAssigned)
-            {
-                throw new ArgumentException(
-                    $"decidedBy \"{answer.DecidedBy}\" contains a character that cannot " +
-                    "round-trip the contract's byte rules — use plain text");
-            }
+            throw new ArgumentException(
+                $"decidedBy \"{answer.DecidedBy}\" contains a character that cannot " +
+                "round-trip the contract's byte rules — use plain text");
         }
 
         if (answer.Value.Length == 0)
@@ -276,10 +262,22 @@ public static class PackageWriter
             case IndexAnswerVocabulary.Subject when !subjects.Contains(answer.Value):
                 throw new ArgumentException(
                     $"\"{answer.Value}\" is not a subject in this package's vocabulary");
-            case IndexAnswerVocabulary.Person when !people.Contains(answer.Value):
+            // A person is a register id, or a name Jim typed for someone the
+            // list does not hold — the portal holds that as a proposal for
+            // Franz and never makes a person of it (ADR-0016).
+            case IndexAnswerVocabulary.Person when !people.Contains(answer.Value)
+                && IndexAnswerVocabulary.TypedNameProblem(answer.Value) is { } problem:
                 throw new ArgumentException(
-                    $"\"{answer.Value}\" is not a person in this package's vocabulary");
-            case IndexAnswerVocabulary.Date when !DateOnly.TryParseExact(
+                    $"\"{answer.Value}\" is not a person in this package's vocabulary, " +
+                    $"and {problem}");
+            case IndexAnswerVocabulary.Date
+                when (answer.Qualifier == IndexAnswerVocabulary.Undated)
+                    != (answer.Value == IndexAnswerVocabulary.Undated):
+                throw new ArgumentException(
+                    "an undated answer is the qualifier \"undated\" with the value " +
+                    $"\"undated\", never a real date — got {answer.Qualifier} {answer.Value}");
+            case IndexAnswerVocabulary.Date when answer.Value != IndexAnswerVocabulary.Undated
+                && !DateOnly.TryParseExact(
                 answer.Value, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
                 System.Globalization.DateTimeStyles.None, out _):
                 throw new ArgumentException(

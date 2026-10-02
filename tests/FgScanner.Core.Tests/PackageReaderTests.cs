@@ -187,6 +187,16 @@ public sealed class PackageReaderTests : IDisposable
     }
 
     [Fact]
+    public void APackageIdEndingInALineFeedIsRefused()
+    {
+        // The id names the draft and results files; .NET's $ matched before a
+        // final line feed, so "PKG-0001\n" passed (security review P11 N3).
+        EditJson("manifest.json", m => m["packageId"] = "PKG-0001\n");
+        var ex = Assert.Throws<PackageRefusedException>(Open);
+        Assert.Contains("damaged", ex.Message);
+    }
+
+    [Fact]
     public void AMalformedManifestRefusesInsteadOfCrashing()
     {
         // manifest.json is the one file no checksum protects, so damage that

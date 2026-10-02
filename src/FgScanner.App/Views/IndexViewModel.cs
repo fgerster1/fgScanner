@@ -41,6 +41,19 @@ public sealed partial class IndexViewModel : ObservableObject
     /// seed are relative to it.</summary>
     private string? _packageDirectory;
 
+    /// <summary>Where results.json is written: beside the folder Jim opened,
+    /// or — for a downloaded zip — beside the zip, because the folder it was
+    /// extracted to is one he never sees (ADR-0015). Null when a folder sits
+    /// at a drive root, which has no "beside".</summary>
+    private string? _resultsDirectory;
+
+    /// <summary>Where a downloaded batch zip is extracted. Out of Jim's way
+    /// on purpose: he works with the zip and the answers file, never this
+    /// folder. Settable for tests.</summary>
+    public string ExtractDirectory { get; init; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "FGScanner", "index-packages");
+
     /// <summary>The seed's documents in the seed's own order — the portal
     /// exported them by priority, and reordering here would silently
     /// defeat the planner.</summary>
@@ -91,7 +104,9 @@ public sealed partial class IndexViewModel : ObservableObject
 
         try
         {
-            _drafts.Save(package.PackageId, package.PackageChecksum, Staging.Snapshot());
+            _drafts.Save(package.PackageId, package.PackageChecksum, Staging.Snapshot(),
+                _exported.ToDictionary(
+                    kv => kv.Key, kv => (IReadOnlyList<StagedAnswer>)kv.Value, StringComparer.Ordinal));
             DraftError = null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -221,7 +236,8 @@ public sealed partial class IndexViewModel : ObservableObject
             // name its target, which the contract cannot express (§03
             // non-goal) — the box springs back and says why.
             AnswerError =
-                "This subject was decided on the portal; removing it is done there (phase 5).";
+                "This subject was decided on the portal; remove it there — Case Index → " +
+                "the batch → the document → Remove.";
             SubjectChoices.Single(c => c.Subject.Id == subjectId).IsChecked = true;
         }
         else
@@ -253,8 +269,25 @@ public sealed partial class IndexViewModel : ObservableObject
     {
         if (SelectedDocument is { } document)
         {
+            // "Undated" is its own answer (ADR-0016) and needs nothing typed.
+            // A real date typed while the qualifier still says "undated" goes
+            // to staging as typed, which refuses the mix in words — throwing
+            // the date away would lose what Jim just read off the page.
+            var typed = DateText.Trim();
+            var value = SelectedDateQualifier == IndexAnswerVocabulary.Undated && typed.Length == 0
+                ? IndexAnswerVocabulary.Undated
+                : typed;
+            // Setting the answer already staged decides nothing new: staging
+            // it again would move its decidedAt.
+            if (StagedAnswers.Any(a => a.Field == IndexAnswerVocabulary.Date
+                && a.Qualifier == SelectedDateQualifier && a.Value == value))
+            {
+                AnswerError = null;
+                return;
+            }
+
             TryStage(document.AnchorPageId, IndexAnswerVocabulary.Date,
-                SelectedDateQualifier, DateText.Trim());
+                SelectedDateQualifier, value);
         }
     }
 
@@ -270,9 +303,14 @@ public sealed partial class IndexViewModel : ObservableObject
 
         var portalFlagged = document.Decisions.Any(d =>
             d.Field == IndexAnswerVocabulary.KeyFlag && d.Value == IndexAnswerVocabulary.KeyFlagTrue);
+        // An exported answer may be on the portal already: unstaging cannot take it back.
+        var exportedFlag = WasExported(document.AnchorPageId, IndexAnswerVocabulary.KeyFlag, null,
+            IndexAnswerVocabulary.KeyFlagTrue);
+        var exportedWithdrawal = WasExported(document.AnchorPageId, IndexAnswerVocabulary.KeyFlag,
+            null, "");
         if (value)
         {
-            if (portalFlagged)
+            if (portalFlagged && !exportedWithdrawal)
             {
                 // Back to the portal's own state: drop a staged withdrawal.
                 Staging.Unstage(document.AnchorPageId, IndexAnswerVocabulary.KeyFlag, null, "");
@@ -283,11 +321,12 @@ public sealed partial class IndexViewModel : ObservableObject
                     IndexAnswerVocabulary.KeyFlagTrue);
             }
         }
-        else if (portalFlagged)
+        else if (portalFlagged || exportedFlag)
         {
-            // Unchecking a flag the portal decided is a withdrawal, and it
-            // must reach the portal: a silent no-op here left the document
-            // flagged while the screen said it was not.
+            // Unchecking a flag the portal decided (or may hold from an
+            // earlier export) is a withdrawal, and it must reach the portal:
+            // a silent no-op here left the document flagged while the screen
+            // said it was not.
             TryStage(document.AnchorPageId, IndexAnswerVocabulary.KeyFlag, null, "");
         }
         else
@@ -303,25 +342,141 @@ public sealed partial class IndexViewModel : ObservableObject
     [ObservableProperty]
     private string _personQualifierToAdd = "mentioned";
 
+    /// <summary>What is typed in the person box (it is editable). A spelling
+    /// on the list, case and punctuation ignored, the portal's own rule —
+    /// becomes that person; any other name travels as typed, and the portal
+    /// resolves it or holds it as a proposal for Franz (ADR-0016).</summary>
+    [ObservableProperty]
+    private string _personText = "";
+
     [RelayCommand]
     public void AddPerson()
     {
-        if (SelectedDocument is { } document && PersonToAdd is { } person)
+        if (SelectedDocument is not { } document)
         {
-            TryStage(document.AnchorPageId, IndexAnswerVocabulary.Person,
-                PersonQualifierToAdd, person.Id);
+            return;
         }
+
+        var typed = PersonText.Trim();
+        string value;
+        if (PersonToAdd is { } picked && typed == picked.DisplayName.Trim())
+        {
+            // A pick from the list writes its display name into the text, and
+            // namesakes exist: re-resolving that text would stage whichever
+            // namesake comes first, not the one Jim picked.
+            value = picked.Id;
+        }
+        else if (typed.Length > 0)
+        {
+            value = MatchPerson(typed)?.Id ?? typed;
+        }
+        else if (PersonToAdd is { } person)
+        {
+            value = person.Id;
+        }
+        else
+        {
+            return;
+        }
+
+        TryStage(document.AnchorPageId, IndexAnswerVocabulary.Person,
+            PersonQualifierToAdd, value);
     }
+
+    /// <summary>
+    /// The person the portal would resolve this spelling to, or null to send
+    /// it as typed. The portal (JimsStuff app/persons.py resolve_alias) reads
+    /// its alias table only — never display names — keyed on a unique
+    /// normalised spelling. A definite id is exported only when the package
+    /// reproduces that answer for certain: printable ASCII on both sides
+    /// (where Python's \w, \s and lower() agree with .NET's) and exactly one
+    /// person holding the spelling. Anything else travels as typed, and the
+    /// portal decides — never an id it would resolve differently.
+    /// </summary>
+    private PackagePerson? MatchPerson(string typed)
+    {
+        if (!IsPrintableAscii(typed))
+        {
+            return null;
+        }
+
+        var wanted = NormaliseName(typed);
+        var hits = People
+            .Where(p => p.Aliases.Any(a => IsPrintableAscii(a) && NormaliseName(a) == wanted))
+            .Take(2)
+            .ToArray();
+        return hits.Length == 1 ? hits[0] : null;
+    }
+
+    private static bool IsPrintableAscii(string text) => text.All(c => c is >= ' ' and <= '~');
+
+    /// <summary>JimsStuff app/persons.py normalise_alias: punctuation to
+    /// spaces, spaces collapsed, lower-cased.</summary>
+    private static string NormaliseName(string text) =>
+        System.Text.RegularExpressions.Regex.Replace(
+            System.Text.RegularExpressions.Regex.Replace(text, @"[^\w\s]", " "),
+            @"\s+", " ").Trim().ToLowerInvariant();
 
     [RelayCommand]
     public void RemoveStagedAnswer(StagedAnswer answer)
     {
-        if (SelectedDocument is { } document)
+        if (SelectedDocument is not { } document)
         {
-            Staging.Unstage(
-                document.AnchorPageId, answer.Field, answer.Qualifier, answer.Value);
+            return;
         }
+
+        // A single-value answer that has been exported may be on the portal
+        // already, and deleting the chip cannot take it back there: its
+        // removal is staged as a withdrawal of the same slot instead.
+        if (IsSingleValue(answer.Field)
+            && WasExported(document.AnchorPageId, answer.Field, answer.Qualifier, answer.Value))
+        {
+            if (answer.Value.Length > 0)
+            {
+                TryStage(document.AnchorPageId, answer.Field, answer.Qualifier, "");
+            }
+            else
+            {
+                AnswerError = "This withdrawal is already in an exported answers file, so " +
+                    "removing it would not reach the portal — choose the answer again instead.";
+            }
+
+            return;
+        }
+
+        Staging.Unstage(
+            document.AnchorPageId, answer.Field, answer.Qualifier, answer.Value);
     }
+
+    private static bool IsSingleValue(string field) =>
+        field is IndexAnswerVocabulary.DocType or IndexAnswerVocabulary.Date
+            or IndexAnswerVocabulary.KeyFlag;
+
+    /// <summary>Every answer an export of this draft has carried, per
+    /// document: beyond the seed, what the portal may hold once a file was
+    /// uploaded. Persisted with the draft, so a restart does not forget it.</summary>
+    private Dictionary<string, List<StagedAnswer>> _exported = new(StringComparer.Ordinal);
+
+    private bool WasExported(string anchor, string field, string? qualifier, string value) =>
+        _exported.TryGetValue(anchor, out var list)
+        && list.Any(a => a.Field == field && a.Qualifier == qualifier && a.Value == value);
+
+    /// <summary>The date slots (qualifiers) the portal may hold a date in:
+    /// the seed's, and any an earlier export named. An exported withdrawal
+    /// counts too: re-sending it is harmless (same decision, deduped on the
+    /// portal) and keeps every export whole — a draft restored from a
+    /// results file knows that slot only by its withdrawal.</summary>
+    private IEnumerable<string> HeldDateQualifiers(SeedDocument document) =>
+        document.Decisions
+            .Where(d => d.Field == IndexAnswerVocabulary.Date && d.Value.Length > 0)
+            .Select(d => d.Qualifier)
+            .Concat(_exported.TryGetValue(document.AnchorPageId, out var list)
+                ? list.Where(a => a.Field == IndexAnswerVocabulary.Date)
+                    .Select(a => a.Qualifier)
+                : [])
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal);
 
     /// <summary>Withdraw the portal's earlier single-value decision —
     /// legal only for single-value fields (an empty person/subject cannot
@@ -387,6 +542,7 @@ public sealed partial class IndexViewModel : ObservableObject
     /// banner would delete the next package's folder.</summary>
     private void ResetPackageState()
     {
+        _exported = new(StringComparer.Ordinal);
         _lastExportPath = null;
         _exportedVersion = null;
         ExportMessage = null;
@@ -400,7 +556,7 @@ public sealed partial class IndexViewModel : ObservableObject
     [RelayCommand]
     public void ExportResults()
     {
-        if (Package is not { } package || _packageDirectory is not { } packageDir)
+        if (Package is not { } package || _packageDirectory is null)
         {
             return;
         }
@@ -428,15 +584,17 @@ public sealed partial class IndexViewModel : ObservableObject
                 }
 
                 // The portal's date slot includes the qualifier, so an answer in
-                // a new qualifier would sit BESIDE the old date: withdraw the
-                // old slot first.
-                if (staged.Field == IndexAnswerVocabulary.Date
-                    && document.Decisions.FirstOrDefault(d => d.Field == IndexAnswerVocabulary.Date)
-                        is { Qualifier: { } oldQualifier }
-                    && oldQualifier != staged.Qualifier)
+                // a new qualifier would sit BESIDE the old date: withdraw every
+                // other slot the portal may hold — the seed's, and any an
+                // earlier export of this draft filled — first.
+                if (staged.Field == IndexAnswerVocabulary.Date)
                 {
-                    answers.Add(new IndexAnswer(
-                        document.AnchorPageId, staged.Field, oldQualifier, "", decider, decidedAt));
+                    foreach (var oldQualifier in HeldDateQualifiers(document)
+                        .Where(q => q != staged.Qualifier))
+                    {
+                        answers.Add(new IndexAnswer(
+                            document.AnchorPageId, staged.Field, oldQualifier, "", decider, decidedAt));
+                    }
                 }
 
                 answers.Add(new IndexAnswer(
@@ -451,10 +609,9 @@ public sealed partial class IndexViewModel : ObservableObject
             return;
         }
 
-        if (Path.GetDirectoryName(Path.GetFullPath(packageDir)) is not { } parent)
+        if (_resultsDirectory is not { } parent)
         {
-            // The results go BESIDE the package, never inside it (the package
-            // is checksummed law); a package at a drive root has no beside.
+            // A package folder at a drive root has no "beside".
             ExportMessage = "Move the package folder into a folder of its own " +
                 "(not the top of a drive), open it again, and export.";
             return;
@@ -471,12 +628,28 @@ public sealed partial class IndexViewModel : ObservableObject
             return;
         }
 
+        foreach (var answer in answers)
+        {
+            var list = _exported.TryGetValue(answer.AnchorPageId, out var existing)
+                ? existing
+                : _exported[answer.AnchorPageId] = [];
+            if (!list.Any(a => a.Field == answer.Field && a.Qualifier == answer.Qualifier
+                && a.Value == answer.Value))
+            {
+                list.Add(new StagedAnswer(answer.Field, answer.Qualifier, answer.Value,
+                    answer.DecidedAt.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'",
+                        System.Globalization.CultureInfo.InvariantCulture)));
+            }
+        }
+
+        SaveDraft();
         _lastExportPath = output;
         _exportedVersion = Staging.Version;
         OnPropertyChanged(nameof(DeleteEnabled));
         ExportMessage = string.Format(
             System.Globalization.CultureInfo.InvariantCulture,
-            "Exported {0} answer(s) across {1} document(s) to {2}",
+            "Exported {0} answer(s) across {1} document(s) to {2}. Next: upload this " +
+            "file on the portal — Case Index → your batch → Upload answers.",
             answers.Count, Staging.AnsweredDocumentCount, output);
         Log.Information(
             "Index results exported: {PackageId}, {Answers} answer(s), app {AppVersion}",
@@ -557,6 +730,7 @@ public sealed partial class IndexViewModel : ObservableObject
         Log.Information("Index package {PackageId} removed after export", package.PackageId);
         Package = null;
         _packageDirectory = null;
+        _resultsDirectory = null;
         SelectedDocument = null;
         PackageSummary = null;
         ResetPackageState();
@@ -625,6 +799,97 @@ public sealed partial class IndexViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// A zip with no draft: the downloaded zip outlives "Remove package" while
+    /// the draft does not, so re-opening it would start empty and the next
+    /// export would overwrite the answers file beside it — answers that may
+    /// not have been uploaded yet. That file is read back instead, when it
+    /// belongs to exactly this build, and its answers keep the decidedAt they
+    /// were exported with (Franz, 2026-10-02).
+    /// </summary>
+    private void RestoreFromResultsFile(IndexPackage package)
+    {
+        if (_resultsDirectory is not { } parent)
+        {
+            return;
+        }
+
+        var path = Path.Combine(parent, package.PackageId + "-results.json");
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        var rows = new List<(string Anchor, StagedAnswer Answer)>();
+        try
+        {
+            using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(path));
+            var root = json.RootElement;
+            if (root.GetProperty("packageId").GetString() != package.PackageId
+                || root.GetProperty("packageChecksum").GetString() != package.PackageChecksum)
+            {
+                DraftNotice = $"The answers file {path} belongs to a different build of " +
+                    $"{package.PackageId}, so nothing was restored from it. Your next export " +
+                    "replaces it — upload it first if it holds answers the portal has not had.";
+                return;
+            }
+
+            foreach (var row in root.GetProperty("answers").EnumerateArray())
+            {
+                rows.Add((Text(row, "anchorPageId"), new StagedAnswer(
+                    Text(row, "field"),
+                    row.GetProperty("qualifier").GetString(),
+                    Text(row, "value"),
+                    Text(row, "decidedAt"))));
+            }
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or IOException
+            or UnauthorizedAccessException or InvalidOperationException
+            or KeyNotFoundException or InvalidDataException)
+        {
+            DraftNotice = $"The answers file {path} could not be read ({ex.Message}), so " +
+                "nothing was restored from it. Your next export replaces it — upload it " +
+                "first if it holds answers the portal has not had.";
+            return;
+        }
+
+        // Rebuilt the way staging holds it: one entry per single-value field
+        // (export writes a date's generated withdrawals just before the date
+        // itself, so the last row is the answer), in place, in file order.
+        var staged = new Dictionary<string, List<StagedAnswer>>(StringComparer.Ordinal);
+        foreach (var (anchor, answer) in rows)
+        {
+            var list = staged.TryGetValue(anchor, out var existing) ? existing : staged[anchor] = [];
+            var slot = IsSingleValue(answer.Field) ? list.FindIndex(a => a.Field == answer.Field) : -1;
+            if (slot >= 0)
+            {
+                list[slot] = answer;
+            }
+            else
+            {
+                list.Add(answer);
+            }
+
+            var exported = _exported.TryGetValue(anchor, out var held) ? held : _exported[anchor] = [];
+            exported.Add(answer);
+        }
+
+        Staging.Restore(staged.ToDictionary(
+            kv => kv.Key, kv => (IReadOnlyList<StagedAnswer>)kv.Value, StringComparer.Ordinal));
+        SaveDraft();
+        DraftNotice = string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            "Answers restored from {0}: {1} answer(s) across {2} document(s), as they were " +
+            "exported. The next export includes them.",
+            path, rows.Count, staged.Count);
+        Log.Information("Index answers restored from the results file for {PackageId}: {Answers}",
+            package.PackageId, rows.Count);
+    }
+
+    private static string Text(System.Text.Json.JsonElement row, string name) =>
+        row.GetProperty(name).GetString()
+            ?? throw new InvalidDataException($"an answer has no {name}");
+
     [RelayCommand]
     public async Task OpenPackageAsync(string packageDirectory)
     {
@@ -632,9 +897,29 @@ public sealed partial class IndexViewModel : ObservableObject
         try
         {
             // The reader hashes every file in the package; off the UI thread.
-            var package = await Task.Run(
-                () => PackageReader.Open(packageDirectory, AppVersion));
-            _packageDirectory = packageDirectory;
+            // A downloaded zip is extracted first, then opened by the same
+            // reader (ADR-0015).
+            IndexPackage package;
+            var fromZip = packageDirectory.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+                && File.Exists(packageDirectory);
+            if (fromZip)
+            {
+                var zipPath = Path.GetFullPath(packageDirectory);
+                var opened = await Task.Run(
+                    () => ZipPackageOpener.Open(zipPath, ExtractDirectory, AppVersion));
+                package = opened.Package;
+                _packageDirectory = opened.PackageDirectory;
+                _resultsDirectory = Path.GetDirectoryName(zipPath);
+            }
+            else
+            {
+                package = await Task.Run(
+                    () => PackageReader.Open(packageDirectory, AppVersion));
+                _packageDirectory = packageDirectory;
+                // The results go BESIDE the package, never inside it (the
+                // package is checksummed law).
+                _resultsDirectory = Path.GetDirectoryName(Path.GetFullPath(packageDirectory));
+            }
             SelectedDocument = null;
             Package = package;
             SubjectChoices = package.Subjects
@@ -650,7 +935,11 @@ public sealed partial class IndexViewModel : ObservableObject
             OnPropertyChanged(nameof(People));
             ResetPackageState();
             var restored = _drafts.Load(
-                package.PackageId, package.PackageChecksum, out var loaded, out var draftNotice);
+                package.PackageId, package.PackageChecksum, out var loaded, out var draftNotice,
+                out var exported);
+            _exported = exported?.ToDictionary(
+                kv => kv.Key, kv => kv.Value.ToList(), StringComparer.Ordinal)
+                ?? new(StringComparer.Ordinal);
             Staging.Validator = new PackageWriter.AnswerValidator(package);
             Staging.BlockedReason = loaded == IndexDraftStore.LoadResult.Unreadable
                 ? "Answering is paused: the saved draft could not be read. Close any " +
@@ -659,6 +948,10 @@ public sealed partial class IndexViewModel : ObservableObject
             Staging.Restore(restored
                 ?? new Dictionary<string, IReadOnlyList<StagedAnswer>>());
             DraftNotice = draftNotice;
+            if (fromZip && loaded == IndexDraftStore.LoadResult.None)
+            {
+                RestoreFromResultsFile(package);
+            }
             OnPropertyChanged(nameof(StagedAnswers));
             OnPropertyChanged(nameof(DeleteEnabled));
             RefusalMessage = null;
@@ -675,6 +968,7 @@ public sealed partial class IndexViewModel : ObservableObject
             Staging.Validator = null;
             Package = null;
             _packageDirectory = null;
+            _resultsDirectory = null;
             SelectedDocument = null;
             OnPropertyChanged(nameof(Documents));
             PackageSummary = null;

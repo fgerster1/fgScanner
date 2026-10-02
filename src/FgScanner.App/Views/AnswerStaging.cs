@@ -79,11 +79,12 @@ public sealed class AnswerStaging
         if (multiValue && value.Length == 0)
         {
             throw new ArgumentException(
-                $"an empty {field} cannot say WHICH one it withdraws — removal of a " +
-                "decided person or subject is the portal's job (phase 5)");
+                $"an empty {field} cannot say WHICH one it withdraws — a decided person " +
+                "or subject is removed on the portal (Case Index → the document → Remove)");
         }
 
         if (field == IndexAnswerVocabulary.Date && value.Length != 0
+            && value != IndexAnswerVocabulary.Undated
             && !DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture,
                 DateTimeStyles.None, out _))
         {

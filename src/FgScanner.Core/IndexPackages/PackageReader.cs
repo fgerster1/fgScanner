@@ -85,7 +85,7 @@ public static class PackageReader
         if (!manifest.RootElement.TryGetProperty("packageId", out var packageIdEl)
             || packageIdEl.ValueKind != JsonValueKind.String
             || GetStringOrRefuse(packageIdEl, "manifest.json") is not { } packageId
-            || !Regex.IsMatch(packageId, "^PKG-[0-9]{4}[0-9]*$")
+            || !Regex.IsMatch(packageId, @"^PKG-[0-9]{4}[0-9]*\z")
             || !manifest.RootElement.TryGetProperty("vocabularyVersion", out var vocabulary)
             || vocabulary.ValueKind != JsonValueKind.Number
             || !vocabulary.TryGetInt32(out var vocabularyVersion)

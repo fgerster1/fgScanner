@@ -245,4 +245,55 @@ public sealed class PackageWriterTests : IDisposable
             }, newPath);
         Assert.Equal(File.ReadAllBytes(oldPath), File.ReadAllBytes(newPath));
     }
+
+    // ── JimsStuff SPEC-2026-007 (Franz, 2026-10-02): "undated" and typed names ──
+
+    [Fact]
+    public void AnUndatedAnswerCarriesTheWordUndated()
+    {
+        // An empty value is the contract's withdrawal, so "no date on the
+        // page" needs a value of its own.
+        Write(Answer("date", "undated", "undated"));
+
+        var written = Assert.Single(WrittenAnswers());
+        Assert.Equal("undated", written.GetProperty("qualifier").GetString());
+        Assert.Equal("undated", written.GetProperty("value").GetString());
+    }
+
+    [Fact]
+    public void UndatedAndARealDateNeverMix()
+    {
+        Assert.Throws<ArgumentException>(() => Write(Answer("date", "undated", "2021-07-18")));
+        Assert.Throws<ArgumentException>(() => Write(Answer("date", "exact", "undated")));
+        Assert.False(File.Exists(Out()));
+    }
+
+    [Fact]
+    public void ATypedNameIsWrittenVerbatimForThePortalToPropose()
+    {
+        // Not on the people list: the portal holds it as a proposal for Franz
+        // and never makes a person of it (its importer's rule).
+        Write(Answer("person", "mentioned", "Regina Kilgore"));
+
+        Assert.Equal("Regina Kilgore",
+            Assert.Single(WrittenAnswers()).GetProperty("value").GetString());
+    }
+
+    [Theory]
+    [InlineData("P0012")]          // shaped like an id the list does not hold
+    [InlineData(" Regina")]        // untrimmed: two spellings of one name
+    [InlineData("Regina\tKilgore")] // a control character breaks the byte rule
+    [InlineData("Regina\u00a0Kilgore")] // NBSP pasted from a document
+    public void ATypedNameMustBePlainAndNeverLookLikeAnId(string name)
+    {
+        Assert.Throws<ArgumentException>(() => Write(Answer("person", "from", name)));
+        Assert.False(File.Exists(Out()));
+    }
+
+    [Fact]
+    public void ATypedNameHasALengthLimit()
+    {
+        Assert.Throws<ArgumentException>(
+            () => Write(Answer("person", "from", new string('a', 121))));
+    }
 }

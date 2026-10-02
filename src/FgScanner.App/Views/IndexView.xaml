@@ -8,8 +8,12 @@
              d:DataContext="{d:DesignInstance Type=views:IndexViewModel}">
     <DockPanel>
         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
-            <Button DockPanel.Dock="Left" Content="Open package…" Click="OnOpenPackage"
-                    Padding="14,6" IsEnabled="{Binding CanOpen}" />
+            <Button DockPanel.Dock="Left" Content="Open batch…" Click="OnOpenPackage"
+                    Padding="14,6" IsEnabled="{Binding CanOpen}"
+                    ToolTip="The batch file you downloaded from the portal (PKG-….zip)" />
+            <Button DockPanel.Dock="Left" Content="Open folder…" Click="OnOpenPackageFolder"
+                    Margin="6,0,0,0" Padding="14,6" IsEnabled="{Binding CanOpen}"
+                    ToolTip="A batch that is already unpacked into a folder" />
             <Button DockPanel.Dock="Left" Content="Export results" Margin="6,0,0,0" Padding="14,6"
                     Command="{Binding ExportResultsCommand}"
                     IsEnabled="{Binding Package, Converter={x:Static views:NotNullToBoolConverter.Instance}}" />
@@ -190,14 +194,18 @@
                                   ItemsSource="{Binding PersonQualifiers}"
                                   SelectedItem="{Binding PersonQualifierToAdd}"
                                   AutomationProperties.Name="Person role" />
+                        <!-- Text search stays off: it autocompletes a typed prefix to the
+                             first listed name, so a name meant to travel as typed (ADR-0016)
+                             would silently become someone on the list. -->
                         <ComboBox ItemsSource="{Binding People}"
                                   SelectedItem="{Binding PersonToAdd}"
+                                  Text="{Binding PersonText, UpdateSourceTrigger=PropertyChanged}"
                                   DisplayMemberPath="DisplayName"
-                                  IsEditable="True" IsTextSearchEnabled="True"
+                                  IsEditable="True" IsTextSearchEnabled="False"
                                   AutomationProperties.Name="Person" />
                     </DockPanel>
                     <TextBlock Opacity="0.7" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap"
-                               Text="Someone missing from the list? Note it for Franz below — never type a name; the person register is the single source of names." />
+                               Text="Someone missing from the list? Type the name as the page spells it and click Add. Franz decides who it is; it is never added to the list without him." />
 
                     <TextBlock Text="Subjects" FontWeight="SemiBold" Margin="0,8,0,2" />
                     <ItemsControl ItemsSource="{Binding SubjectChoices}">
