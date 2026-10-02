@@ -228,6 +228,21 @@ public sealed class ZipPackageOpenerTests : IDisposable
         AssertNothingLeft();
     }
 
+    // --- F6: a crash mid-extract leaves nothing behind for good.
+
+    [Fact]
+    public void AStagingFolderLeftByACrashIsSweptOnTheNextOpen()
+    {
+        var leftover = Path.Combine(ExtractRoot, "PKG-0002.extracting-0123456789abcdef");
+        Directory.CreateDirectory(Path.Combine(leftover, "images"));
+        File.WriteAllText(Path.Combine(leftover, "images", "half.jpg"), "half an image");
+
+        ZipPackageOpener.Open(PortalZip(), ExtractRoot, AppVersion);
+
+        Assert.Equal(["PKG-0001"],
+            Directory.GetFileSystemEntries(ExtractRoot).Select(Path.GetFileName).ToArray());
+    }
+
     // --- F5: a different build under the same id replaces the extracted folder.
 
     [Fact]

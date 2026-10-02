@@ -54,6 +54,18 @@ public static partial class ZipPackageOpener
 
     private static ZipOpenResult OpenCore(string zipPath, string extractRoot, string appVersion)
     {
+        // A crash or power cut mid-extraction leaves a staging folder that no later open
+        // would ever remove; one batch can be hundreds of megabytes. Opens never overlap
+        // (one app instance, and the section is busy while one runs), so any staging folder
+        // found now is dead.
+        if (Directory.Exists(extractRoot))
+        {
+            foreach (var leftover in Directory.EnumerateDirectories(extractRoot, "*.extracting-*"))
+            {
+                TryDelete(leftover);
+            }
+        }
+
         var (packageId, zipChecksum) = ReadPackageId(zipPath);
         var target = Path.Combine(extractRoot, packageId);
 
@@ -228,7 +240,7 @@ public static partial class ZipPackageOpener
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Best effort: a leftover staging folder is never opened (its name is not a
-            // package id), and the next extraction uses a fresh one.
+            // package id), the next extraction uses a fresh one, and the next open sweeps it.
         }
     }
 }
