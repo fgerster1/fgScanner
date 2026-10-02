@@ -133,6 +133,10 @@ public sealed class FakeScanService : IScanService
     {
         // Letter aspect at 1/4 scale keeps fixtures small but visually page-like.
         using var bitmap = new Bitmap(212, 275);
+        // A new bitmap takes the screen's DPI once the process is DPI-aware (WPF makes it so
+        // mid-suite), and the point-sized marks then grow past the page edge: "Sheet 1" and
+        // "Sheet 3" rendered identically and adoption skipped the second as a duplicate.
+        bitmap.SetResolution(96, 96);
         using var graphics = Graphics.FromImage(bitmap);
         graphics.Clear(options.BitDepth == ScanBitDepth.Color ? Color.Ivory : Color.White);
         if (marks is { } mark)
