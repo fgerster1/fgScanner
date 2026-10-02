@@ -450,13 +450,16 @@ public sealed partial class IndexViewModel : ObservableObject
         && list.Any(a => a.Field == field && a.Qualifier == qualifier && a.Value == value);
 
     /// <summary>The date slots (qualifiers) the portal may hold a date in:
-    /// the seed's, and any an earlier export filled.</summary>
+    /// the seed's, and any an earlier export named. An exported withdrawal
+    /// counts too: re-sending it is harmless (same decision, deduped on the
+    /// portal) and keeps every export whole — a draft restored from a
+    /// results file knows that slot only by its withdrawal.</summary>
     private IEnumerable<string> HeldDateQualifiers(SeedDocument document) =>
         document.Decisions
             .Where(d => d.Field == IndexAnswerVocabulary.Date && d.Value.Length > 0)
             .Select(d => d.Qualifier)
             .Concat(_exported.TryGetValue(document.AnchorPageId, out var list)
-                ? list.Where(a => a.Field == IndexAnswerVocabulary.Date && a.Value.Length > 0)
+                ? list.Where(a => a.Field == IndexAnswerVocabulary.Date)
                     .Select(a => a.Qualifier)
                 : [])
             .OfType<string>()
@@ -784,6 +787,97 @@ public sealed partial class IndexViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// A zip with no draft: the downloaded zip outlives "Remove package" while
+    /// the draft does not, so re-opening it would start empty and the next
+    /// export would overwrite the answers file beside it — answers that may
+    /// not have been uploaded yet. That file is read back instead, when it
+    /// belongs to exactly this build, and its answers keep the decidedAt they
+    /// were exported with (Franz, 2026-10-02).
+    /// </summary>
+    private void RestoreFromResultsFile(IndexPackage package)
+    {
+        if (_resultsDirectory is not { } parent)
+        {
+            return;
+        }
+
+        var path = Path.Combine(parent, package.PackageId + "-results.json");
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        var rows = new List<(string Anchor, StagedAnswer Answer)>();
+        try
+        {
+            using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(path));
+            var root = json.RootElement;
+            if (root.GetProperty("packageId").GetString() != package.PackageId
+                || root.GetProperty("packageChecksum").GetString() != package.PackageChecksum)
+            {
+                DraftNotice = $"The answers file {path} belongs to a different build of " +
+                    $"{package.PackageId}, so nothing was restored from it. Your next export " +
+                    "replaces it — upload it first if it holds answers the portal has not had.";
+                return;
+            }
+
+            foreach (var row in root.GetProperty("answers").EnumerateArray())
+            {
+                rows.Add((Text(row, "anchorPageId"), new StagedAnswer(
+                    Text(row, "field"),
+                    row.GetProperty("qualifier").GetString(),
+                    Text(row, "value"),
+                    Text(row, "decidedAt"))));
+            }
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or IOException
+            or UnauthorizedAccessException or InvalidOperationException
+            or KeyNotFoundException or InvalidDataException)
+        {
+            DraftNotice = $"The answers file {path} could not be read ({ex.Message}), so " +
+                "nothing was restored from it. Your next export replaces it — upload it " +
+                "first if it holds answers the portal has not had.";
+            return;
+        }
+
+        // Rebuilt the way staging holds it: one entry per single-value field
+        // (export writes a date's generated withdrawals just before the date
+        // itself, so the last row is the answer), in place, in file order.
+        var staged = new Dictionary<string, List<StagedAnswer>>(StringComparer.Ordinal);
+        foreach (var (anchor, answer) in rows)
+        {
+            var list = staged.TryGetValue(anchor, out var existing) ? existing : staged[anchor] = [];
+            var slot = IsSingleValue(answer.Field) ? list.FindIndex(a => a.Field == answer.Field) : -1;
+            if (slot >= 0)
+            {
+                list[slot] = answer;
+            }
+            else
+            {
+                list.Add(answer);
+            }
+
+            var exported = _exported.TryGetValue(anchor, out var held) ? held : _exported[anchor] = [];
+            exported.Add(answer);
+        }
+
+        Staging.Restore(staged.ToDictionary(
+            kv => kv.Key, kv => (IReadOnlyList<StagedAnswer>)kv.Value, StringComparer.Ordinal));
+        SaveDraft();
+        DraftNotice = string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            "Answers restored from {0}: {1} answer(s) across {2} document(s), as they were " +
+            "exported. The next export includes them.",
+            path, rows.Count, staged.Count);
+        Log.Information("Index answers restored from the results file for {PackageId}: {Answers}",
+            package.PackageId, rows.Count);
+    }
+
+    private static string Text(System.Text.Json.JsonElement row, string name) =>
+        row.GetProperty(name).GetString()
+            ?? throw new InvalidDataException($"an answer has no {name}");
+
     [RelayCommand]
     public async Task OpenPackageAsync(string packageDirectory)
     {
@@ -794,8 +888,9 @@ public sealed partial class IndexViewModel : ObservableObject
             // A downloaded zip is extracted first, then opened by the same
             // reader (ADR-0015).
             IndexPackage package;
-            if (packageDirectory.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
-                && File.Exists(packageDirectory))
+            var fromZip = packageDirectory.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+                && File.Exists(packageDirectory);
+            if (fromZip)
             {
                 var zipPath = Path.GetFullPath(packageDirectory);
                 var opened = await Task.Run(
@@ -841,6 +936,10 @@ public sealed partial class IndexViewModel : ObservableObject
             Staging.Restore(restored
                 ?? new Dictionary<string, IReadOnlyList<StagedAnswer>>());
             DraftNotice = draftNotice;
+            if (fromZip && loaded == IndexDraftStore.LoadResult.None)
+            {
+                RestoreFromResultsFile(package);
+            }
             OnPropertyChanged(nameof(StagedAnswers));
             OnPropertyChanged(nameof(DeleteEnabled));
             RefusalMessage = null;

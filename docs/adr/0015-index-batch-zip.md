@@ -54,4 +54,11 @@ nothing about what he did.
 - "Remove package from this computer" deletes the extracted folder and the draft; the
   downloaded zip stays in Downloads, as any download does. Jim's runbook says when the
   portal confirms it is safe to delete either (JimsStuff SPEC-2026-007 §05 Q7).
+- **A zip opened with no draft restores the answers file beside it** (Franz, 2026-10-02,
+  SPEC-2026-007 Prompt 10 review). Because the zip outlives the draft, re-opening it used
+  to start empty, and the next export overwrote the answers file — possibly before it was
+  uploaded. Now that file is read back when its `packageId` and `packageChecksum` match
+  this build, its answers keep their original `decidedAt`, the screen says they were
+  restored from the file, and the next export holds them again. A file for another build
+  is left alone, with a notice that the next export replaces it.
 - `Feature.IndexMode` stays default OFF (SPEC-2026-007 §05 Q13).

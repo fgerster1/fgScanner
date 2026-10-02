@@ -1,4 +1,5 @@
 using System.IO;
+using System.IO.Compression;
 using System.Text.Json.Nodes;
 using FgScanner.App.Views;
 using Xunit;
@@ -199,6 +200,86 @@ public sealed class IndexPromptTenReviewTests : IDisposable
 
         var staged = Assert.Single(vm.StagedAnswers);
         Assert.Equal(("doc_type", ""), (staged.Field, staged.Value));
+    }
+
+    // --- F8: a results file beside the zip restores into an empty draft -----
+
+    private string PortalZip()
+    {
+        var downloads = Path.Combine(_root, "Downloads");
+        Directory.CreateDirectory(downloads);
+        var path = Path.Combine(downloads, "PKG-0001.zip");
+        var source = IndexViewModelTests.GoldenDir();
+        using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
+        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        {
+            zip.CreateEntryFromFile(file, Path.GetRelativePath(source, file).Replace('\\', '/'),
+                CompressionLevel.NoCompression);
+        }
+
+        return path;
+    }
+
+    private IndexViewModel CreateZipViewModel() => new(draftDirectory: DraftDir)
+    {
+        AppVersion = "0.6.0-test",
+        DeciderNameProvider = () => "jim",
+        ExtractDirectory = Path.Combine(_root, "LocalAppData", "index-packages"),
+    };
+
+    [Fact]
+    public async Task Reopening_a_zip_after_remove_restores_the_exported_answers()
+    {
+        var zip = PortalZip();
+        var resultsPath = Path.Combine(_root, "Downloads", "PKG-0001-results.json");
+        var first = CreateZipViewModel();
+        await first.OpenPackageAsync(zip);
+        first.SelectedDocument = first.Documents.First(d => d.AnchorPageId == "TOM99005");
+        first.Staging.Clock = () => new DateTimeOffset(2026, 10, 1, 9, 0, 0, TimeSpan.Zero);
+        StageDate(first, "about", "2021-07-01");
+        first.ExportResultsCommand.Execute(null);
+        first.Staging.Clock = () => new DateTimeOffset(2026, 10, 1, 9, 5, 0, TimeSpan.Zero);
+        StageDate(first, "exact", "2021-07-18");
+        first.KeyFlagChecked = true;
+        first.ExportResultsCommand.Execute(null);
+        var exportedBytes = File.ReadAllBytes(resultsPath);
+        first.RequestDeleteCommand.Execute(null);
+        first.ConfirmDeleteCommand.Execute(null);
+        Assert.Null(first.Package);
+
+        var second = CreateZipViewModel();
+        await second.OpenPackageAsync(zip);
+        second.SelectedDocument = second.Documents.First(d => d.AnchorPageId == "TOM99005");
+
+        Assert.Equal(
+            [("date", "exact", "2021-07-18", "2026-10-01T09:05:00Z"),
+             ("key_flag", null, "true", "2026-10-01T09:05:00Z")],
+            second.StagedAnswers.Select(a => (a.Field, a.Qualifier, a.Value, a.DecidedAt)).ToArray());
+        Assert.Contains("restored", second.DraftNotice, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("PKG-0001-results.json", second.DraftNotice, StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(DraftDir, "PKG-0001.json")), "the restore is saved as the draft");
+
+        second.ExportResultsCommand.Execute(null);
+        Assert.Equal(exportedBytes, File.ReadAllBytes(resultsPath));
+    }
+
+    [Fact]
+    public async Task A_results_file_for_another_build_is_not_restored()
+    {
+        var zip = PortalZip();
+        var first = CreateZipViewModel();
+        await first.OpenPackageAsync(zip);
+        first.Staging.Stage("TOM99005", "key_flag", null, "true");
+        first.ExportResultsCommand.Execute(null);
+        var resultsPath = Path.Combine(_root, "Downloads", "PKG-0001-results.json");
+        File.WriteAllText(resultsPath, File.ReadAllText(resultsPath)
+            .Replace(first.Package!.PackageChecksum, new string('0', 64), StringComparison.Ordinal));
+        File.Delete(Path.Combine(DraftDir, "PKG-0001.json"));
+
+        var second = CreateZipViewModel();
+        await second.OpenPackageAsync(zip);
+
+        Assert.Empty(second.Staging.Snapshot());
     }
 
     // --- F3: a typed name resolves only the way the portal resolves it ------
