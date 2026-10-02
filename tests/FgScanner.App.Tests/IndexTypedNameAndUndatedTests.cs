@@ -107,14 +107,41 @@ public sealed class IndexTypedNameAndUndatedTests : IDisposable
     }
 
     [Fact]
-    public async Task Undated_ignores_a_date_left_in_the_box()
+    public async Task A_date_typed_under_undated_is_refused_in_words_never_discarded()
+    {
+        // SPEC-2026-007 Prompt 10 review F9: once a page is undated, the panel
+        // keeps the qualifier on "undated", so a date Jim types next would be
+        // silently thrown away and "undated" re-stamped.
+        var vm = await OpenGolden();
+        vm.Staging.Clock = () => new DateTimeOffset(2026, 10, 1, 9, 0, 0, TimeSpan.Zero);
+        vm.DateText = "";
+        vm.SelectedDateQualifier = "undated";
+        vm.SetDateCommand.Execute(null);
+        vm.Staging.Clock = () => new DateTimeOffset(2026, 10, 1, 9, 30, 0, TimeSpan.Zero);
+        Assert.Equal("undated", vm.SelectedDateQualifier);
+
+        vm.DateText = "2021-07-18";
+        vm.SetDateCommand.Execute(null);
+
+        Assert.False(string.IsNullOrEmpty(vm.AnswerError));
+        Assert.Equal("2021-07-18", vm.DateText);
+        var staged = vm.StagedAnswers.Single(a => a.Field == "date");
+        Assert.Equal(("undated", "undated", "2026-10-01T09:00:00Z"),
+            (staged.Qualifier, staged.Value, staged.DecidedAt));
+    }
+
+    [Fact]
+    public async Task Setting_undated_again_does_not_re_stamp_it()
     {
         var vm = await OpenGolden();
-        vm.DateText = "2021-07-18";
+        vm.Staging.Clock = () => new DateTimeOffset(2026, 10, 1, 9, 0, 0, TimeSpan.Zero);
         vm.SelectedDateQualifier = "undated";
+        vm.SetDateCommand.Execute(null);
+        vm.Staging.Clock = () => new DateTimeOffset(2026, 10, 1, 9, 30, 0, TimeSpan.Zero);
 
         vm.SetDateCommand.Execute(null);
 
-        Assert.Equal("undated", vm.StagedAnswers.Single(a => a.Field == "date").Value);
+        Assert.Equal("2026-10-01T09:00:00Z",
+            vm.StagedAnswers.Single(a => a.Field == "date").DecidedAt);
     }
 }

@@ -269,11 +269,23 @@ public sealed partial class IndexViewModel : ObservableObject
     {
         if (SelectedDocument is { } document)
         {
-            // "Undated" is its own answer (ADR-0016): whatever is left in the
-            // date box is not part of it.
-            var value = SelectedDateQualifier == IndexAnswerVocabulary.Undated
+            // "Undated" is its own answer (ADR-0016) and needs nothing typed.
+            // A real date typed while the qualifier still says "undated" goes
+            // to staging as typed, which refuses the mix in words — throwing
+            // the date away would lose what Jim just read off the page.
+            var typed = DateText.Trim();
+            var value = SelectedDateQualifier == IndexAnswerVocabulary.Undated && typed.Length == 0
                 ? IndexAnswerVocabulary.Undated
-                : DateText.Trim();
+                : typed;
+            // Setting the answer already staged decides nothing new: staging
+            // it again would move its decidedAt.
+            if (StagedAnswers.Any(a => a.Field == IndexAnswerVocabulary.Date
+                && a.Qualifier == SelectedDateQualifier && a.Value == value))
+            {
+                AnswerError = null;
+                return;
+            }
+
             TryStage(document.AnchorPageId, IndexAnswerVocabulary.Date,
                 SelectedDateQualifier, value);
         }
