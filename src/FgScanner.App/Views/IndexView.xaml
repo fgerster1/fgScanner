@@ -201,7 +201,7 @@
                                   AutomationProperties.Name="Person" />
                     </DockPanel>
                     <TextBlock Opacity="0.7" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap"
-                               Text="Someone missing from the list? Note it for Franz below — never type a name; the person register is the single source of names." />
+                               Text="Someone missing from the list? Write the name and this document's TOM- code on your 'People to add' sheet for Franz. Never type a name here: the person list is the one place names come from." />
 
                     <TextBlock Text="Subjects" FontWeight="SemiBold" Margin="0,8,0,2" />
                     <ItemsControl ItemsSource="{Binding SubjectChoices}">
