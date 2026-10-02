@@ -364,11 +364,32 @@ public sealed partial class SettingsViewModel : ObservableObject
                 return;
             }
 
-            _credentials.SetKey(key);
+            FgScanner.Ai.KeyStoreResult stored;
+            try
+            {
+                stored = _credentials.SetKey(key);
+            }
+            catch (InvalidOperationException ex)
+            {
+                Log.Error(ex, "Storing API key"); // the message never contains the key
+                StatusText = $"Google accepted the key, but it was not stored. {ex.Message}";
+                return;
+            }
+
+            if (!stored.InCredentialManager)
+            {
+                Log.Warning(
+                    "Credential Manager refused the API key (Win32 error {Error}); stored in the encrypted file instead",
+                    stored.CredentialManagerError);
+            }
+
             await _appSettings.SetAsync(AiWorker.ModelSettingKey, AiModel.Trim());
             ApiKeyInput = "";
             HasStoredKey = true;
-            StatusText = "API key validated and stored in Windows Credential Manager.";
+            StatusText = stored.InCredentialManager
+                ? "API key validated and stored in Windows Credential Manager."
+                : "API key validated and stored in an encrypted file in your Windows profile "
+                  + "(Windows Credential Manager refused it).";
         }
         catch (Exception ex)
         {

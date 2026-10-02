@@ -11,9 +11,14 @@ namespace FgScanner.Ai;
 /// this class except to authenticate calls.
 /// </summary>
 [SupportedOSPlatform("windows")]
-public sealed class CredentialStore(string? fallbackDirectory = null, bool useCredentialManager = true)
+public sealed class CredentialStore(
+    string? fallbackDirectory = null,
+    bool useCredentialManager = true,
+    string targetName = CredentialStore.DefaultTargetName)
 {
-    private const string TargetName = "FGScanner:GeminiApiKey";
+    // A test passes its own target so the real Credential Manager path runs without touching
+    // the user's key.
+    public const string DefaultTargetName = "FGScanner:GeminiApiKey";
 
     private readonly string _fallbackFile = Path.Combine(
         fallbackDirectory ?? Path.Combine(
@@ -22,7 +27,7 @@ public sealed class CredentialStore(string? fallbackDirectory = null, bool useCr
 
     public string? GetKey()
     {
-        if (useCredentialManager && TryReadCredentialManager(out var key))
+        if (useCredentialManager && TryReadCredentialManager(targetName, out var key))
         {
             return key;
         }
@@ -46,24 +51,50 @@ public sealed class CredentialStore(string? fallbackDirectory = null, bool useCr
         return null;
     }
 
-    public void SetKey(string key)
+    /// <summary>Stores the key and says where it went, so the caller never claims a store it
+    /// did not use.</summary>
+    public KeyStoreResult SetKey(string key)
     {
-        if (useCredentialManager && TryWriteCredentialManager(key))
+        var credentialManagerError = 0;
+        if (useCredentialManager)
         {
-            return;
+            if (TryWriteCredentialManager(targetName, key, out credentialManagerError))
+            {
+                // 2026-09-28: Settings said "stored" and Credential Manager held nothing.
+                if (GetKey() != key)
+                {
+                    throw new InvalidOperationException(
+                        "The key was not stored: Windows Credential Manager accepted it but does not "
+                        + "return it when asked. Try again.");
+                }
+
+                return new KeyStoreResult(InCredentialManager: true, CredentialManagerError: 0);
+            }
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(_fallbackFile)!);
         File.WriteAllBytes(
             _fallbackFile,
             ProtectedData.Protect(Encoding.UTF8.GetBytes(key), null, DataProtectionScope.CurrentUser));
+
+        // GetKey prefers Credential Manager, so an older key left there would still be the one
+        // in use. Never report a store the next read does not return.
+        if (GetKey() != key)
+        {
+            throw new InvalidOperationException(
+                "The key was not stored: Windows Credential Manager refused it (error "
+                + credentialManagerError.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + ") and an older key there would still be used. Clear the stored key, then try again.");
+        }
+
+        return new KeyStoreResult(InCredentialManager: false, credentialManagerError);
     }
 
     public void ClearKey()
     {
         if (useCredentialManager)
         {
-            _ = CredDelete(TargetName, CredTypeGeneric, 0);
+            _ = CredDelete(targetName, CredTypeGeneric, 0);
         }
 
         try
@@ -114,10 +145,10 @@ public sealed class CredentialStore(string? fallbackDirectory = null, bool useCr
     [DllImport("advapi32", EntryPoint = "CredFree")]
     private static extern void CredFree(IntPtr buffer);
 
-    private static bool TryReadCredentialManager(out string? key)
+    private static bool TryReadCredentialManager(string targetName, out string? key)
     {
         key = null;
-        if (!OperatingSystem.IsWindows() || !CredRead(TargetName, CredTypeGeneric, 0, out var handle))
+        if (!OperatingSystem.IsWindows() || !CredRead(targetName, CredTypeGeneric, 0, out var handle))
         {
             return false;
         }
@@ -141,8 +172,9 @@ public sealed class CredentialStore(string? fallbackDirectory = null, bool useCr
         }
     }
 
-    private static bool TryWriteCredentialManager(string key)
+    private static bool TryWriteCredentialManager(string targetName, string key, out int error)
     {
+        error = 0;
         if (!OperatingSystem.IsWindows())
         {
             return false;
@@ -150,7 +182,7 @@ public sealed class CredentialStore(string? fallbackDirectory = null, bool useCr
 
         var blob = Encoding.UTF8.GetBytes(key);
         var blobPtr = Marshal.AllocHGlobal(blob.Length);
-        var targetPtr = Marshal.StringToHGlobalUni(TargetName);
+        var targetPtr = Marshal.StringToHGlobalUni(targetName);
         var userPtr = Marshal.StringToHGlobalUni("api-key");
         try
         {
@@ -164,7 +196,13 @@ public sealed class CredentialStore(string? fallbackDirectory = null, bool useCr
                 Persist = CredPersistLocalMachine,
                 UserName = userPtr,
             };
-            return CredWrite(ref credential, 0);
+            if (CredWrite(ref credential, 0))
+            {
+                return true;
+            }
+
+            error = Marshal.GetLastPInvokeError();
+            return false;
         }
         finally
         {
@@ -174,3 +212,7 @@ public sealed class CredentialStore(string? fallbackDirectory = null, bool useCr
         }
     }
 }
+
+/// <summary>Where <see cref="CredentialStore.SetKey"/> put the key; the error is Credential
+/// Manager's Win32 code when it refused the key and the encrypted file was used instead.</summary>
+public sealed record KeyStoreResult(bool InCredentialManager, int CredentialManagerError);
