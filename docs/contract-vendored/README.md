@@ -31,7 +31,10 @@ PKG-0001/
 ```
 
 FG Scanner opens the folder, Jim answers, and FG Scanner writes **`results.json`**
-(a small file, committed back to the portal by upload in phase 5, by hand until then).
+(a small file Jim uploads on the portal's Case Index page, SPEC-2026-007). The portal
+serves the folder as ONE stored zip with these entries at its root; FG Scanner
+extracts it and opens the folder as above (its ADR-0015). The zip is transport only:
+every rule here applies to the extracted folder, unchanged.
 
 `manifest.json` is deliberately **not** part of the capture evidence contract: its
 marker key is `indexPackage: 1`, never `evidenceExport`, and no file or folder is
