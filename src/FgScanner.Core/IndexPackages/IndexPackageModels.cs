@@ -131,9 +131,9 @@ public static class IndexAnswerVocabulary
     /// <summary>
     /// Why a typed person name cannot travel, or null when it can. It must
     /// be trimmed (two spellings of one name are two proposals), plain text,
-    /// within the length limit, and never shaped like a register id — the
-    /// portal reads "P0042" as an id and refuses the whole file when the
-    /// register has none.
+    /// within the length limit, hold at least one letter or digit, and never
+    /// be shaped like a register id — the portal reads "P0042" as an id and
+    /// refuses the whole file when the register has none.
     /// </summary>
     public static string? TypedNameProblem(string name)
     {
@@ -145,6 +145,13 @@ public static class IndexAnswerVocabulary
         if (name.Length > TypedNameMaxLength)
         {
             return $"a typed name is at most {TypedNameMaxLength} characters";
+        }
+
+        // Punctuation alone normalises to nothing on the portal, so it could
+        // never be held as a proposal there.
+        if (!name.Any(char.IsLetterOrDigit))
+        {
+            return $"\"{name}\" has no letter or digit — type the name as the page spells it";
         }
 
         if (System.Text.RegularExpressions.Regex.IsMatch(name, "^P[0-9]+$"))

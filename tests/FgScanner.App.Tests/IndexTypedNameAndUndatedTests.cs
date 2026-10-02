@@ -92,6 +92,23 @@ public sealed class IndexTypedNameAndUndatedTests : IDisposable
         Assert.False(string.IsNullOrEmpty(vm.AnswerError));
     }
 
+    [Theory]
+    [InlineData("?")]
+    [InlineData("—")]
+    [InlineData("- . -")]
+    public async Task A_typed_name_with_no_letter_or_digit_is_refused_in_words(string typed)
+    {
+        // SPEC-2026-007 Prompt 10 review F10: the portal can never accept it
+        // as a proposal, so it must not leave the station.
+        var vm = await OpenGolden();
+        vm.PersonText = typed;
+
+        vm.AddPersonCommand.Execute(null);
+
+        Assert.Null(StagedPerson(vm));
+        Assert.Contains("letter or digit", vm.AnswerError, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Undated_is_offered_and_needs_no_date_typed()
     {

@@ -30,11 +30,14 @@ Franz chose to close both in FG Scanner (2026-10-02).
    the first version also matched display names, first hit in id order.)*
    A pick from the dropdown is not a typed name: it stages the id picked, even where
    namesakes share a display name.
-2. **A typed name must be plain, trimmed, at most 120 characters, and never shaped like
-   an id.** The plain-text rule is the decider name's, now shared
-   (`IndexAnswerVocabulary.IsPlainText`), because both must survive the contract's byte
-   rule. `P0042` is refused because the portal reads it as an id and would refuse the
-   whole file when its register has no such person.
+2. **A typed name must be plain, trimmed, at most 120 characters, hold at least one
+   letter or digit, and never be shaped like an id.** The plain-text rule is the decider
+   name's, now shared (`IndexAnswerVocabulary.IsPlainText`), because both must survive the
+   contract's byte rule. `P0042` is refused because the portal reads it as an id and would
+   refuse the whole file when its register has no such person. A name of punctuation
+   alone (`?`, `—`) normalises to nothing on the portal and could never be held as a
+   proposal, so it is refused when it is staged. *(Letter-or-digit rule added 2026-10-02,
+   SPEC-2026-007 Prompt 10 review, matching the rule the portal's importer applies.)*
 3. **"Undated" is the qualifier `undated` with the value `undated`.** It cannot be an
    empty value, because the contract reads an empty value as a withdrawal. The writer
    refuses `undated` mixed with a real date either way. Switching between a dated and an
