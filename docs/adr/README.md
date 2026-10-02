@@ -18,3 +18,5 @@ Write the ADR in the same commit as the code that implements the decision.
 | [0011](0011-duplex-ordering.md) | A two-pass stack is ordered before adoption, and keeps every back |
 | [0012](0012-email-route-and-evidence-policy.md) | Email opens a message in the operator's own client and never sends; a committed evidence group warns once |
 | [0013](0013-vendored-index-package-contract.md) | The index-package contract is vendored from JimsStuff, never owned or edited here |
+| [0014](0014-index-mode-drafts-and-results.md) | Index mode: drafts outside the package, staged answers, delete gating |
+| [0015](0015-index-batch-zip.md) | An index batch arrives as one zip, extracted out of Jim's way; answers land beside the zip |

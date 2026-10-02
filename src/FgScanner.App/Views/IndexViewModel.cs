@@ -41,6 +41,19 @@ public sealed partial class IndexViewModel : ObservableObject
     /// seed are relative to it.</summary>
     private string? _packageDirectory;
 
+    /// <summary>Where results.json is written: beside the folder Jim opened,
+    /// or — for a downloaded zip — beside the zip, because the folder it was
+    /// extracted to is one he never sees (ADR-0015). Null when a folder sits
+    /// at a drive root, which has no "beside".</summary>
+    private string? _resultsDirectory;
+
+    /// <summary>Where a downloaded batch zip is extracted. Out of Jim's way
+    /// on purpose: he works with the zip and the answers file, never this
+    /// folder. Settable for tests.</summary>
+    public string ExtractDirectory { get; init; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "FGScanner", "index-packages");
+
     /// <summary>The seed's documents in the seed's own order — the portal
     /// exported them by priority, and reordering here would silently
     /// defeat the planner.</summary>
@@ -221,7 +234,8 @@ public sealed partial class IndexViewModel : ObservableObject
             // name its target, which the contract cannot express (§03
             // non-goal) — the box springs back and says why.
             AnswerError =
-                "This subject was decided on the portal; removing it is done there (phase 5).";
+                "This subject was decided on the portal; remove it there — Case Index → " +
+                "the batch → the document → Remove.";
             SubjectChoices.Single(c => c.Subject.Id == subjectId).IsChecked = true;
         }
         else
@@ -400,7 +414,7 @@ public sealed partial class IndexViewModel : ObservableObject
     [RelayCommand]
     public void ExportResults()
     {
-        if (Package is not { } package || _packageDirectory is not { } packageDir)
+        if (Package is not { } package || _packageDirectory is null)
         {
             return;
         }
@@ -451,10 +465,9 @@ public sealed partial class IndexViewModel : ObservableObject
             return;
         }
 
-        if (Path.GetDirectoryName(Path.GetFullPath(packageDir)) is not { } parent)
+        if (_resultsDirectory is not { } parent)
         {
-            // The results go BESIDE the package, never inside it (the package
-            // is checksummed law); a package at a drive root has no beside.
+            // A package folder at a drive root has no "beside".
             ExportMessage = "Move the package folder into a folder of its own " +
                 "(not the top of a drive), open it again, and export.";
             return;
@@ -476,7 +489,8 @@ public sealed partial class IndexViewModel : ObservableObject
         OnPropertyChanged(nameof(DeleteEnabled));
         ExportMessage = string.Format(
             System.Globalization.CultureInfo.InvariantCulture,
-            "Exported {0} answer(s) across {1} document(s) to {2}",
+            "Exported {0} answer(s) across {1} document(s) to {2}. Next: upload this " +
+            "file on the portal — Case Index → your batch → Upload answers.",
             answers.Count, Staging.AnsweredDocumentCount, output);
         Log.Information(
             "Index results exported: {PackageId}, {Answers} answer(s), app {AppVersion}",
@@ -557,6 +571,7 @@ public sealed partial class IndexViewModel : ObservableObject
         Log.Information("Index package {PackageId} removed after export", package.PackageId);
         Package = null;
         _packageDirectory = null;
+        _resultsDirectory = null;
         SelectedDocument = null;
         PackageSummary = null;
         ResetPackageState();
@@ -632,9 +647,28 @@ public sealed partial class IndexViewModel : ObservableObject
         try
         {
             // The reader hashes every file in the package; off the UI thread.
-            var package = await Task.Run(
-                () => PackageReader.Open(packageDirectory, AppVersion));
-            _packageDirectory = packageDirectory;
+            // A downloaded zip is extracted first, then opened by the same
+            // reader (ADR-0015).
+            IndexPackage package;
+            if (packageDirectory.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+                && File.Exists(packageDirectory))
+            {
+                var zipPath = Path.GetFullPath(packageDirectory);
+                var opened = await Task.Run(
+                    () => ZipPackageOpener.Open(zipPath, ExtractDirectory, AppVersion));
+                package = opened.Package;
+                _packageDirectory = opened.PackageDirectory;
+                _resultsDirectory = Path.GetDirectoryName(zipPath);
+            }
+            else
+            {
+                package = await Task.Run(
+                    () => PackageReader.Open(packageDirectory, AppVersion));
+                _packageDirectory = packageDirectory;
+                // The results go BESIDE the package, never inside it (the
+                // package is checksummed law).
+                _resultsDirectory = Path.GetDirectoryName(Path.GetFullPath(packageDirectory));
+            }
             SelectedDocument = null;
             Package = package;
             SubjectChoices = package.Subjects
@@ -675,6 +709,7 @@ public sealed partial class IndexViewModel : ObservableObject
             Staging.Validator = null;
             Package = null;
             _packageDirectory = null;
+            _resultsDirectory = null;
             SelectedDocument = null;
             OnPropertyChanged(nameof(Documents));
             PackageSummary = null;

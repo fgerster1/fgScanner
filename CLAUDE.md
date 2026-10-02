@@ -174,6 +174,11 @@ the JimsStuff portal (`JimsStuff/pipeline/import_fgscanner.py`) parses committed
   in every published release until the portal's phase 5 can import the results
   (Jim's station auto-updates — the flag, not release discipline, is the fence).
   ADR-0014.
+  **A batch arrives as one zip (ADR-0015):** "Open batch…" extracts it to
+  `%LOCALAPPDATA%\FGScanner\index-packages\<id>` and opens that folder through the
+  UNCHANGED `PackageReader` (`ZipPackageOpener` refuses zip-slip and leaves nothing
+  behind); the answers file goes BESIDE THE ZIP (Jim never sees the extracted folder),
+  never beside the extracted folder.
 - FG Scanner deliberately has **no Bates support** and none should be added to the capture
   path — identifiers live in the portal's register and display layer; stamped pixels can never
   be reorganized, and re-stamping is evidence alteration.
