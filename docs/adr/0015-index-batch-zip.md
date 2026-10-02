@@ -31,8 +31,12 @@ nothing about what he did.
    then refuses is deleted, so the next open never tries it first.
 
 4. **Opening the same zip again reuses the folder** — after a restart, say — because the
-   reader re-verifies every checksum on each open, so reuse skips no check. A reused
-   folder the reader refuses (damaged on disk since) is replaced from the zip.
+   reader re-verifies every checksum on each open, so reuse skips no check. Reuse needs
+   the SAME build: the folder's package checksum must equal the zip manifest's, because a
+   rebuilt batch under the same id verifies against its own manifest too and would open
+   stale pages under the old draft. A reused folder the reader refuses (damaged on disk
+   since) or an older build is replaced from the zip. *(Build check added 2026-10-02,
+   SPEC-2026-007 Prompt 10 review.)*
 
 5. **The answers file is written beside the zip, not beside the extracted folder.** The
    phase-4 rule was "results beside the package, never inside it"; for a zip, beside the

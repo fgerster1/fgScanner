@@ -228,6 +228,33 @@ public sealed class ZipPackageOpenerTests : IDisposable
         AssertNothingLeft();
     }
 
+    // --- F5: a different build under the same id replaces the extracted folder.
+
+    [Fact]
+    public void ARebuiltBatchWithTheSameIdIsReExtractedNotServedStale()
+    {
+        ZipPackageOpener.Open(PortalZip(), ExtractRoot, AppVersion);
+        var rebuiltZip = PortalZip(name: "PKG-0001 (1).zip");
+        var golden = PackageReaderTests.GoldenPackageDir();
+        var seed = File.ReadAllText(Path.Combine(golden, "seed.json"))
+            .Replace("Letter about the tractor", "Letter about the tractor, rebuilt", StringComparison.Ordinal);
+        var manifest = File.ReadAllText(Path.Combine(golden, "manifest.json")).Replace(
+            "2f8795357974e87734d6af81806f3660c993856a4f00b3e2d9b8a1ed29b93ec5",
+            Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(seed))),
+            StringComparison.Ordinal);
+        ReplaceEntry(rebuiltZip, "seed.json", seed);
+        ReplaceEntry(rebuiltZip, "manifest.json", manifest);
+
+        var opened = ZipPackageOpener.Open(rebuiltZip, ExtractRoot, AppVersion);
+
+        Assert.Equal(
+            Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(manifest))),
+            opened.Package.PackageChecksum);
+        Assert.Equal("Letter about the tractor, rebuilt", opened.Package.Documents[0].Title);
+    }
+
     [Fact]
     public void AnExtractedFolderThatCannotBeReplacedIsARefusalNotACrash()
     {

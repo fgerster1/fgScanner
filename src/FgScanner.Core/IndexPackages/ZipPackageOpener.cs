@@ -54,22 +54,30 @@ public static partial class ZipPackageOpener
 
     private static ZipOpenResult OpenCore(string zipPath, string extractRoot, string appVersion)
     {
-        var packageId = ReadPackageId(zipPath);
+        var (packageId, zipChecksum) = ReadPackageId(zipPath);
         var target = Path.Combine(extractRoot, packageId);
 
         // Opening the same batch again (after a restart, say) reuses the folder — the reader
-        // re-verifies every checksum on each open, so reuse never skips a check. A folder the
-        // reader refuses (damaged on disk since) is replaced from the zip.
+        // re-verifies every checksum on each open, so reuse never skips a check. It must be
+        // the SAME build, though: a folder that verifies against its own manifest may still
+        // be an earlier build of this id, so its package checksum must match the zip's. A
+        // folder the reader refuses (damaged on disk since) or an older build is replaced.
         if (Directory.Exists(target))
         {
             try
             {
-                return new ZipOpenResult(PackageReader.Open(target, appVersion), target);
+                var reused = PackageReader.Open(target, appVersion);
+                if (reused.PackageChecksum == zipChecksum)
+                {
+                    return new ZipOpenResult(reused, target);
+                }
             }
             catch (PackageRefusedException)
             {
-                Directory.Delete(target, recursive: true);
+                // Replaced below.
             }
+
+            Directory.Delete(target, recursive: true);
         }
 
         Directory.CreateDirectory(extractRoot);
@@ -98,7 +106,9 @@ public static partial class ZipPackageOpener
         }
     }
 
-    private static string ReadPackageId(string zipPath)
+    /// <summary>The id, and the package checksum the reader would compute (the SHA-256 of
+    /// the manifest's bytes).</summary>
+    private static (string PackageId, string PackageChecksum) ReadPackageId(string zipPath)
     {
         var name = Path.GetFileName(zipPath);
         try
@@ -107,14 +117,21 @@ public static partial class ZipPackageOpener
             var manifest = zip.GetEntry("manifest.json")
                 ?? throw new PackageRefusedException(
                     $"no manifest.json in \"{name}\" — this is not an index package.");
-            using var stream = manifest.Open();
-            using var json = JsonDocument.Parse(stream);
+            using var buffer = new MemoryStream();
+            using (var stream = manifest.Open())
+            {
+                stream.CopyTo(buffer);
+            }
+
+            var bytes = buffer.ToArray();
+            using var json = JsonDocument.Parse(bytes);
             if (json.RootElement.ValueKind == JsonValueKind.Object
                 && json.RootElement.TryGetProperty("packageId", out var id)
                 && id.ValueKind == JsonValueKind.String
                 && PackageIdPattern().IsMatch(id.GetString()!))
             {
-                return id.GetString()!;
+                return (id.GetString()!,
+                    Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes)));
             }
 
             throw new PackageRefusedException(
