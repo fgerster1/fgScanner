@@ -130,13 +130,59 @@ public sealed class CredentialStoreTests : IDisposable
         var store = new CredentialStore(_dir, targetName: target);
         try
         {
-            store.SetKey("AIzaSy-test-key-456");
+            var stored = store.SetKey("AIzaSy-test-key-456");
 
+            Assert.True(stored.InCredentialManager);
             Assert.False(File.Exists(Path.Combine(_dir, "ai.key.bin")), "the key went to the fallback file");
             Assert.Equal("AIzaSy-test-key-456", new CredentialStore(_dir, targetName: target).GetKey());
 
             store.ClearKey();
             Assert.False(new CredentialStore(_dir, targetName: target).HasKey);
+        }
+        finally
+        {
+            store.ClearKey();
+        }
+    }
+
+    // Credential Manager refuses a secret over 2,560 bytes (CRED_MAX_CREDENTIAL_BLOB_SIZE).
+    private static readonly string KeyCredentialManagerRefuses = new('k', 3000);
+
+    [Fact]
+    public void A_key_credential_manager_refuses_says_it_went_to_the_encrypted_file()
+    {
+        var target = $"FGScanner:test-{Guid.NewGuid():N}";
+        var store = new CredentialStore(_dir, targetName: target);
+        try
+        {
+            var stored = store.SetKey(KeyCredentialManagerRefuses);
+
+            Assert.False(stored.InCredentialManager);
+            Assert.NotEqual(0, stored.CredentialManagerError);
+            Assert.Equal(KeyCredentialManagerRefuses, store.GetKey());
+        }
+        finally
+        {
+            store.ClearKey();
+        }
+    }
+
+    /// <summary>
+    /// The read prefers Credential Manager, so a refused write over an older key there left the
+    /// OLD key in use while Settings said the new one was stored.
+    /// </summary>
+    [Fact]
+    public void A_key_that_cannot_be_read_back_is_never_reported_stored()
+    {
+        var target = $"FGScanner:test-{Guid.NewGuid():N}";
+        var store = new CredentialStore(_dir, targetName: target);
+        try
+        {
+            store.SetKey("AIzaSy-old-key");
+
+            var ex = Assert.Throws<InvalidOperationException>(() => store.SetKey(KeyCredentialManagerRefuses));
+
+            Assert.Contains("not stored", ex.Message, StringComparison.OrdinalIgnoreCase);
         }
         finally
         {

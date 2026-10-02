@@ -51,17 +51,43 @@ public sealed class CredentialStore(
         return null;
     }
 
-    public void SetKey(string key)
+    /// <summary>Stores the key and says where it went, so the caller never claims a store it
+    /// did not use.</summary>
+    public KeyStoreResult SetKey(string key)
     {
-        if (useCredentialManager && TryWriteCredentialManager(targetName, key))
+        var credentialManagerError = 0;
+        if (useCredentialManager)
         {
-            return;
+            if (TryWriteCredentialManager(targetName, key, out credentialManagerError))
+            {
+                // 2026-09-28: Settings said "stored" and Credential Manager held nothing.
+                if (GetKey() != key)
+                {
+                    throw new InvalidOperationException(
+                        "The key was not stored: Windows Credential Manager accepted it but does not "
+                        + "return it when asked. Try again.");
+                }
+
+                return new KeyStoreResult(InCredentialManager: true, CredentialManagerError: 0);
+            }
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(_fallbackFile)!);
         File.WriteAllBytes(
             _fallbackFile,
             ProtectedData.Protect(Encoding.UTF8.GetBytes(key), null, DataProtectionScope.CurrentUser));
+
+        // GetKey prefers Credential Manager, so an older key left there would still be the one
+        // in use. Never report a store the next read does not return.
+        if (GetKey() != key)
+        {
+            throw new InvalidOperationException(
+                "The key was not stored: Windows Credential Manager refused it (error "
+                + credentialManagerError.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + ") and an older key there would still be used. Clear the stored key, then try again.");
+        }
+
+        return new KeyStoreResult(InCredentialManager: false, credentialManagerError);
     }
 
     public void ClearKey()
@@ -146,8 +172,9 @@ public sealed class CredentialStore(
         }
     }
 
-    private static bool TryWriteCredentialManager(string targetName, string key)
+    private static bool TryWriteCredentialManager(string targetName, string key, out int error)
     {
+        error = 0;
         if (!OperatingSystem.IsWindows())
         {
             return false;
@@ -169,7 +196,13 @@ public sealed class CredentialStore(
                 Persist = CredPersistLocalMachine,
                 UserName = userPtr,
             };
-            return CredWrite(ref credential, 0);
+            if (CredWrite(ref credential, 0))
+            {
+                return true;
+            }
+
+            error = Marshal.GetLastPInvokeError();
+            return false;
         }
         finally
         {
@@ -179,3 +212,7 @@ public sealed class CredentialStore(
         }
     }
 }
+
+/// <summary>Where <see cref="CredentialStore.SetKey"/> put the key; the error is Credential
+/// Manager's Win32 code when it refused the key and the encrypted file was used instead.</summary>
+public sealed record KeyStoreResult(bool InCredentialManager, int CredentialManagerError);
