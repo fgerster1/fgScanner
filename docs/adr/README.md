@@ -20,3 +20,4 @@ Write the ADR in the same commit as the code that implements the decision.
 | [0013](0013-vendored-index-package-contract.md) | The index-package contract is vendored from JimsStuff, never owned or edited here |
 | [0014](0014-index-mode-drafts-and-results.md) | Index mode: drafts outside the package, staged answers, delete gating |
 | [0015](0015-index-batch-zip.md) | An index batch arrives as one zip, extracted out of Jim's way; answers land beside the zip |
+| [0016](0016-typed-names-and-undated.md) | Jim may type a missing person (a proposal, never a person); a page may be answered "undated" |

@@ -196,12 +196,13 @@
                                   AutomationProperties.Name="Person role" />
                         <ComboBox ItemsSource="{Binding People}"
                                   SelectedItem="{Binding PersonToAdd}"
+                                  Text="{Binding PersonText, UpdateSourceTrigger=PropertyChanged}"
                                   DisplayMemberPath="DisplayName"
                                   IsEditable="True" IsTextSearchEnabled="True"
                                   AutomationProperties.Name="Person" />
                     </DockPanel>
                     <TextBlock Opacity="0.7" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap"
-                               Text="Someone missing from the list? Write the name and this document's TOM- code on your 'People to add' sheet for Franz. Never type a name here: the person list is the one place names come from." />
+                               Text="Someone missing from the list? Type the name as the page spells it and click Add. Franz decides who it is; it is never added to the list without him." />
 
                     <TextBlock Text="Subjects" FontWeight="SemiBold" Margin="0,8,0,2" />
                     <ItemsControl ItemsSource="{Binding SubjectChoices}">

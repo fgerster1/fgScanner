@@ -267,8 +267,13 @@ public sealed partial class IndexViewModel : ObservableObject
     {
         if (SelectedDocument is { } document)
         {
+            // "Undated" is its own answer (ADR-0016): whatever is left in the
+            // date box is not part of it.
+            var value = SelectedDateQualifier == IndexAnswerVocabulary.Undated
+                ? IndexAnswerVocabulary.Undated
+                : DateText.Trim();
             TryStage(document.AnchorPageId, IndexAnswerVocabulary.Date,
-                SelectedDateQualifier, DateText.Trim());
+                SelectedDateQualifier, value);
         }
     }
 
@@ -317,15 +322,54 @@ public sealed partial class IndexViewModel : ObservableObject
     [ObservableProperty]
     private string _personQualifierToAdd = "mentioned";
 
+    /// <summary>What is typed in the person box (it is editable). A name on
+    /// the list — display name or any spelling, case and punctuation ignored,
+    /// the portal's own rule — becomes that person; any other name travels as
+    /// typed, and the portal holds it as a proposal for Franz (ADR-0016).</summary>
+    [ObservableProperty]
+    private string _personText = "";
+
     [RelayCommand]
     public void AddPerson()
     {
-        if (SelectedDocument is { } document && PersonToAdd is { } person)
+        if (SelectedDocument is not { } document)
         {
-            TryStage(document.AnchorPageId, IndexAnswerVocabulary.Person,
-                PersonQualifierToAdd, person.Id);
+            return;
         }
+
+        var typed = PersonText.Trim();
+        string value;
+        if (typed.Length > 0)
+        {
+            value = MatchPerson(typed)?.Id ?? typed;
+        }
+        else if (PersonToAdd is { } person)
+        {
+            value = person.Id;
+        }
+        else
+        {
+            return;
+        }
+
+        TryStage(document.AnchorPageId, IndexAnswerVocabulary.Person,
+            PersonQualifierToAdd, value);
     }
+
+    private PackagePerson? MatchPerson(string typed)
+    {
+        var wanted = NormaliseName(typed);
+        return People.FirstOrDefault(p => NormaliseName(p.DisplayName) == wanted
+            || p.Aliases.Any(a => NormaliseName(a) == wanted));
+    }
+
+    /// <summary>JimsStuff app/persons.py normalise_alias: punctuation to
+    /// spaces, spaces collapsed, lower-cased. A rare mismatch only means the
+    /// name travels as typed and the portal matches it itself.</summary>
+    private static string NormaliseName(string text) =>
+        System.Text.RegularExpressions.Regex.Replace(
+            System.Text.RegularExpressions.Regex.Replace(text, @"[^\w\s]", " "),
+            @"\s+", " ").Trim().ToLowerInvariant();
 
     [RelayCommand]
     public void RemoveStagedAnswer(StagedAnswer answer)

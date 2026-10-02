@@ -179,6 +179,11 @@ the JimsStuff portal (`JimsStuff/pipeline/import_fgscanner.py`) parses committed
   UNCHANGED `PackageReader` (`ZipPackageOpener` refuses zip-slip and leaves nothing
   behind); the answers file goes BESIDE THE ZIP (Jim never sees the extracted folder),
   never beside the extracted folder.
+  **A missing person may be TYPED, and a page may be "undated" (ADR-0016, Franz
+  2026-10-02):** a typed name first matches the list (portal normalisation) and only an
+  unmatched name travels — the portal holds it as a proposal, never a person; it must be
+  plain, trimmed, <=120 chars, never `P1234`-shaped. Undated is qualifier `undated` AND
+  value `undated` (an empty value is a withdrawal).
 - FG Scanner deliberately has **no Bates support** and none should be added to the capture
   path — identifiers live in the portal's register and display layer; stamped pixels can never
   be reorganized, and re-stamping is evidence alteration.

@@ -91,6 +91,71 @@ public static class IndexAnswerVocabulary
     public static readonly IReadOnlySet<string> PersonQualifiers = new HashSet<string>(
         StringComparer.Ordinal) { "from", "to", "cc", "mentioned" };
 
+    /// <summary>"No date on the page" (ADR-0016). The answer's value is this
+    /// same word: an empty value is the contract's withdrawal, so it cannot
+    /// also mean "undated".</summary>
+    public const string Undated = "undated";
+
     public static readonly IReadOnlySet<string> DateQualifiers = new HashSet<string>(
-        StringComparer.Ordinal) { "exact", "about" };
+        StringComparer.Ordinal) { "exact", "about", Undated };
+
+    /// <summary>The longest name Jim may type for a person not on the list.</summary>
+    public const int TypedNameMaxLength = 120;
+
+    /// <summary>
+    /// True when every character survives the contract's byte rule. .NET's
+    /// encoder and Python's json.dumps agree byte-for-byte on ordinary BMP
+    /// letters and punctuation but not on controls, line separators, exotic
+    /// spaces (NBSP pasted from Word, the French narrow NBSP), BOMs,
+    /// surrogate pairs, or private-use/unassigned code points. Applies to
+    /// the two free-text values: the decider's name and a typed person name.
+    /// </summary>
+    public static bool IsPlainText(string text)
+    {
+        foreach (var ch in text)
+        {
+            var category = char.GetUnicodeCategory(ch);
+            if (char.IsControl(ch) || char.IsSurrogate(ch)
+                || (char.IsWhiteSpace(ch) && ch != ' ')
+                || category is System.Globalization.UnicodeCategory.Format
+                    or System.Globalization.UnicodeCategory.PrivateUse
+                    or System.Globalization.UnicodeCategory.OtherNotAssigned)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Why a typed person name cannot travel, or null when it can. It must
+    /// be trimmed (two spellings of one name are two proposals), plain text,
+    /// within the length limit, and never shaped like a register id — the
+    /// portal reads "P0042" as an id and refuses the whole file when the
+    /// register has none.
+    /// </summary>
+    public static string? TypedNameProblem(string name)
+    {
+        if (name.Length == 0 || name != name.Trim())
+        {
+            return "a typed name must not be empty or start or end with spaces";
+        }
+
+        if (name.Length > TypedNameMaxLength)
+        {
+            return $"a typed name is at most {TypedNameMaxLength} characters";
+        }
+
+        if (System.Text.RegularExpressions.Regex.IsMatch(name, "^P[0-9]+$"))
+        {
+            return $"\"{name}\" looks like a person's id, and no one on the list has it — " +
+                "type the name instead";
+        }
+
+        return IsPlainText(name)
+            ? null
+            : $"\"{name}\" contains a character that cannot travel to the portal " +
+              "(a tab or a special space pasted from a document) — type it plainly";
+    }
 }
