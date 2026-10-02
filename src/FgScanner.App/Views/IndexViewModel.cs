@@ -339,7 +339,14 @@ public sealed partial class IndexViewModel : ObservableObject
 
         var typed = PersonText.Trim();
         string value;
-        if (typed.Length > 0)
+        if (PersonToAdd is { } picked && typed == picked.DisplayName.Trim())
+        {
+            // A pick from the list writes its display name into the text, and
+            // namesakes exist: re-resolving that text would stage whichever
+            // namesake comes first, not the one Jim picked.
+            value = picked.Id;
+        }
+        else if (typed.Length > 0)
         {
             value = MatchPerson(typed)?.Id ?? typed;
         }
