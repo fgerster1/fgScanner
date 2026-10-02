@@ -175,4 +175,74 @@ public sealed class ZipPackageOpenerTests : IDisposable
         Assert.False(Directory.Exists(Path.Combine(ExtractRoot, "PKG-0001")),
             "a folder the reader refused must not be left to be reused next time");
     }
+
+    // --- SPEC-2026-007 Prompt 10 review, F4: every failure is a refusal in words.
+    // The view model catches refusals only, from an async void handler, so any
+    // other exception escaping here ends the app.
+
+    private void AssertNothingLeft() =>
+        Assert.True(!Directory.Exists(ExtractRoot) || Directory.GetFileSystemEntries(ExtractRoot).Length == 0,
+            "nothing may be left behind: " + string.Join(", ",
+                Directory.Exists(ExtractRoot) ? Directory.GetFileSystemEntries(ExtractRoot) : []));
+
+    private static void ReplaceEntry(string zip, string name, string content)
+    {
+        using var archive = ZipFile.Open(zip, ZipArchiveMode.Update);
+        archive.GetEntry(name)!.Delete();
+        using var writer = new StreamWriter(archive.CreateEntry(name).Open());
+        writer.Write(content);
+    }
+
+    [Fact]
+    public void APackageIdWithATrailingLineFeedIsRefused()
+    {
+        var zip = PortalZip();
+        var manifest = File.ReadAllText(Path.Combine(PackageReaderTests.GoldenPackageDir(), "manifest.json"));
+        ReplaceEntry(zip, "manifest.json",
+            manifest.Replace("\"PKG-0001\"", "\"PKG-0001\\n\"", StringComparison.Ordinal));
+
+        var refusal = Assert.Throws<PackageRefusedException>(
+            () => ZipPackageOpener.Open(zip, ExtractRoot, AppVersion));
+
+        Assert.Contains("malformed", refusal.Message, StringComparison.Ordinal);
+        AssertNothingLeft();
+    }
+
+    [Theory]
+    [InlineData("seed.json")]          // listed twice
+    [InlineData("SEED.json")]          // one file to Windows, two to the zip
+    [InlineData("images/what?.jpg")]   // a name Windows cannot hold
+    [InlineData("images/nul\0.jpg")]
+    public void AnEntryWindowsCannotHoldIsRefusedInWordsAndNothingIsLeft(string entry)
+    {
+        var zip = PortalZip(z =>
+        {
+            using var writer = new StreamWriter(z.CreateEntry(entry).Open());
+            writer.Write("{}");
+        });
+
+        var refusal = Assert.Throws<PackageRefusedException>(
+            () => ZipPackageOpener.Open(zip, ExtractRoot, AppVersion));
+
+        Assert.Contains("download it again", refusal.Message, StringComparison.Ordinal);
+        AssertNothingLeft();
+    }
+
+    [Fact]
+    public void AnExtractedFolderThatCannotBeReplacedIsARefusalNotACrash()
+    {
+        var zip = PortalZip();
+        var first = ZipPackageOpener.Open(zip, ExtractRoot, AppVersion);
+        File.WriteAllText(Path.Combine(first.PackageDirectory, "seed.json"), "{}");
+        // A viewer holding a page open: Windows will not delete the folder.
+        using var held = new FileStream(
+            Path.Combine(first.PackageDirectory, "images", "TOM99001.jpg"),
+            FileMode.Open, FileAccess.Read, FileShare.None);
+
+        var refusal = Assert.Throws<PackageRefusedException>(
+            () => ZipPackageOpener.Open(zip, ExtractRoot, AppVersion));
+
+        Assert.Contains("close", refusal.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(Directory.GetDirectories(ExtractRoot, "*.extracting-*"));
+    }
 }

@@ -28,10 +28,31 @@ public sealed record ZipOpenResult(IndexPackage Package, string PackageDirectory
 /// </summary>
 public static partial class ZipPackageOpener
 {
-    [GeneratedRegex("^PKG-[0-9]{4}[0-9]*$")]
+    // \z, not $: .NET's $ also matches before a final line feed, and an id ending in a
+    // line feed would become a folder name Windows refuses with a raw I/O error.
+    [GeneratedRegex(@"^PKG-[0-9]{4}[0-9]*\z")]
     private static partial Regex PackageIdPattern();
 
     public static ZipOpenResult Open(string zipPath, string extractRoot, string appVersion)
+    {
+        // The caller catches refusals only — from an async void handler — so any other
+        // exception escaping here would end the app. Whatever the disk does (full, locked,
+        // a folder a viewer is holding open) becomes a refusal in words.
+        try
+        {
+            return OpenCore(zipPath, extractRoot, appVersion);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+            or ArgumentException or NotSupportedException)
+        {
+            throw new PackageRefusedException(
+                $"\"{Path.GetFileName(zipPath)}\" could not be unpacked ({ex.Message}) — nothing " +
+                "was opened. Close any program showing a page from this batch, make sure the " +
+                "disk has room, and open it again.");
+        }
+    }
+
+    private static ZipOpenResult OpenCore(string zipPath, string extractRoot, string appVersion)
     {
         var packageId = ReadPackageId(zipPath);
         var target = Path.Combine(extractRoot, packageId);
@@ -117,6 +138,7 @@ public static partial class ZipPackageOpener
         try
         {
             using var zip = ZipFile.OpenRead(zipPath);
+            RefuseNamesWindowsCannotHold(zip, Path.GetFileName(zipPath));
             foreach (var entry in zip.Entries)
             {
                 var destination = Path.GetFullPath(Path.Combine(staging, entry.FullName));
@@ -144,6 +166,38 @@ public static partial class ZipPackageOpener
                 $"\"{Path.GetFileName(zipPath)}\" is damaged — download it again.");
         }
     }
+
+    /// <summary>Checked before anything is written, so these faults read as a damaged
+    /// download rather than surfacing mid-extraction as an I/O error: a name listed twice,
+    /// two names Windows treats as one (case), or a character no Windows file name holds.
+    /// </summary>
+    private static void RefuseNamesWindowsCannotHold(ZipArchive zip, string zipName)
+    {
+        // ':' is left to the zip-slip check: a drive-qualified name is an escape.
+        var invalid = Path.GetInvalidFileNameChars().Where(c => c != ':').ToArray();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in zip.Entries)
+        {
+            var name = entry.FullName.TrimEnd('/');
+            var segments = name.Split('/');
+            if (segments.Any(segment => segment.IndexOfAny(invalid) >= 0))
+            {
+                throw new PackageRefusedException(
+                    $"the zip lists \"{Printable(entry.FullName)}\", a name Windows cannot hold — " +
+                    $"\"{zipName}\" is damaged; download it again.");
+            }
+
+            if (!seen.Add(name))
+            {
+                throw new PackageRefusedException(
+                    $"the zip lists \"{entry.FullName}\" twice — \"{zipName}\" is damaged; " +
+                    "download it again.");
+            }
+        }
+    }
+
+    private static string Printable(string text) =>
+        string.Concat(text.Select(c => char.IsControl(c) ? '?' : c));
 
     private static void TryDelete(string directory)
     {
