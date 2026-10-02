@@ -38,8 +38,14 @@ Franz chose to close both in FG Scanner (2026-10-02).
 3. **"Undated" is the qualifier `undated` with the value `undated`.** It cannot be an
    empty value, because the contract reads an empty value as a withdrawal. The writer
    refuses `undated` mixed with a real date either way. Switching between a dated and an
-   undated answer uses the existing qualifier-change path: export withdraws the portal's
-   old date slot before the new answer.
+   undated answer uses the existing qualifier-change path: export withdraws every other
+   date slot the portal may hold before the new answer — the seed's, **and any slot an
+   earlier export of this draft filled**. *(Corrected 2026-10-02, SPEC-2026-007 Prompt 10
+   review: as first built, only the seed's slot was withdrawn, so a qualifier changed
+   after an upload left two current dates on the portal.)* The draft remembers every
+   answer it has exported for this reason; by the same rule, unticking an exported key
+   flag, or removing the chip of an exported doc type or date, stages a withdrawal
+   instead of silently unstaging an answer the portal may already hold.
 4. **No contract change.** The results schema already allows any person value and any
    qualifier string, and the portal already holds unknown names as proposals and counts a
    date of any qualifier. Reader-first rules are not triggered.

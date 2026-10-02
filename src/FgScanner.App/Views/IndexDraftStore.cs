@@ -17,10 +17,14 @@ public sealed class IndexDraftStore(string directory)
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "FGScanner", "index-drafts");
 
+    /// <summary>Exported: every answer an export of this draft has carried — what the
+    /// portal may hold beyond the seed, so a later change can withdraw it. Absent in
+    /// drafts written before it existed.</summary>
     private sealed record DraftFile(
         string PackageId,
         string PackageChecksum,
-        Dictionary<string, List<StagedAnswer>> Answers);
+        Dictionary<string, List<StagedAnswer>> Answers,
+        Dictionary<string, List<StagedAnswer>>? Exported = null);
 
     private static readonly JsonSerializerOptions WriteOptions = new() { WriteIndented = true };
 
@@ -30,11 +34,13 @@ public sealed class IndexDraftStore(string directory)
     /// moment the answer was staged, not on a later tick.</summary>
     public void Save(
         string packageId, string packageChecksum,
-        IReadOnlyDictionary<string, IReadOnlyList<StagedAnswer>> snapshot)
+        IReadOnlyDictionary<string, IReadOnlyList<StagedAnswer>> snapshot,
+        IReadOnlyDictionary<string, IReadOnlyList<StagedAnswer>>? exported = null)
     {
         Directory.CreateDirectory(directory);
         var draft = new DraftFile(packageId, packageChecksum,
-            snapshot.ToDictionary(kv => kv.Key, kv => kv.Value.ToList(), StringComparer.Ordinal));
+            snapshot.ToDictionary(kv => kv.Key, kv => kv.Value.ToList(), StringComparer.Ordinal),
+            exported?.ToDictionary(kv => kv.Key, kv => kv.Value.ToList(), StringComparer.Ordinal));
         var bytes = JsonSerializer.SerializeToUtf8Bytes(draft, WriteOptions);
         var path = PathFor(packageId);
         var (outcome, message) = new Core.Index.AtomicFileWriter()
@@ -73,9 +79,11 @@ public sealed class IndexDraftStore(string directory)
     /// under a name that says which export it belonged to, and the notice
     /// says where it went.</summary>
     public IReadOnlyDictionary<string, IReadOnlyList<StagedAnswer>>? Load(
-        string packageId, string packageChecksum, out LoadResult result, out string? notice)
+        string packageId, string packageChecksum, out LoadResult result, out string? notice,
+        out IReadOnlyDictionary<string, IReadOnlyList<StagedAnswer>>? exported)
     {
         notice = null;
+        exported = null;
         var path = PathFor(packageId);
         if (!File.Exists(path))
         {
@@ -104,6 +112,8 @@ public sealed class IndexDraftStore(string directory)
         if (draft?.Answers is not null && draft.PackageChecksum == packageChecksum)
         {
             result = LoadResult.Restored;
+            exported = draft.Exported?.ToDictionary(
+                kv => kv.Key, kv => (IReadOnlyList<StagedAnswer>)kv.Value, StringComparer.Ordinal);
             return draft.Answers.ToDictionary(
                 kv => kv.Key, kv => (IReadOnlyList<StagedAnswer>)kv.Value, StringComparer.Ordinal);
         }

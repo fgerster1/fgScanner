@@ -107,6 +107,100 @@ public sealed class IndexPromptTenReviewTests : IDisposable
         Assert.Equal("P0003", StagedPerson(vm)?.Value);
     }
 
+    // --- F7: what an earlier export left on the portal is withdrawn ---------
+
+    private (string? Field, string? Qualifier, string? Value)[] ExportedRows(string anchor = "TOM99005")
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(
+            Path.Combine(_root, "PKG-0001-results.json")));
+        return doc.RootElement.GetProperty("answers").EnumerateArray()
+            .Where(a => a.GetProperty("anchorPageId").GetString() == anchor)
+            .Select(a => (a.GetProperty("field").GetString(),
+                a.GetProperty("qualifier").GetString(), a.GetProperty("value").GetString()))
+            .ToArray();
+    }
+
+    private static void StageDate(IndexViewModel vm, string qualifier, string date)
+    {
+        vm.SelectedDateQualifier = qualifier;
+        vm.DateText = date;
+        vm.SetDateCommand.Execute(null);
+        Assert.Null(vm.AnswerError);
+    }
+
+    [Fact]
+    public async Task A_qualifier_changed_after_an_export_withdraws_the_exported_slot()
+    {
+        var vm = await Open(CopyOfGolden());
+        StageDate(vm, "about", "2021-07-01");
+        vm.ExportResultsCommand.Execute(null);
+
+        StageDate(vm, "exact", "2021-07-18");
+        vm.ExportResultsCommand.Execute(null);
+
+        Assert.Equal([("date", "about", ""), ("date", "exact", "2021-07-18")], ExportedRows());
+    }
+
+    [Fact]
+    public async Task Turning_an_exported_date_undated_withdraws_it_even_after_a_restart()
+    {
+        var package = CopyOfGolden();
+        var first = await Open(package);
+        StageDate(first, "exact", "2021-07-18");
+        first.ExportResultsCommand.Execute(null);
+
+        var second = await Open(package);
+        StageDate(second, "undated", "");
+        second.ExportResultsCommand.Execute(null);
+
+        Assert.Equal([("date", "exact", ""), ("date", "undated", "undated")], ExportedRows());
+    }
+
+    [Fact]
+    public async Task Unticking_an_exported_key_flag_stages_a_withdrawal()
+    {
+        var vm = await Open(CopyOfGolden());
+        vm.KeyFlagChecked = true;
+        vm.ExportResultsCommand.Execute(null);
+
+        vm.KeyFlagChecked = false;
+
+        var staged = Assert.Single(vm.StagedAnswers);
+        Assert.Equal(("key_flag", ""), (staged.Field, staged.Value));
+        vm.ExportResultsCommand.Execute(null);
+        Assert.Equal([("key_flag", null, "")], ExportedRows());
+    }
+
+    [Fact]
+    public async Task Re_ticking_a_portal_flag_after_its_withdrawal_was_exported_stages_it_again()
+    {
+        var package = CopyOfGolden();
+        EditFile(package, "seed.json", seed => seed["documents"]!.AsArray()
+            .Single(d => (string?)d!["anchorPageId"] == "TOM99005")!["decisions"]!.AsArray()
+            .Add(new JsonObject { ["field"] = "key_flag", ["qualifier"] = null, ["value"] = "true" }));
+        var vm = await Open(package);
+        vm.KeyFlagChecked = false;
+        vm.ExportResultsCommand.Execute(null);
+
+        vm.KeyFlagChecked = true;
+
+        var staged = Assert.Single(vm.StagedAnswers);
+        Assert.Equal(("key_flag", "true"), (staged.Field, staged.Value));
+    }
+
+    [Fact]
+    public async Task Removing_an_exported_doc_type_chip_stages_its_withdrawal()
+    {
+        var vm = await Open(CopyOfGolden());
+        vm.SelectedDocType = vm.ActiveDocTypes[0];
+        vm.ExportResultsCommand.Execute(null);
+
+        vm.RemoveStagedAnswerCommand.Execute(vm.StagedAnswers.Single());
+
+        var staged = Assert.Single(vm.StagedAnswers);
+        Assert.Equal(("doc_type", ""), (staged.Field, staged.Value));
+    }
+
     // --- F3: a typed name resolves only the way the portal resolves it ------
 
     private async Task<string?> StageTyped(string package, string typed)

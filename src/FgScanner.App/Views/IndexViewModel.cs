@@ -104,7 +104,9 @@ public sealed partial class IndexViewModel : ObservableObject
 
         try
         {
-            _drafts.Save(package.PackageId, package.PackageChecksum, Staging.Snapshot());
+            _drafts.Save(package.PackageId, package.PackageChecksum, Staging.Snapshot(),
+                _exported.ToDictionary(
+                    kv => kv.Key, kv => (IReadOnlyList<StagedAnswer>)kv.Value, StringComparer.Ordinal));
             DraftError = null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -289,9 +291,14 @@ public sealed partial class IndexViewModel : ObservableObject
 
         var portalFlagged = document.Decisions.Any(d =>
             d.Field == IndexAnswerVocabulary.KeyFlag && d.Value == IndexAnswerVocabulary.KeyFlagTrue);
+        // An exported answer may be on the portal already: unstaging cannot take it back.
+        var exportedFlag = WasExported(document.AnchorPageId, IndexAnswerVocabulary.KeyFlag, null,
+            IndexAnswerVocabulary.KeyFlagTrue);
+        var exportedWithdrawal = WasExported(document.AnchorPageId, IndexAnswerVocabulary.KeyFlag,
+            null, "");
         if (value)
         {
-            if (portalFlagged)
+            if (portalFlagged && !exportedWithdrawal)
             {
                 // Back to the portal's own state: drop a staged withdrawal.
                 Staging.Unstage(document.AnchorPageId, IndexAnswerVocabulary.KeyFlag, null, "");
@@ -302,11 +309,12 @@ public sealed partial class IndexViewModel : ObservableObject
                     IndexAnswerVocabulary.KeyFlagTrue);
             }
         }
-        else if (portalFlagged)
+        else if (portalFlagged || exportedFlag)
         {
-            // Unchecking a flag the portal decided is a withdrawal, and it
-            // must reach the portal: a silent no-op here left the document
-            // flagged while the screen said it was not.
+            // Unchecking a flag the portal decided (or may hold from an
+            // earlier export) is a withdrawal, and it must reach the portal:
+            // a silent no-op here left the document flagged while the screen
+            // said it was not.
             TryStage(document.AnchorPageId, IndexAnswerVocabulary.KeyFlag, null, "");
         }
         else
@@ -400,12 +408,60 @@ public sealed partial class IndexViewModel : ObservableObject
     [RelayCommand]
     public void RemoveStagedAnswer(StagedAnswer answer)
     {
-        if (SelectedDocument is { } document)
+        if (SelectedDocument is not { } document)
         {
-            Staging.Unstage(
-                document.AnchorPageId, answer.Field, answer.Qualifier, answer.Value);
+            return;
         }
+
+        // A single-value answer that has been exported may be on the portal
+        // already, and deleting the chip cannot take it back there: its
+        // removal is staged as a withdrawal of the same slot instead.
+        if (IsSingleValue(answer.Field)
+            && WasExported(document.AnchorPageId, answer.Field, answer.Qualifier, answer.Value))
+        {
+            if (answer.Value.Length > 0)
+            {
+                TryStage(document.AnchorPageId, answer.Field, answer.Qualifier, "");
+            }
+            else
+            {
+                AnswerError = "This withdrawal is already in an exported answers file, so " +
+                    "removing it would not reach the portal — choose the answer again instead.";
+            }
+
+            return;
+        }
+
+        Staging.Unstage(
+            document.AnchorPageId, answer.Field, answer.Qualifier, answer.Value);
     }
+
+    private static bool IsSingleValue(string field) =>
+        field is IndexAnswerVocabulary.DocType or IndexAnswerVocabulary.Date
+            or IndexAnswerVocabulary.KeyFlag;
+
+    /// <summary>Every answer an export of this draft has carried, per
+    /// document: beyond the seed, what the portal may hold once a file was
+    /// uploaded. Persisted with the draft, so a restart does not forget it.</summary>
+    private Dictionary<string, List<StagedAnswer>> _exported = new(StringComparer.Ordinal);
+
+    private bool WasExported(string anchor, string field, string? qualifier, string value) =>
+        _exported.TryGetValue(anchor, out var list)
+        && list.Any(a => a.Field == field && a.Qualifier == qualifier && a.Value == value);
+
+    /// <summary>The date slots (qualifiers) the portal may hold a date in:
+    /// the seed's, and any an earlier export filled.</summary>
+    private IEnumerable<string> HeldDateQualifiers(SeedDocument document) =>
+        document.Decisions
+            .Where(d => d.Field == IndexAnswerVocabulary.Date && d.Value.Length > 0)
+            .Select(d => d.Qualifier)
+            .Concat(_exported.TryGetValue(document.AnchorPageId, out var list)
+                ? list.Where(a => a.Field == IndexAnswerVocabulary.Date && a.Value.Length > 0)
+                    .Select(a => a.Qualifier)
+                : [])
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal);
 
     /// <summary>Withdraw the portal's earlier single-value decision —
     /// legal only for single-value fields (an empty person/subject cannot
@@ -471,6 +527,7 @@ public sealed partial class IndexViewModel : ObservableObject
     /// banner would delete the next package's folder.</summary>
     private void ResetPackageState()
     {
+        _exported = new(StringComparer.Ordinal);
         _lastExportPath = null;
         _exportedVersion = null;
         ExportMessage = null;
@@ -512,15 +569,17 @@ public sealed partial class IndexViewModel : ObservableObject
                 }
 
                 // The portal's date slot includes the qualifier, so an answer in
-                // a new qualifier would sit BESIDE the old date: withdraw the
-                // old slot first.
-                if (staged.Field == IndexAnswerVocabulary.Date
-                    && document.Decisions.FirstOrDefault(d => d.Field == IndexAnswerVocabulary.Date)
-                        is { Qualifier: { } oldQualifier }
-                    && oldQualifier != staged.Qualifier)
+                // a new qualifier would sit BESIDE the old date: withdraw every
+                // other slot the portal may hold — the seed's, and any an
+                // earlier export of this draft filled — first.
+                if (staged.Field == IndexAnswerVocabulary.Date)
                 {
-                    answers.Add(new IndexAnswer(
-                        document.AnchorPageId, staged.Field, oldQualifier, "", decider, decidedAt));
+                    foreach (var oldQualifier in HeldDateQualifiers(document)
+                        .Where(q => q != staged.Qualifier))
+                    {
+                        answers.Add(new IndexAnswer(
+                            document.AnchorPageId, staged.Field, oldQualifier, "", decider, decidedAt));
+                    }
                 }
 
                 answers.Add(new IndexAnswer(
@@ -554,6 +613,21 @@ public sealed partial class IndexViewModel : ObservableObject
             return;
         }
 
+        foreach (var answer in answers)
+        {
+            var list = _exported.TryGetValue(answer.AnchorPageId, out var existing)
+                ? existing
+                : _exported[answer.AnchorPageId] = [];
+            if (!list.Any(a => a.Field == answer.Field && a.Qualifier == answer.Qualifier
+                && a.Value == answer.Value))
+            {
+                list.Add(new StagedAnswer(answer.Field, answer.Qualifier, answer.Value,
+                    answer.DecidedAt.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'",
+                        System.Globalization.CultureInfo.InvariantCulture)));
+            }
+        }
+
+        SaveDraft();
         _lastExportPath = output;
         _exportedVersion = Staging.Version;
         OnPropertyChanged(nameof(DeleteEnabled));
@@ -754,7 +828,11 @@ public sealed partial class IndexViewModel : ObservableObject
             OnPropertyChanged(nameof(People));
             ResetPackageState();
             var restored = _drafts.Load(
-                package.PackageId, package.PackageChecksum, out var loaded, out var draftNotice);
+                package.PackageId, package.PackageChecksum, out var loaded, out var draftNotice,
+                out var exported);
+            _exported = exported?.ToDictionary(
+                kv => kv.Key, kv => kv.Value.ToList(), StringComparer.Ordinal)
+                ?? new(StringComparer.Ordinal);
             Staging.Validator = new PackageWriter.AnswerValidator(package);
             Staging.BlockedReason = loaded == IndexDraftStore.LoadResult.Unreadable
                 ? "Answering is paused: the saved draft could not be read. Close any " +
