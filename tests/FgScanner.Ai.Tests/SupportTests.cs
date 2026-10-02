@@ -118,4 +118,29 @@ public sealed class CredentialStoreTests : IDisposable
         Assert.False(store.HasKey);
         Assert.Null(store.GetKey());
     }
+
+    /// <summary>
+    /// The path the app actually uses had never run under a test: a key Settings reported as
+    /// stored was gone (2026-09-28). A throwaway target keeps the user's real key untouched.
+    /// </summary>
+    [Fact]
+    public void Credential_manager_round_trips_across_instances_and_clears()
+    {
+        var target = $"FGScanner:test-{Guid.NewGuid():N}";
+        var store = new CredentialStore(_dir, targetName: target);
+        try
+        {
+            store.SetKey("AIzaSy-test-key-456");
+
+            Assert.False(File.Exists(Path.Combine(_dir, "ai.key.bin")), "the key went to the fallback file");
+            Assert.Equal("AIzaSy-test-key-456", new CredentialStore(_dir, targetName: target).GetKey());
+
+            store.ClearKey();
+            Assert.False(new CredentialStore(_dir, targetName: target).HasKey);
+        }
+        finally
+        {
+            store.ClearKey();
+        }
+    }
 }

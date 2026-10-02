@@ -11,9 +11,14 @@ namespace FgScanner.Ai;
 /// this class except to authenticate calls.
 /// </summary>
 [SupportedOSPlatform("windows")]
-public sealed class CredentialStore(string? fallbackDirectory = null, bool useCredentialManager = true)
+public sealed class CredentialStore(
+    string? fallbackDirectory = null,
+    bool useCredentialManager = true,
+    string targetName = CredentialStore.DefaultTargetName)
 {
-    private const string TargetName = "FGScanner:GeminiApiKey";
+    // A test passes its own target so the real Credential Manager path runs without touching
+    // the user's key.
+    public const string DefaultTargetName = "FGScanner:GeminiApiKey";
 
     private readonly string _fallbackFile = Path.Combine(
         fallbackDirectory ?? Path.Combine(
@@ -22,7 +27,7 @@ public sealed class CredentialStore(string? fallbackDirectory = null, bool useCr
 
     public string? GetKey()
     {
-        if (useCredentialManager && TryReadCredentialManager(out var key))
+        if (useCredentialManager && TryReadCredentialManager(targetName, out var key))
         {
             return key;
         }
@@ -48,7 +53,7 @@ public sealed class CredentialStore(string? fallbackDirectory = null, bool useCr
 
     public void SetKey(string key)
     {
-        if (useCredentialManager && TryWriteCredentialManager(key))
+        if (useCredentialManager && TryWriteCredentialManager(targetName, key))
         {
             return;
         }
@@ -63,7 +68,7 @@ public sealed class CredentialStore(string? fallbackDirectory = null, bool useCr
     {
         if (useCredentialManager)
         {
-            _ = CredDelete(TargetName, CredTypeGeneric, 0);
+            _ = CredDelete(targetName, CredTypeGeneric, 0);
         }
 
         try
@@ -114,10 +119,10 @@ public sealed class CredentialStore(string? fallbackDirectory = null, bool useCr
     [DllImport("advapi32", EntryPoint = "CredFree")]
     private static extern void CredFree(IntPtr buffer);
 
-    private static bool TryReadCredentialManager(out string? key)
+    private static bool TryReadCredentialManager(string targetName, out string? key)
     {
         key = null;
-        if (!OperatingSystem.IsWindows() || !CredRead(TargetName, CredTypeGeneric, 0, out var handle))
+        if (!OperatingSystem.IsWindows() || !CredRead(targetName, CredTypeGeneric, 0, out var handle))
         {
             return false;
         }
@@ -141,7 +146,7 @@ public sealed class CredentialStore(string? fallbackDirectory = null, bool useCr
         }
     }
 
-    private static bool TryWriteCredentialManager(string key)
+    private static bool TryWriteCredentialManager(string targetName, string key)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -150,7 +155,7 @@ public sealed class CredentialStore(string? fallbackDirectory = null, bool useCr
 
         var blob = Encoding.UTF8.GetBytes(key);
         var blobPtr = Marshal.AllocHGlobal(blob.Length);
-        var targetPtr = Marshal.StringToHGlobalUni(TargetName);
+        var targetPtr = Marshal.StringToHGlobalUni(targetName);
         var userPtr = Marshal.StringToHGlobalUni("api-key");
         try
         {
