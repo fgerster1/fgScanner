@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Draft |
-| **Revision** | A |
+| **Status** | Approved |
+| **Revision** | B |
 | **Tier** | Feature |
 | **Author** | Claude, for Franz Gerster |
 | **Date** | 2026-10-03 |
@@ -128,44 +128,48 @@ as `ZoomController`, `FitPolicy`, `PageNavigator`).
 
 ## 05 · Questions for Franz
 
-Carried to review round A. Answers recorded here once it comes back.
+**Answered 2026-10-03 in review round A** ([page](https://claude.ai/artifact/3p8B2jFk6PVUKemnb6CxhH),
+doc `SPEC-2026-009-rA`, verdict **approve**). Franz took the recommended option on all ten
+items and left no notes; each answer is marked **→** below. Q2's side-question (whether the
+existing Groups OCR box went unseen or is too small) was not answered — the viewer is built
+either way and the existing box stays.
 
 **Blocking**
 
 1. **Q1 — Where should the people search live?** (a) inline in the answer panel: search box
    with a short results table under it (~8 rows), Add beside it — *recommended*: no extra
    window, keyboard flows top to bottom; costs vertical room in a 300 px panel, which is why
-   the panel becomes resizable. (b) a "Find person…" button opening a dialog with a big
+   the panel becomes resizable. **→ (a) inline.** (b) a "Find person…" button opening a dialog with a big
    search + grid — more room and columns; one extra window per person added.
 2. **Q2 — What should "View OCR" open?** (a) a window with the page image on the left and its
    OCR on the right, both scrolling — *recommended*: you can check the text against the page;
    (b) text only. Note the Groups page **already** shows OCR text in a small box under the
-   preview — was the problem that you didn't see it, or that it's too small?
+   preview — was the problem that you didn't see it, or that it's too small? **→ (a) image + OCR side by side.**
 3. **Q3 — Which OCR text?** (a) the `.md` file beside the image (keeps headings, tables and
    layout; it is the file the rest of the pipeline uses) with the database's plain text as
-   fallback when no `.md` exists — *recommended*; (b) the plain text only.
+   fallback when no `.md` exists — *recommended*; (b) the plain text only. **→ (a) `.md`, plain-text fallback.**
 4. **Q4 — Splitters on which screens?** (a) Index screen only (what was asked); (b) Index **and**
    the Groups page's group list (Groups today has a splitter only between grid and preview; its
    270 px group list is fixed) — *recommended*, it's the same one-line pattern and the same
-   complaint will come up there.
+   complaint will come up there. **→ (b) Index + Groups group list.**
 
 **Non-blocking (proceeding on the assumption unless corrected)**
 
 5. **Q5 — How a name shows** — proceeding as `Whitacre, Jason · P0433` (name first, id small
-   and grey) so two people with the same name stay distinguishable.
+   and grey) so two people with the same name stay distinguishable. **→ confirmed.**
 6. **Q6 — What the search matches** — proceeding as: display name **and** every alias,
    anywhere in the text (not just the start), ignoring case and accents; "Whit" finds
-   "Whitacre, Jason" and "Jason Whitacre". Results in register order? No — sorted by name.
+   "Whitacre, Jason" and "Jason Whitacre". Results sorted by name. **→ confirmed.**
 7. **Q7 — Key-document suggestion** — proceeding as: Accept on a `key_flag` suggestion of `yes`
    stages the contract's `true` (today it is always refused). Anything other than `yes`/`true`
-   stays refused.
+   stays refused. **→ confirmed (fix).**
 8. **Q8 — Suggestions for fields the contract does not carry** (`amount`, `expense_category`,
    `payee`; 42 in PKG-0002) — proceeding as: show them greyed with "for information — not
    asked in this batch" and **no** Accept button, rather than hiding them (the reason quote can
-   still help Jim read the page).
-9. **Q9 — Pane widths remembered** across restarts (like Groups) — proceeding as yes.
+   still help Jim read the page). **→ confirmed (greyed).**
+9. **Q9 — Pane widths remembered** across restarts (like Groups) — proceeding as yes. **→ confirmed.**
 10. **Q10 — Order of the remaining three specs** — proceeding as: portal people merge next
-    (small, under a day), then "index everything", then text messages + email.
+    (small, under a day), then "index everything", then text messages + email. **→ confirmed.**
 
 ## 06 · Assumptions
 
@@ -186,7 +190,7 @@ table via `AppSettingsService`, the same mechanism as Groups' `PreviewWidthKey`)
 |---|---|---|---|
 | `Index.DocumentListWidth` | double (DIP), invariant culture | 280 | clamp ≥ 200 |
 | `Index.AnswerPanelWidth` | double (DIP) | 340 | clamp ≥ 300 |
-| `Groups.GroupListWidth` (only if Q4 = b) | double (DIP) | 270 | clamp ≥ 200 |
+| `Groups.GroupListWidth` (Q4 = b) | double (DIP) | 270 | clamp ≥ 200 |
 
 A corrupt or missing value falls back to the default (the existing `ReadLengthAsync` rule).
 Documented on the constants in the code-behind, as Groups does today.
@@ -426,7 +430,7 @@ installer; the three settings keys are ignored by older builds. No point of no r
 
 ## 20 · Prompt pack
 
-Written after approval: `SPEC-2026-009-index-screen-fixes-PROMPTS.md`. Planned: P1 zoom ·
+[SPEC-2026-009-index-screen-fixes-PROMPTS.md](./SPEC-2026-009-index-screen-fixes-PROMPTS.md). Seven prompts: P1 zoom ·
 P2 labels + key flag + read-only extras · P3 splitters · P4 people search · P5 OCR viewer ·
 P6 `/code-review max` · P7 manual walk + docs. (No security prompt: not web-facing.)
 
@@ -444,7 +448,7 @@ P6 `/code-review max` · P7 manual walk + docs. (No security prompt: not web-fac
 
 | | |
 |---|---|
-| **Review round answered** | ☐ date: — |
-| **Franz approved** | ☐ date: |
+| **Review round answered** | ☑ 2026-10-03 — round A, [review page](https://claude.ai/artifact/3p8B2jFk6PVUKemnb6CxhH) |
+| **Franz approved** | ☑ 2026-10-03 (round A verdict: approve) |
 | **Built** | ☐ date: |
 | **Verified in production** | ☐ date: |
