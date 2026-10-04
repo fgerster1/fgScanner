@@ -37,6 +37,7 @@ public partial class GroupsView : UserControl
             }
         };
         Unloaded += (_, _) => SavePanelSizes();
+        Loaded += (_, _) => HookWindowClosing();
         AddHandler(TextLengthGuard.RefusedEvent, new EventHandler<LengthRefusedEventArgs>(OnLengthRefused));
     }
 
@@ -118,7 +119,24 @@ public partial class GroupsView : UserControl
             double.PositiveInfinity, DetailSplitGrid.ActualHeight, below, SplitterThickness, PreviewMinHeight);
     }
 
-    private void SavePanelSizes()
+    private bool _closingHooked;
+
+    /// <summary>
+    /// Sizes are saved again as the window closes: a splitter moved with the arrow keys never raises
+    /// DragCompleted, and closing the app while on this screen never unloads the view.
+    /// </summary>
+    private void HookWindowClosing()
+    {
+        if (!_closingHooked && Window.GetWindow(this) is { } window)
+        {
+            _closingHooked = true;
+            window.Closing += (_, _) => SavePanelSizes(waitForWrite: true);
+        }
+    }
+
+    /// <param name="waitForWrite">True while the window closes: an unawaited write can be cut off
+    /// by the process exiting. Safe to block on — the settings service never resumes on the UI thread.</param>
+    private void SavePanelSizes(bool waitForWrite = false)
     {
         if (DataContext is not GroupsViewModel vm)
         {
@@ -127,17 +145,23 @@ public partial class GroupsView : UserControl
 
         try
         {
+            var writes = new List<Task>();
             var width = PreviewColumn.Width.Value;
             var height = PreviewRow.Height.Value;
             if (width > 0 && height > 0)
             {
-                _ = vm.Settings.SetAsync(PreviewWidthKey, PanelSize.Format(width));
-                _ = vm.Settings.SetAsync(PreviewHeightKey, PanelSize.Format(height));
+                writes.Add(vm.Settings.SetAsync(PreviewWidthKey, PanelSize.Format(width)));
+                writes.Add(vm.Settings.SetAsync(PreviewHeightKey, PanelSize.Format(height)));
             }
 
             if (GroupListColumn.Width.Value > 0)
             {
-                _ = vm.Settings.SetAsync(GroupListWidthKey, PanelSize.Format(GroupListColumn.Width.Value));
+                writes.Add(vm.Settings.SetAsync(GroupListWidthKey, PanelSize.Format(GroupListColumn.Width.Value)));
+            }
+
+            if (waitForWrite)
+            {
+                Task.WhenAll(writes).GetAwaiter().GetResult();
             }
         }
         catch (Exception ex)

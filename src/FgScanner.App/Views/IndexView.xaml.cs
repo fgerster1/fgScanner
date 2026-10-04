@@ -25,7 +25,11 @@ public partial class IndexView : UserControl
     {
         InitializeComponent();
         _fit = new FitPolicy(_zoom);
-        Loaded += async (_, _) => await RestorePaneSizesAsync();
+        Loaded += async (_, _) =>
+        {
+            HookWindowClosing();
+            await RestorePaneSizesAsync();
+        };
         Unloaded += (_, _) => SavePaneSizes();
     }
 
@@ -66,7 +70,26 @@ public partial class IndexView : UserControl
         SavePaneSizes();
     }
 
-    private void SavePaneSizes()
+    private bool _closingHooked;
+
+    /// <summary>
+    /// The widths are saved again as the window closes. A drag's end is not the only way a width
+    /// changes — a splitter moved with the arrow keys never raises DragCompleted — and closing the
+    /// app while on this screen never unloads the view, so without this the last width set could be
+    /// the one that is lost.
+    /// </summary>
+    private void HookWindowClosing()
+    {
+        if (!_closingHooked && Window.GetWindow(this) is { } window)
+        {
+            _closingHooked = true;
+            window.Closing += (_, _) => SavePaneSizes(waitForWrite: true);
+        }
+    }
+
+    /// <param name="waitForWrite">True while the window closes: an unawaited write can be cut off
+    /// by the process exiting. Safe to block on — the settings service never resumes on the UI thread.</param>
+    private void SavePaneSizes(bool waitForWrite = false)
     {
         if (!_paneSizesRestored || DataContext is not IndexViewModel { Settings: { } settings })
         {
@@ -75,8 +98,13 @@ public partial class IndexView : UserControl
 
         try
         {
-            _ = settings.SetAsync(DocumentListWidthKey, PanelSize.Format(DocumentListColumn.Width.Value));
-            _ = settings.SetAsync(AnswerPanelWidthKey, PanelSize.Format(AnswerPanelColumn.Width.Value));
+            var writes = Task.WhenAll(
+                settings.SetAsync(DocumentListWidthKey, PanelSize.Format(DocumentListColumn.Width.Value)),
+                settings.SetAsync(AnswerPanelWidthKey, PanelSize.Format(AnswerPanelColumn.Width.Value)));
+            if (waitForWrite)
+            {
+                writes.GetAwaiter().GetResult();
+            }
         }
         catch (Exception ex)
         {
