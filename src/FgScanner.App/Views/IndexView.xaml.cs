@@ -10,10 +10,95 @@ public partial class IndexView : UserControl
     private readonly ZoomController _zoom = new();
     private readonly FitPolicy _fit;
 
+    private const string DocumentListWidthKey = "Index.DocumentListWidth";
+    private const string AnswerPanelWidthKey = "Index.AnswerPanelWidth";
+
+    // Mirror the column minimums and splitter thickness in IndexView.xaml.
+    private const double DocumentListMinWidth = 200;
+    private const double PageMinWidth = 300;
+    private const double AnswerPanelMinWidth = 300;
+    private const double SplitterThickness = 6;
+
+    private bool _paneSizesRestored;
+
     public IndexView()
     {
         InitializeComponent();
         _fit = new FitPolicy(_zoom);
+        Loaded += async (_, _) => await RestorePaneSizesAsync();
+        Unloaded += (_, _) => SavePaneSizes();
+    }
+
+    // ----- pane widths (SPEC-2026-009 §08-4) -----
+
+    /// <summary>Once per run: the section host reloads the view each time Index is shown, and
+    /// re-reading then would undo a drag made since the last save.</summary>
+    private async Task RestorePaneSizesAsync()
+    {
+        if (_paneSizesRestored || DataContext is not IndexViewModel { Settings: { } settings })
+        {
+            return;
+        }
+
+        _paneSizesRestored = true;
+        try
+        {
+            DocumentListColumn.Width = new GridLength(PanelSize.Read(
+                await settings.GetAsync(DocumentListWidthKey, ""), 280, DocumentListMinWidth));
+            AnswerPanelColumn.Width = new GridLength(PanelSize.Read(
+                await settings.GetAsync(AnswerPanelWidthKey, ""), 340, AnswerPanelMinWidth));
+            LimitPanes();
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Restoring Index pane sizes");
+        }
+    }
+
+    /// <summary>
+    /// Saved on release as well as on unload: closing the app while on this screen never unloads
+    /// the view, so a width saved only on unload would be forgotten exactly when Jim quits.
+    /// </summary>
+    private void OnSplitterDragCompleted(
+        object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        LimitPanes();
+        SavePaneSizes();
+    }
+
+    private void SavePaneSizes()
+    {
+        if (!_paneSizesRestored || DataContext is not IndexViewModel { Settings: { } settings })
+        {
+            return;
+        }
+
+        try
+        {
+            _ = settings.SetAsync(DocumentListWidthKey, PanelSize.Format(DocumentListColumn.Width.Value));
+            _ = settings.SetAsync(AnswerPanelWidthKey, PanelSize.Format(AnswerPanelColumn.Width.Value));
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Saving Index pane sizes");
+        }
+    }
+
+    private void OnPaneRoomChanged(object sender, SizeChangedEventArgs e) => LimitPanes();
+
+    /// <summary>
+    /// Keeps the page pane at its minimum whatever the side panes were dragged to. The limit goes
+    /// on MaxWidth, never Width, so a narrow window does not overwrite the width Jim chose on a wide one.
+    /// </summary>
+    private void LimitPanes()
+    {
+        var room = PaneGrid.ActualWidth;
+        DocumentListColumn.MaxWidth = WindowSizing.ClampPanel(double.PositiveInfinity, room,
+            PageMinWidth + SplitterThickness + AnswerPanelColumn.ActualWidth, SplitterThickness,
+            DocumentListMinWidth);
+        AnswerPanelColumn.MaxWidth = WindowSizing.ClampPanel(double.PositiveInfinity, room,
+            PageMinWidth + SplitterThickness + DocumentListColumn.ActualWidth, SplitterThickness,
+            AnswerPanelMinWidth);
     }
 
     // ----- page zoom: the Groups preview's pattern (SPEC-2026-009 §08-3) -----

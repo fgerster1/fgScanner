@@ -9,12 +9,14 @@
              d:DataContext="{d:DesignInstance Type=views:GroupsViewModel}">
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="270" />
-            <ColumnDefinition Width="*" />
+            <ColumnDefinition x:Name="GroupListColumn" Width="270" MinWidth="200" />
+            <ColumnDefinition Width="6" />
+            <!-- The entry grid's 240 + splitter + the preview's 200: the group list may not squeeze the detail below them. -->
+            <ColumnDefinition Width="*" MinWidth="446" />
         </Grid.ColumnDefinitions>
 
         <!-- Group list -->
-        <DockPanel Grid.Column="0" Margin="0,0,12,0">
+        <DockPanel Grid.Column="0" Margin="0,0,6,0">
             <StackPanel DockPanel.Dock="Top">
                 <TextBlock Text="Groups" FontWeight="SemiBold" Margin="0,0,0,6" />
                 <TextBlock Text="Profile for new groups" Opacity="0.7" />
@@ -87,7 +89,14 @@
         </DockPanel>
 
         <!-- Detail: pending values, entry grid, commit -->
-        <DockPanel Grid.Column="1" DataContext="{Binding Detail}" SizeChanged="OnDetailPanelSizeChanged">
+        <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
+                      VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext"
+                      ShowsPreview="False" Cursor="SizeWE" KeyboardIncrement="20"
+                      DragCompleted="OnSplitterDragCompleted"
+                      ToolTip="Drag to make the group list wider or narrower"
+                      AutomationProperties.Name="Resize the group list" />
+
+        <DockPanel Grid.Column="2" DataContext="{Binding Detail}" SizeChanged="OnDetailPanelSizeChanged">
             <!-- Capped (OnDetailPanelSizeChanged) and scrolled on its own: on a short window the
                  value panels and two wrapping toolbars otherwise push the grid and preview away.
                  Not focusable, so clicking a caption leaves keyboard focus in the grid or field.

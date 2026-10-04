@@ -188,9 +188,9 @@ table via `AppSettingsService`, the same mechanism as Groups' `PreviewWidthKey`)
 
 | Key | Type | Default | Validation |
 |---|---|---|---|
-| `Index.DocumentListWidth` | double (DIP), invariant culture | 280 | clamp ≥ 200 |
-| `Index.AnswerPanelWidth` | double (DIP) | 340 | clamp ≥ 300 |
-| `Groups.GroupListWidth` (Q4 = b) | double (DIP) | 270 | clamp ≥ 200 |
+| `Index.DocumentListWidth` | double (DIP), invariant culture | 280 | below 200 or unparseable → default |
+| `Index.AnswerPanelWidth` | double (DIP) | 340 | below 300 or unparseable → default |
+| `Groups.GroupListWidth` (Q4 = b) | double (DIP) | 270 | below 200 or unparseable → default |
 
 A corrupt or missing value falls back to the default (the existing `ReadLengthAsync` rule).
 Documented on the constants in the code-behind, as Groups does today.
@@ -329,7 +329,7 @@ untouched).
 | Typed path | `IndexTypedNameAndUndatedTests.cs` | Add with no selection stages typed text unchanged |
 | Key flag | `IndexReviewFixTests.cs` | Accept `key_flag=yes` stages `true` (fails today with a refusal) |
 | Non-contract | `IndexViewModelTests.cs` | `amount` row has `CanAccept == false` |
-| Panel sizes | `PanelSizeTests.cs` (new) | `"abc"` → default; `50` → clamped to min |
+| Panel sizes | `PanelSizeTests.cs` (new) | `"abc"` → default; `50` (below the minimum) → default — the rule Groups already used, kept identical |
 | OCR source | `OcrTextSourceTests.cs` (new) | `.md` with front matter → body only; missing `.md` → `OcrText`; status sentences |
 
 **11.2 — Test data** — a small hand-built `IndexPackage` fixture (two Whitacres with the real

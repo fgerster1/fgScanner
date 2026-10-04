@@ -14,12 +14,14 @@ public partial class GroupsView : UserControl
 
     private const string PreviewWidthKey = "Session.PreviewPanelWidth";
     private const string PreviewHeightKey = "Session.PreviewPanelHeight";
+    private const string GroupListWidthKey = "Groups.GroupListWidth";
 
     // Mirror the grid minimums and splitter thickness in GroupsView.xaml.
     private const double EntryGridMinWidth = 240;
     private const double SplitterThickness = 6;
     private const double PreviewMinWidth = 200;
     private const double PreviewMinHeight = 90;
+    private const double GroupListMinWidth = 200;
 
     public GroupsView()
     {
@@ -60,6 +62,7 @@ public partial class GroupsView : UserControl
         {
             PreviewColumn.Width = await ReadLengthAsync(vm, PreviewWidthKey, 300, PreviewMinWidth);
             PreviewRow.Height = await ReadLengthAsync(vm, PreviewHeightKey, 190, PreviewMinHeight);
+            GroupListColumn.Width = await ReadLengthAsync(vm, GroupListWidthKey, 270, GroupListMinWidth);
         }
         catch (Exception ex)
         {
@@ -68,15 +71,8 @@ public partial class GroupsView : UserControl
     }
 
     private static async Task<GridLength> ReadLengthAsync(
-        GroupsViewModel vm, string key, double fallback, double minimum)
-    {
-        var stored = await vm.Settings.GetAsync(key, "");
-        return double.TryParse(stored, System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture, out var value)
-            && double.IsFinite(value) && value >= minimum
-            ? new GridLength(value)
-            : new GridLength(fallback);
-    }
+        GroupsViewModel vm, string key, double fallback, double minimum) =>
+        new(PanelSize.Read(await vm.Settings.GetAsync(key, ""), fallback, minimum));
 
     /// <summary>
     /// Saved on release rather than only on unload: closing the app while still on this screen
@@ -135,10 +131,13 @@ public partial class GroupsView : UserControl
             var height = PreviewRow.Height.Value;
             if (width > 0 && height > 0)
             {
-                _ = vm.Settings.SetAsync(
-                    PreviewWidthKey, width.ToString("0", System.Globalization.CultureInfo.InvariantCulture));
-                _ = vm.Settings.SetAsync(
-                    PreviewHeightKey, height.ToString("0", System.Globalization.CultureInfo.InvariantCulture));
+                _ = vm.Settings.SetAsync(PreviewWidthKey, PanelSize.Format(width));
+                _ = vm.Settings.SetAsync(PreviewHeightKey, PanelSize.Format(height));
+            }
+
+            if (GroupListColumn.Width.Value > 0)
+            {
+                _ = vm.Settings.SetAsync(GroupListWidthKey, PanelSize.Format(GroupListColumn.Width.Value));
             }
         }
         catch (Exception ex)

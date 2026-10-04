@@ -182,6 +182,12 @@ public sealed partial class IndexViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Where the view remembers the pane widths Jim dragged (SPEC-2026-009 §07). Null in tests and
+    /// before startup wiring; the panes then simply keep their design widths.
+    /// </summary>
+    public FgScanner.Data.AppSettingsService? Settings { get; set; }
+
     /// <summary>Replaceable so the viewer's effect on the page shown can be tested without a window.</summary>
     public Func<IReadOnlyList<string>, int, int> ShowPageViewer { get; set; } = Dialogs.PageViewerWindow.ShowModal;
 

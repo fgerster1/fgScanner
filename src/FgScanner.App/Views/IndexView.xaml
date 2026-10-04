@@ -80,15 +80,32 @@
             <TextBlock Text="{Binding DraftNotice}" TextWrapping="Wrap" />
         </Border>
 
-        <Grid>
+        <!-- Three panes Jim can widen or narrow (SPEC-2026-009 §08-4); the widths are remembered.
+             The minimums keep every pane usable: 200 + 6 + 300 + 6 + 300 fits the section's 980. -->
+        <Grid x:Name="PaneGrid" SizeChanged="OnPaneRoomChanged">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="280" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="300" />
+                <ColumnDefinition x:Name="DocumentListColumn" Width="280" MinWidth="200" />
+                <ColumnDefinition Width="6" />
+                <ColumnDefinition Width="*" MinWidth="300" />
+                <ColumnDefinition Width="6" />
+                <ColumnDefinition x:Name="AnswerPanelColumn" Width="340" MinWidth="300" />
             </Grid.ColumnDefinitions>
 
+            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext"
+                          ShowsPreview="False" Cursor="SizeWE" KeyboardIncrement="20"
+                          DragCompleted="OnSplitterDragCompleted"
+                          ToolTip="Drag to make the document list wider or narrower"
+                          AutomationProperties.Name="Resize the document list" />
+            <GridSplitter Grid.Column="3" Width="6" HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext"
+                          ShowsPreview="False" Cursor="SizeWE" KeyboardIncrement="20"
+                          DragCompleted="OnSplitterDragCompleted"
+                          ToolTip="Drag to make the answers wider or narrower"
+                          AutomationProperties.Name="Resize the answer panel" />
+
             <!-- Seed order IS priority order; no sorting. -->
-            <ListBox Grid.Column="0" Margin="0,0,6,0"
+            <ListBox Grid.Column="0"
                      ItemsSource="{Binding Documents}"
                      SelectedItem="{Binding SelectedDocument}">
                 <ListBox.ItemTemplate>
@@ -107,7 +124,7 @@
                 </ListBox.ItemTemplate>
             </ListBox>
 
-            <DockPanel Grid.Column="1" Margin="0,0,6,0">
+            <DockPanel Grid.Column="2">
                 <DockPanel DockPanel.Dock="Bottom" Margin="0,6,0,0" LastChildFill="False">
                     <Button DockPanel.Dock="Left" Content="◀ Previous page"
                             Command="{Binding PreviousPageCommand}" Padding="10,4" />
@@ -154,7 +171,7 @@
 
             <!-- The answer panel: five questions, nothing auto-applies —
                  an untouched suggestion is not an answer. -->
-            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+            <ScrollViewer Grid.Column="4" VerticalScrollBarVisibility="Auto">
                 <StackPanel IsEnabled="{Binding SelectedDocument,
                     Converter={x:Static views:NotNullToBoolConverter.Instance}}">
 
