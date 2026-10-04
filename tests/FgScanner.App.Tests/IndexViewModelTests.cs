@@ -187,6 +187,52 @@ public sealed class IndexViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task Open_full_size_shows_the_documents_pages_and_the_panel_follows_the_viewer()
+    {
+        var vm = CreateViewModel();
+        await vm.OpenPackageAsync(CopyOfGolden());
+        vm.SelectedDocument = vm.Documents[0];
+        vm.NextPageCommand.Execute(null);
+
+        IReadOnlyList<string>? shown = null;
+        var startedAt = -1;
+        vm.ShowPageViewer = (paths, start) =>
+        {
+            shown = paths;
+            startedAt = start;
+            return 0;
+        };
+        vm.OpenPageViewerCommand.Execute(null);
+
+        Assert.NotNull(shown);
+        Assert.Equal(2, shown.Count);
+        Assert.Contains("TOM99001", shown[0]);
+        Assert.Contains("TOM99002", shown[1]);
+        Assert.Equal(1, startedAt);
+
+        // Closing on page 1 leaves the Index screen on page 1, not where it was.
+        Assert.Equal("1 of 2", vm.PagePositionText);
+        Assert.Contains("TOM99001", vm.CurrentPageImagePath);
+    }
+
+    [Fact]
+    public async Task Open_full_size_with_no_document_selected_opens_nothing()
+    {
+        var vm = CreateViewModel();
+        await vm.OpenPackageAsync(CopyOfGolden());
+        var opened = false;
+        vm.ShowPageViewer = (_, _) =>
+        {
+            opened = true;
+            return 0;
+        };
+
+        vm.OpenPageViewerCommand.Execute(null);
+
+        Assert.False(opened);
+    }
+
+    [Fact]
     public async Task Accepting_a_suggestion_stages_it_and_nothing_stages_itself()
     {
         var vm = CreateViewModel();

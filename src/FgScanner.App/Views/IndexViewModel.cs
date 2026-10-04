@@ -158,6 +158,33 @@ public sealed partial class IndexViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// The pop-out viewer over the selected document's pages. The panel follows the page the
+    /// viewer closed on, so the answers being typed sit beside the page that was just read.
+    /// </summary>
+    [RelayCommand]
+    private void OpenPageViewer()
+    {
+        if (SelectedDocument is not { } document || _packageDirectory is not { } root)
+        {
+            return;
+        }
+
+        var paths = document.Pages
+            .Select(p => System.IO.Path.Combine(
+                root, p.Image.Replace('/', System.IO.Path.DirectorySeparatorChar)))
+            .ToList();
+        var landed = ShowPageViewer(paths, _pageIndex);
+        if (landed >= 0 && landed < paths.Count && landed != _pageIndex)
+        {
+            _pageIndex = landed;
+            RaisePageChanged();
+        }
+    }
+
+    /// <summary>Replaceable so the viewer's effect on the page shown can be tested without a window.</summary>
+    public Func<IReadOnlyList<string>, int, int> ShowPageViewer { get; set; } = Dialogs.PageViewerWindow.ShowModal;
+
     private void RaisePageChanged()
     {
         OnPropertyChanged(nameof(CurrentPageImagePath));

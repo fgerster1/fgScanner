@@ -116,10 +116,39 @@
                     <TextBlock DockPanel.Dock="Left" Text="{Binding PagePositionText}"
                                VerticalAlignment="Center" Margin="10,0" Opacity="0.8" />
                 </DockPanel>
+                <WrapPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
+                    <Button Content="−" Click="OnZoomOut" Padding="10,2" Margin="0,0,4,0"
+                            ToolTip="Zoom out" AutomationProperties.Name="Zoom out" />
+                    <Button Content="+" Click="OnZoomIn" Padding="10,2" Margin="0,0,4,0"
+                            ToolTip="Zoom in" AutomationProperties.Name="Zoom in" />
+                    <Button Content="Fit" Click="OnFit" Padding="8,2" Margin="0,0,4,0"
+                            ToolTip="Show the whole page" AutomationProperties.Name="Fit the page" />
+                    <TextBlock x:Name="ZoomText" VerticalAlignment="Center" Opacity="0.7"
+                               MinWidth="40" Margin="0,0,8,0" />
+                    <Button Content="Open full size" Command="{Binding OpenPageViewerCommand}"
+                            Padding="8,2" ToolTip="Or double-click the page" />
+                </WrapPanel>
                 <Border BorderThickness="1" BorderBrush="#33808080">
-                    <Image Source="{Binding CurrentPageImagePath,
-                                    Converter={x:Static views:PreviewImageConverter.Instance}}"
-                           Stretch="Uniform" StretchDirection="DownOnly" />
+                    <!-- Ctrl+wheel zooms; an ungated wheel would steal ordinary scrolling.
+                         LayoutTransform so the ScrollViewer's extent grows with the zoom. -->
+                    <ScrollViewer x:Name="PageScroller"
+                                  HorizontalScrollBarVisibility="Auto"
+                                  VerticalScrollBarVisibility="Auto"
+                                  PreviewMouseWheel="OnPageMouseWheel"
+                                  ScrollChanged="OnPageScrollChanged">
+                        <Image x:Name="PageImage"
+                               Source="{Binding CurrentPageImagePath,
+                                        Converter={x:Static views:PreviewImageConverter.Instance},
+                                        NotifyOnTargetUpdated=True}"
+                               TargetUpdated="OnPageImageChanged"
+                               MouseLeftButtonDown="OnPageMouseDown"
+                               Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               ToolTip="Ctrl+wheel to zoom · double-click to open full size">
+                            <Image.LayoutTransform>
+                                <ScaleTransform x:Name="PageScale" ScaleX="1" ScaleY="1" />
+                            </Image.LayoutTransform>
+                        </Image>
+                    </ScrollViewer>
                 </Border>
             </DockPanel>
 
