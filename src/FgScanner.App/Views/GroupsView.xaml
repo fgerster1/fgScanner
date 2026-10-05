@@ -78,7 +78,7 @@
                             <TextBlock Text="{Binding DirectoryPath}" Opacity="0.55" FontSize="10"
                                        TextTrimming="CharacterEllipsis" />
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="{Binding State}" Opacity="0.6" FontSize="11" />
+                                <TextBlock Text="{Binding State, Converter={x:Static views:GroupStateConverter.Instance}}" Opacity="0.6" FontSize="11" />
                                 <TextBlock Text="{Binding Profile.Name, StringFormat=' · {0}'}" Opacity="0.6"
                                            FontSize="11" />
                             </StackPanel>

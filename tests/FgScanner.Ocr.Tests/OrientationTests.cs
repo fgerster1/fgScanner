@@ -116,6 +116,37 @@ public sealed class OrientationTests : IDisposable
         Assert.Equal(0, outcome.RotatedClockwiseDegrees);
     }
 
+    /// <summary>A page the operator has turned, or that was already read once, keeps its orientation:
+    /// an automatic turn after a hand rotation undid it within seconds (Franz, 2026-10-05).</summary>
+    [Fact]
+    public async Task A_page_whose_orientation_is_settled_is_read_as_it_lies()
+    {
+        var page = TestPages.CreateRotatedPage(_dir, 180);
+        var before = await File.ReadAllBytesAsync(page, Ct);
+        var pipeline = new OcrPipeline(_runner, new TestRotator());
+
+        var outcome = await pipeline.ProcessPageAsync(page, 300, "eng", autoOrient: false, Ct);
+
+        Assert.True(outcome.Success, outcome.Error);
+        Assert.Equal(0, outcome.RotatedClockwiseDegrees);
+        Assert.Equal(before, await File.ReadAllBytesAsync(page, Ct));
+    }
+
+    /// <summary>Measured 2026-10-05 on real scans: typed pages report 14.3-16.8 and are right; an
+    /// upright handwritten page reported "rotate 180" at 1.50, and its turned copies 0.55-0.76.</summary>
+    [Theory]
+    [InlineData(180, 1.50, false)]
+    [InlineData(90, 0.55, false)]
+    [InlineData(180, 4.99, false)]
+    [InlineData(180, 5.0, true)]
+    [InlineData(270, 14.35, true)]
+    [InlineData(0, 16.78, false)]
+    public void Only_a_confident_detection_turns_a_page(int degrees, double confidence, bool turns) =>
+        Assert.Equal(turns, OcrPipeline.ShouldTurn(new OrientationResult(degrees, confidence)));
+
+    [Fact]
+    public void No_detection_turns_nothing() => Assert.False(OcrPipeline.ShouldTurn(null));
+
     /// <summary>Rotation as the real editor does it, without pulling FgScanner.Scanning in here.</summary>
     private sealed class TestRotator : IPageRotator
     {

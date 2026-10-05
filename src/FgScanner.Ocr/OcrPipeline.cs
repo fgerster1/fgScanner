@@ -31,13 +31,28 @@ public sealed class OcrPipeline(
 {
     public const double LowConfidenceThreshold = 65;
 
+    /// <summary>
+    /// The least orientation confidence that may turn a page. Measured 2026-10-05 on real scans:
+    /// typed pages report 14.3-16.8 and are right, while handwriting reported 0.55-1.50 and was wrong
+    /// — an upright handwritten page came back "rotate 180". Below this the page is left as it lies.
+    /// </summary>
+    public const double MinOrientationConfidence = 5.0;
+
     private readonly AtomicFileWriter _writer = new();
 
-    public async Task<OcrPageOutcome> ProcessPageAsync(
+    public Task<OcrPageOutcome> ProcessPageAsync(
         string imagePath, int dpi = 300, string languages = "eng",
+        CancellationToken cancellationToken = default) =>
+        ProcessPageAsync(imagePath, dpi, languages, autoOrient: true, cancellationToken);
+
+    /// <param name="autoOrient">False for a page whose orientation is settled.</param>
+    public async Task<OcrPageOutcome> ProcessPageAsync(
+        string imagePath, int dpi, string languages, bool autoOrient,
         CancellationToken cancellationToken = default)
     {
-        var rotated = await UprightAsync(imagePath, cancellationToken).ConfigureAwait(false);
+        // A settled page — read once already, or turned by hand — keeps the orientation it has: an
+        // automatic turn after a hand rotation undid the operator's correction within seconds.
+        var rotated = autoOrient ? await UprightAsync(imagePath, cancellationToken).ConfigureAwait(false) : 0;
         var workDir = Directory.CreateTempSubdirectory("fgscanner-ocr").FullName;
         try
         {
@@ -119,13 +134,18 @@ public sealed class OcrPipeline(
         }
 
         var orientation = await runner.DetectOrientationAsync(imagePath, cancellationToken).ConfigureAwait(false);
-        if (orientation is null || orientation.RotateClockwiseDegrees == 0)
+        if (!ShouldTurn(orientation))
         {
             return 0;
         }
 
-        await rotator.RotateAsync(imagePath, orientation.RotateClockwiseDegrees, cancellationToken)
+        await rotator.RotateAsync(imagePath, orientation!.RotateClockwiseDegrees, cancellationToken)
             .ConfigureAwait(false);
         return orientation.RotateClockwiseDegrees;
     }
+
+    /// <summary>Whether a detection is sure enough to rewrite the file. A weak one is a guess, and a
+    /// wrong guess turns an upright page over; leaving a page as it lies loses nothing.</summary>
+    public static bool ShouldTurn(OrientationResult? orientation) =>
+        orientation is { RotateClockwiseDegrees: not 0, Confidence: >= MinOrientationConfidence };
 }

@@ -552,6 +552,23 @@ public sealed class GroupPageViewerTests : IDisposable
         Assert.Equal(FgScanner.Data.OcrStatus.No, vm.Rows[0].OcrState);
     }
 
+    /// <summary>"State: Scanning" read as "something is running" (Franz, 2026-10-05). The stored state
+    /// keeps its name; the screen says whether the group is still open.</summary>
+    [Fact]
+    public async Task An_open_group_says_open_not_scanning()
+    {
+        var vm = await GroupOfThree("OpenLabel", TestContext.Current.CancellationToken);
+
+        Assert.Equal("3 page(s) · Open — not committed yet.", vm.StatusText);
+    }
+
+    [Theory]
+    [InlineData(FgScanner.Data.GroupState.Scanning, "Open")]
+    [InlineData(FgScanner.Data.GroupState.Indexing, "Open")]
+    [InlineData(FgScanner.Data.GroupState.Committed, "Committed")]
+    public void A_group_state_is_shown_as_open_or_committed(FgScanner.Data.GroupState state, string shown) =>
+        Assert.Equal(shown, GroupStateText.Of(state));
+
     [Theory]
     [InlineData(1, 0, 0, "1 page queued for OCR.")]
     [InlineData(3, 0, 0, "3 pages queued for OCR.")]

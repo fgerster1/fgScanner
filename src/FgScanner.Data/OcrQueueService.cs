@@ -32,8 +32,17 @@ public sealed class OcrQueueService(IDbContextFactory<FgScannerDbContext> dbFact
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         var page = await db.Pages.FirstOrDefaultAsync(p => p.Id == pageId, cancellationToken).ConfigureAwait(false);
-        if (page is null || page.OcrStatus is not (OcrStatus.Yes or OcrStatus.Failed))
+        if (page is null)
         {
+            return false;
+        }
+
+        // The operator has turned or edited the page by hand: that orientation is theirs, even on a
+        // page never read, so no later OCR may turn it.
+        page.OrientationSettled = true;
+        if (page.OcrStatus is not (OcrStatus.Yes or OcrStatus.Failed))
+        {
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return false;
         }
 
@@ -176,8 +185,9 @@ public sealed class OcrQueueService(IDbContextFactory<FgScannerDbContext> dbFact
     }
 
     /// <summary>The claimed job with everything the worker needs, or null when the queue is idle.</summary>
+    /// <param name="AutoOrient">Whether OCR may turn the page upright: only until its orientation is settled.</param>
     public sealed record ClaimedJob(
-        Guid JobId, Guid PageId, Guid GroupId, string ImagePath, int Attempt);
+        Guid JobId, Guid PageId, Guid GroupId, string ImagePath, int Attempt, bool AutoOrient = true);
 
     public async Task<ClaimedJob?> ClaimNextAsync(CancellationToken cancellationToken = default)
     {
@@ -200,7 +210,8 @@ public sealed class OcrQueueService(IDbContextFactory<FgScannerDbContext> dbFact
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return new ClaimedJob(
             job.Id, page.Id, page.Document!.GroupId,
-            Path.Combine(page.Document.Group!.DirectoryPath, page.FileName), job.Attempts);
+            Path.Combine(page.Document.Group!.DirectoryPath, page.FileName), job.Attempts,
+            AutoOrient: !page.OrientationSettled);
     }
 
     public async Task CompleteAsync(
@@ -214,6 +225,7 @@ public sealed class OcrQueueService(IDbContextFactory<FgScannerDbContext> dbFact
         page.OcrStatus = OcrStatus.Yes;
         page.OcrText = plainText;
         page.OcrMeanConfidence = meanConfidence;
+        page.OrientationSettled = true;
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 

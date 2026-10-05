@@ -264,7 +264,9 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         }
 
         RestoreSelection(selectedPages, focusedPage);
-        StatusText = $"{Rows.Count} page(s). State: {Group.State}.";
+        StatusText = Group.State == GroupState.Committed
+            ? $"{Rows.Count} page(s) · Committed."
+            : $"{Rows.Count} page(s) · Open — not committed yet.";
     }
 
     /// <summary>

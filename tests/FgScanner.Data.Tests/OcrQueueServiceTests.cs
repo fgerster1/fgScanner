@@ -175,6 +175,50 @@ public sealed class OcrQueueServiceTests : IDisposable
         Assert.Equal(OcrStatus.No, after[pages[1].Id].OcrStatus);
     }
 
+    /// <summary>Automatic orientation belongs to a page's first reading only. After that — and after
+    /// any hand rotation — the page keeps the orientation it has (Franz, 2026-10-05: a rotated page
+    /// was turned back within seconds by the re-OCR its own edit queued).</summary>
+    [Fact]
+    public async Task Only_a_pages_first_reading_may_turn_it()
+    {
+        var (_, pages) = await CreateGroupWithPagesAsync(1);
+        await _queue.EnqueuePagesAsync([pages[0].Id], Ct);
+
+        var first = await _queue.ClaimNextAsync(Ct);
+        Assert.True(first!.AutoOrient);
+        await _queue.CompleteAsync(first.JobId, "text", 90, Ct);
+
+        await _queue.EnqueuePagesAsync([pages[0].Id], Ct);
+        var again = await _queue.ClaimNextAsync(Ct);
+        Assert.False(again!.AutoOrient);
+    }
+
+    [Fact]
+    public async Task A_hand_edit_settles_the_orientation_even_before_the_first_reading()
+    {
+        var (_, pages) = await CreateGroupWithPagesAsync(1);
+
+        await _queue.ReOcrEditedPageAsync(pages[0].Id, Ct);
+        await _queue.EnqueuePagesAsync([pages[0].Id], Ct);
+
+        var claimed = await _queue.ClaimNextAsync(Ct);
+        Assert.False(claimed!.AutoOrient);
+    }
+
+    [Fact]
+    public async Task A_page_re_read_after_a_hand_edit_is_not_turned()
+    {
+        var (_, pages) = await CreateGroupWithPagesAsync(1);
+        await _queue.EnqueuePagesAsync([pages[0].Id], Ct);
+        var first = await _queue.ClaimNextAsync(Ct);
+        await _queue.CompleteAsync(first!.JobId, "text", 90, Ct);
+
+        Assert.True(await _queue.ReOcrEditedPageAsync(pages[0].Id, Ct));
+
+        var claimed = await _queue.ClaimNextAsync(Ct);
+        Assert.False(claimed!.AutoOrient);
+    }
+
     [Fact]
     public async Task A_chosen_page_already_queued_gets_no_second_job()
     {

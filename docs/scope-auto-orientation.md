@@ -126,6 +126,19 @@ Net cost on a clean page: zero. On a misfed page: one OSD pass plus one re-OCR, 
 
 **All four decisions settled 2026-08-24. Ready to implement.**
 
+### DECIDED 2026-10-05 (Franz) — the operator's orientation wins
+
+Found on the dev station: a rotated and flipped page was turned back within seconds, every time.
+Each hand edit re-queues OCR (BUG-5), and OCR ran detection again and rewrote the file. On that
+handwritten page the detector was simply wrong — upright read as "rotate 180" at confidence 1.50 —
+while typed pages read 14.3–16.8 and are right.
+
+5. **Only a page's first reading may turn it.** `Page.OrientationSettled` is set by the first
+   finished OCR and by any hand edit (even before the first reading); a settled page is OCRed as it
+   lies, including by Re-OCR all and OCR selected. Existing read pages were settled by the migration.
+6. **A weak detection turns nothing.** Below confidence 5.0 (`OcrPipeline.MinOrientationConfidence`)
+   the page is left as it lies.
+
 ## 6. Effort
 
 | Work | Size |
