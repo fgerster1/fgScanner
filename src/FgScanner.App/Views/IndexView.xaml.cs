@@ -137,12 +137,26 @@ public partial class IndexView : UserControl
     /// <summary>
     /// Enter in a DataGrid moves the selection down a row, so pressing it on the person Jim chose
     /// would quietly pick the next one. Here it keeps the pick where it is (SPEC-2026-009 §09).
+    /// Tab leaves the grid outright, to the role box (Shift+Tab: the search box): the grid's own Tab
+    /// walks cell by cell and, past a row's last cell, into the next row — which picks that person.
     /// </summary>
     private void OnPersonGridKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter)
         {
             e.Handled = true;
+        }
+        else if (e.Key == Key.Tab)
+        {
+            e.Handled = true;
+            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+            {
+                PersonSearchBox.Focus();
+            }
+            else
+            {
+                PersonRoleBox.Focus();
+            }
         }
     }
 

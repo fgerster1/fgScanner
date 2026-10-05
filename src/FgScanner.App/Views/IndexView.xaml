@@ -273,7 +273,7 @@
                               Margin="0,4,0,0" PreviewKeyDown="OnPersonGridKeyDown"
                               PreviewMouseWheel="OnPersonGridMouseWheel"
                               AutomationProperties.Name="People found">
-                        <!-- Tab leaves in one step: walking the cells re-selects each row it enters,
+                        <!-- Tab leaves in one step (OnPersonGridKeyDown): walking the cells re-selects each row it enters,
                              so the pick would become whoever sits last. No sorting: Also known as and
                              Roles are lists, which do not compare, and a sort set on an empty grid
                              stops later rows appearing. Star widths: an Auto column grows to its widest
@@ -292,7 +292,7 @@
                                Visibility="{Binding PersonResultsNote, Converter={x:Static views:StringToVisibilityConverter.Instance}}" />
                     <!-- Role before Add in Tab order (§09): Add reached first stages the default role. -->
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
-                        <ComboBox Width="110"
+                        <ComboBox x:Name="PersonRoleBox" Width="110"
                                   ItemsSource="{Binding PersonQualifiers}"
                                   SelectedItem="{Binding PersonQualifierToAdd}"
                                   AutomationProperties.Name="Person role" />
