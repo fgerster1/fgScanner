@@ -250,6 +250,8 @@ public sealed partial class GroupDetailViewModel : ObservableObject
                 ImagePath = Path.Combine(Group.DirectoryPath, page.FileName),
                 Folder = Group.DirectoryPath,
                 OcrStatus = FormatOcrStatus(page),
+                OcrState = page.OcrStatus,
+                IsBlank = page.IsBlank,
                 AiStatus = page.AiStatus.ToString(),
                 OcrText = page.OcrText,
                 AiDescription = page.AiDescription,
@@ -433,6 +435,30 @@ public sealed partial class GroupDetailViewModel : ObservableObject
     /// Replaceable so the viewer's effect on the grid can be tested without a window.
     /// </summary>
     public Func<IReadOnlyList<string>, int, int> ShowPageViewer { get; set; } = Dialogs.PageViewerWindow.ShowModal;
+
+    /// <summary>
+    /// Opens the selected page beside its OCR text (SPEC-2026-009 §08-5), with the rest of the group a
+    /// key away; the grid follows the page it closed on, as it does for the page viewer.
+    /// </summary>
+    [RelayCommand]
+    private void OpenOcrViewer()
+    {
+        if (Rows.Count == 0)
+        {
+            return;
+        }
+
+        var start = SelectedRow is null ? 0 : Rows.IndexOf(SelectedRow);
+        var shown = Rows.ToList();
+        var landed = ShowOcrViewer(shown, Math.Max(0, start));
+        if (landed >= 0 && landed < shown.Count)
+        {
+            SelectedRow = Rows.FirstOrDefault(r => r.DocumentId == shown[landed].DocumentId) ?? shown[landed];
+        }
+    }
+
+    /// <summary>Replaceable so View OCR's effect on the grid can be tested without a window.</summary>
+    public Func<IReadOnlyList<DocumentRow>, int, int> ShowOcrViewer { get; set; } = Dialogs.OcrViewerWindow.ShowModal;
 
     /// <summary>
     /// Opens the record editor on the selected page. Modal for the viewer's reason: the editor works

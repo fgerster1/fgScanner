@@ -59,7 +59,7 @@ public partial class PageViewerWindow : Window
         FitToViewport();
     }
 
-    private static BitmapImage? LoadFullImage(string path)
+    internal static BitmapImage? LoadFullImage(string path)
     {
         if (!File.Exists(path))
         {

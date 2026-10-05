@@ -434,4 +434,66 @@ public sealed class GroupPageViewerTests : IDisposable
         Assert.Equal(0, shownStart);
         Assert.Same(vm.Rows[2], vm.SelectedRow);
     }
+
+    private async Task<GroupDetailViewModel> GroupOfThree(string name, CancellationToken ct)
+    {
+        var group = await _groupService.CreateGroupAsync(_root, name, null, ct);
+        var staging = Directory.CreateDirectory(Path.Combine(_root, "staging-" + name)).FullName;
+        var files = new List<string>();
+        for (byte i = 1; i <= 3; i++)
+        {
+            var file = Path.Combine(staging, $"scan_0000{i}.png");
+            await File.WriteAllBytesAsync(file, [i, i, i, 7], ct);
+            files.Add(file);
+        }
+
+        await _groupService.AdoptPagesAsync(group.Id, files, _ => false, ct);
+        var vm = new GroupDetailViewModel(
+            group, _groupService, _profileService, _indexingService, _trashService, new ActiveGroupStore(),
+            CreateToolset());
+        await vm.LoadAsync();
+        return vm;
+    }
+
+    /// <summary>SPEC-2026-009 AC-10: View OCR opens on the selected page, pages through the group,
+    /// and the grid follows the page it closed on — the page viewer's behaviour.</summary>
+    [Fact]
+    public async Task View_OCR_opens_on_the_selected_page_and_the_grid_follows_it()
+    {
+        var vm = await GroupOfThree("Ocr", TestContext.Current.CancellationToken);
+        vm.SelectedRow = vm.Rows[1];
+        IReadOnlyList<DocumentRow>? shown = null;
+        var shownStart = -1;
+        vm.ShowOcrViewer = (rows, start) =>
+        {
+            shown = rows;
+            shownStart = start;
+            return 0;
+        };
+
+        vm.OpenOcrViewerCommand.Execute(null);
+
+        Assert.Equal(vm.Rows, shown);
+        Assert.Equal(1, shownStart);
+        Assert.Same(vm.Rows[0], vm.SelectedRow);
+        Assert.All(vm.Rows, r => Assert.Equal(FgScanner.Data.OcrStatus.No, r.OcrState));
+    }
+
+    [Fact]
+    public async Task View_OCR_from_the_record_editor_opens_on_the_editors_page()
+    {
+        var vm = await GroupOfThree("OcrEditor", TestContext.Current.CancellationToken);
+        vm.SelectedRow = vm.Rows[2];
+        using var editor = new RecordEditorViewModel(vm);
+        var shownStart = -1;
+        vm.ShowOcrViewer = (_, start) =>
+        {
+            shownStart = start;
+            return start;
+        };
+
+        editor.OpenOcrViewerCommand.Execute(null);
+
+        Assert.Equal(2, shownStart);
+    }
 }

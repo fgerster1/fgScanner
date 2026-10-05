@@ -168,6 +168,11 @@ either way and the existing box stays.
    asked in this batch" and **no** Accept button, rather than hiding them (the reason quote can
    still help Jim read the page). **→ confirmed (greyed).**
 9. **Q9 — Pane widths remembered** across restarts (like Groups) — proceeding as yes. **→ confirmed.**
+**Decided during the build (2026-10-05, Franz):** typing an exact id that IS on the people
+list (e.g. `P1234` in PKG-0002 = "Two Licensed Physicians") stages that person; only an id-shaped
+name OFF the list is refused (the pre-existing ADR-0016 rule, unchanged). The walk notes had
+expected every `P1234` to be refused; that expectation was wrong for PKG-0002, not the code.
+
 10. **Q10 — Order of the remaining three specs** — proceeding as: portal people merge next
     (small, under a day), then "index everything", then text messages + email. **→ confirmed.**
 

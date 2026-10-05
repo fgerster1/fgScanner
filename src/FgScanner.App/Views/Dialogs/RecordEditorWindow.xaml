@@ -175,6 +175,8 @@
                         <Button Content="Fit" Click="OnFit" Padding="10,2" Margin="0,0,4,0" ToolTip="Show the whole page" />
                         <Button Content="100%" Click="OnActualSize" Padding="10,2" Margin="0,0,8,0" ToolTip="Actual size" />
                         <TextBlock x:Name="ZoomText" VerticalAlignment="Center" Opacity="0.7" MinWidth="52" />
+                        <Button Content="View OCR" Command="{Binding OpenOcrViewerCommand}" Padding="10,2"
+                                Margin="8,0,0,0" ToolTip="This page beside the text recognised on it" />
                     </WrapPanel>
 
                     <Border BorderBrush="Gray" BorderThickness="1">

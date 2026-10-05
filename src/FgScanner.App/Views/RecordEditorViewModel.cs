@@ -93,6 +93,9 @@ public sealed partial class RecordEditorViewModel : ObservableObject, IDisposabl
 
     public IAsyncRelayCommand AddMissedPageCommand => _detail.AddMissedPageCommand;
 
+    /// <summary>View OCR for the page the editor is on — the detail's selection is the editor's page.</summary>
+    public IRelayCommand OpenOcrViewerCommand => _detail.OpenOcrViewerCommand;
+
     public IAsyncRelayCommand ImportFilesCommand => _detail.ImportFilesCommand;
 
     public IAsyncRelayCommand UndoCommand => _detail.UndoCommand;
