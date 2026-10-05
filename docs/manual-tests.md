@@ -605,3 +605,59 @@ optional Gmail account. Still to confirm on the station:
       the setting was never filled in on the station, so the named-account path has run only in
       tests.
 
+## Index screen (SPEC-2026-009)
+
+**Real window only.** Selection write-back, keyboard focus, the grid's Tab and wheel behaviour and
+pane layout are all invisible to the headless suite. Open PKG-0002 (Index mode on, dev station) unless
+a step says otherwise. Steps 1–5 are the checkpoint lines of Prompts 1–5; the lines marked *(review)*
+check the fixes made by the Prompt 6 code review.
+
+**1 · Zoom (P1)**
+- [ ] On the Index page, −, + and Fit change the page scale; Ctrl+wheel zooms; a plain wheel scrolls.
+- [ ] Zoom in, then Next page → the new page re-fits.
+- [ ] Open full size opens the viewer at the current page and pages through the document; closing it
+      leaves the Index page on the page it closed on.
+- [ ] *(review)* Rename one page image of a scratch copy of the package aside → the pane says
+      "Page image not found" and −/+/Fit are greyed. Rename it back.
+
+**2 · Names (P2)**
+- [ ] Suggestions read "Whitacre, Jason · P0433" (name, then id); subjects and doc types show their labels;
+      staged answers likewise.
+- [ ] Accept on a key-document suggestion ticks Key document.
+- [ ] *(review)* On a document the portal already marked key, Accept on its "yes" stages nothing.
+- [ ] Amount / expense category / payee suggestions are greyed with "for information — not asked in
+      this batch" and have no Accept button.
+
+**3 · Panes (P3)**
+- [ ] Drag both Index splitters and the Groups list splitter; restart → all three widths are back, and
+      the Groups preview size is still kept.
+- [ ] At 1280×1024 the answer panel is not cut off.
+- [ ] *(review)* Maximise, widen both Index side panes a lot, close. Restart (the window opens at
+      1200×760) → Accept and Add are visible and the page pane is still there. Maximise again → the
+      wide panes come back. Same for a very wide Groups list: the detail pane stays on screen.
+- [ ] *(review)* Tab from "Open batch…" reaches the buttons and then the document list, never a
+      splitter. On Groups, after dragging the list splitter, Ctrl+Shift+→ rotates the selected page.
+
+**4 · People search (P4)**
+- [ ] Before typing, the line under the grid says "Type part of a name or nickname to list people."
+- [ ] Type "Whit" slowly → the text never changes and no row is selected.
+- [ ] Pick the second "Whitacre, Jason" row (P0433), Add → P0433 staged.
+- [ ] Type "Zelda Walkthrough" → "No one on the list matches. Add sends the name as typed."; Add →
+      staged as typed.
+- [ ] Switch documents back and forth several times → no crash, nothing re-staged.
+- [ ] *(review)* Search "whit", pick the middle row with the arrow keys, press Tab → focus goes to the
+      role box, the picked row stays picked; Tab again → Add. Add stages the row picked.
+- [ ] *(review)* Click the column headers → nothing sorts; then type "whitacre" → every Whitacre is listed.
+- [ ] *(review)* With the pointer over the grid, the wheel scrolls the answer panel once the grid has
+      nothing left to scroll.
+- [ ] *(review)* Search for an organisation with a long role → the Name column still shows whole names.
+
+**5 · View OCR (P5)**
+- [ ] Groups → a page with OCR → View OCR shows the image beside its text; a page never OCRed shows
+      "Not OCRed yet — use OCR pages on the Groups page."; the same from the record editor.
+- [ ] *(review)* A table page (bank statement, ledger): rows stay on one line, scroll sideways.
+- [ ] *(review)* On the last page, zoom in and press → → nothing moves or re-fits. Click the image,
+      then ←/→ → pages turn.
+- [ ] *(review)* Rotate an OCRed page, then View OCR before the queue reaches it → "OCR is still
+      running for this page.", not the text of the unrotated image.
+

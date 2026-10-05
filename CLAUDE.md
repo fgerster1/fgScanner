@@ -182,8 +182,10 @@ the JimsStuff portal (`JimsStuff/pipeline/import_fgscanner.py`) parses committed
   **A missing person may be TYPED, and a page may be "undated" (ADR-0016, Franz
   2026-10-02):** a typed name first matches the list (portal normalisation) and only an
   unmatched name travels — the portal holds it as a proposal, never a person; it must be
-  plain, trimmed, <=120 chars, never `P1234`-shaped. Undated is qualifier `undated` AND
-  value `undated` (an empty value is a withdrawal).
+  plain, trimmed, <=120 chars, never `P1234`-shaped (an exact on-list id stages that person).
+  Undated is qualifier `undated` AND value `undated` (an empty value is a withdrawal).
+  **The people search never selects on typing, Tab or Enter** (SPEC-2026-009): a grid row
+  is the only way to pick, and no row picked means "send as typed" (ADR-0016).
 - FG Scanner deliberately has **no Bates support** and none should be added to the capture
   path — identifiers live in the portal's register and display layer; stamped pixels can never
   be reorganized, and re-stamping is evidence alteration.

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved |
+| **Status** | Built |
 | **Revision** | B |
 | **Tier** | Feature |
 | **Author** | Claude, for Franz Gerster |
@@ -442,11 +442,11 @@ P6 `/code-review max` · P7 manual walk + docs. (No security prompt: not web-fac
 
 ## 21 · Definition of done
 
-- [ ] All acceptance criteria met
-- [ ] Failing tests written first, now passing
-- [ ] Full suite green (`dotnet test -c Release`), format gate clean
-- [ ] `/code-review max` run, findings resolved or accepted in writing
-- [ ] Documentation updated per §18
+- [x] All acceptance criteria met (window-only ones pending the walk)
+- [x] Failing tests written first, now passing
+- [x] Full suite green (`dotnet test -c Release`), format gate clean
+- [x] `/code-review max` run, findings resolved or accepted in writing
+- [x] Documentation updated per §18
 - [ ] Manual walk on the real window with PKG-0002, by Franz
 - [ ] Rollback waived (no schema change) — Franz to confirm
 
@@ -456,7 +456,7 @@ P6 `/code-review max` · P7 manual walk + docs. (No security prompt: not web-fac
 |---|---|
 | **Review round answered** | ☑ 2026-10-03 — round A, [review page](https://claude.ai/artifact/3p8B2jFk6PVUKemnb6CxhH) |
 | **Franz approved** | ☑ 2026-10-03 (round A verdict: approve) |
-| **Built** | ☐ date: |
+| **Built** | ☑ date: 2026-10-05 (P1–P7 on `phase-32-index-screen`; merge waits on Franz's walk) |
 | **Verified in production** | ☐ date: |
 
 **Code review (Prompt 6, `/code-review max`, 2026-10-05)** — 15 findings, every correctness one

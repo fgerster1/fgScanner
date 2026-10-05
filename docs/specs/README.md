@@ -15,4 +15,4 @@ Read §05 (questions) and §16 (regression risk) first — that is where a spec 
 
 Build order was set on the Round A page (part 1, N5): 004 → 005 → 006 → 007.
 | [SPEC-2026-008](./SPEC-2026-008-index-mode.md) | FG Scanner index mode (case-index phase 4) | Feature | Built | 2026-09-30 |
-| [SPEC-2026-009](./SPEC-2026-009-index-screen-fixes.md) | Index screen fixes: zoom, resizable panes, names, people search, OCR view | Feature | Approved | 2026-10-03 |
+| [SPEC-2026-009](./SPEC-2026-009-index-screen-fixes.md) | Index screen fixes: zoom, resizable panes, names, people search, OCR view | Feature | Built | 2026-10-03 |
