@@ -455,8 +455,8 @@ P6 `/code-review max` · P7 manual walk + docs. (No security prompt: not web-fac
 - [x] Full suite green (`dotnet test -c Release`), format gate clean
 - [x] `/code-review max` run, findings resolved or accepted in writing
 - [x] Documentation updated per §18
-- [ ] Manual walk on the real window with PKG-0002, by Franz
-- [ ] Rollback waived (no schema change) — Franz to confirm
+- [x] Manual walk on the real window with PKG-0002, by Franz — 2026-10-05, "Test out ok"
+- [ ] Rollback: one additive migration (`AddPageOrientationSettled`, from the 2026-10-05 orientation fix); its Down drops the column, and re-OCR then turns pages again as it did before
 
 ## 22 · Sign-off
 

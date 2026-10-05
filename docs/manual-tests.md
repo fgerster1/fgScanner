@@ -605,7 +605,7 @@ optional Gmail account. Still to confirm on the station:
       the setting was never filled in on the station, so the named-account path has run only in
       tests.
 
-## Index screen (SPEC-2026-009)
+## Index screen (SPEC-2026-009) — walked by Franz 2026-10-05: passed
 
 **Real window only.** Selection write-back, keyboard focus, the grid's Tab and wheel behaviour and
 pane layout are all invisible to the headless suite. Open PKG-0002 (Index mode on, dev station) unless
