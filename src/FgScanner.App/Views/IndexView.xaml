@@ -110,6 +110,15 @@
             <ListBox Grid.Column="0"
                      ItemsSource="{Binding Documents}"
                      SelectedItem="{Binding SelectedDocument}">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <!-- Drawn text is not what UI Automation exposes: without this every document
+                             is announced as the record's type dump. The anchor page is the help text,
+                             since titles repeat ("Farm details and information"). -->
+                        <Setter Property="AutomationProperties.Name" Value="{Binding Title}" />
+                        <Setter Property="AutomationProperties.HelpText" Value="{Binding AnchorPageId}" />
+                    </Style>
+                </ListBox.ItemContainerStyle>
                 <ListBox.ItemTemplate>
                     <DataTemplate>
                         <StackPanel Margin="2">
@@ -245,7 +254,7 @@
                     <DockPanel>
                         <Button DockPanel.Dock="Right" Content="Set" Padding="8,3" Margin="6,0,0,0"
                                 Command="{Binding SetDateCommand}" />
-                        <ComboBox DockPanel.Dock="Right" Width="80" Margin="6,0,0,0"
+                        <ComboBox DockPanel.Dock="Right" Width="120" Margin="6,0,0,0"
                                   ItemsSource="{Binding DateQualifiers}"
                                   SelectedItem="{Binding SelectedDateQualifier}"
                                   AutomationProperties.Name="Date qualifier" />
@@ -292,7 +301,7 @@
                                Visibility="{Binding PersonResultsNote, Converter={x:Static views:StringToVisibilityConverter.Instance}}" />
                     <!-- Role before Add in Tab order (§09): Add reached first stages the default role. -->
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
-                        <ComboBox x:Name="PersonRoleBox" Width="110"
+                        <ComboBox x:Name="PersonRoleBox" Width="135"
                                   ItemsSource="{Binding PersonQualifiers}"
                                   SelectedItem="{Binding PersonQualifierToAdd}"
                                   AutomationProperties.Name="Person role" />
