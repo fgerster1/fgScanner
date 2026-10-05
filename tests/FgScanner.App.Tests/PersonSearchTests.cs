@@ -75,4 +75,16 @@ public sealed class PersonSearchTests
         Assert.Equal(450, result.Total);
         Assert.Equal("Smith, Person 001", result.People[0].DisplayName);
     }
+
+    /// <summary>string.Normalize throws on a noncharacter; the reader lets one through, and the search
+    /// is built while the package opens, so a throw there would close FG Scanner.</summary>
+    [Fact]
+    public void A_name_that_cannot_be_normalised_is_still_searchable()
+    {
+        var odd = P("P0900", "Odd" + (char)0xFFFE + "name");
+
+        var search = new PersonSearch([.. People, odd]);
+
+        Assert.Equal(["P0900"], Ids(search.Filter("odd")));
+    }
 }

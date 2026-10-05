@@ -155,6 +155,22 @@ public sealed class IndexPeopleSearchTests : IDisposable
         Assert.Empty(vm.PersonResults);
     }
 
+    /// <summary>An empty grid must not look the same before a search and after one that found no
+    /// one: a mistyped surname would otherwise be Added and travel as a proposal (spec §12).</summary>
+    [Fact]
+    public async Task An_empty_grid_says_whether_nothing_was_typed_or_nobody_matched()
+    {
+        var vm = await OpenWithNamesakes();
+        Assert.Equal(IndexViewModel.PersonSearchHint, vm.PersonResultsNote);
+
+        vm.PersonText = "Whitacer";
+        Assert.Empty(vm.PersonResults);
+        Assert.Equal(IndexViewModel.PersonNoMatch, vm.PersonResultsNote);
+
+        vm.PersonText = "";
+        Assert.Equal(IndexViewModel.PersonSearchHint, vm.PersonResultsNote);
+    }
+
     [Fact]
     public async Task Opening_another_package_clears_the_search()
     {

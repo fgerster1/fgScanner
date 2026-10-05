@@ -44,9 +44,21 @@ public sealed class PersonSearch
     /// "Whitacre, Jason", "whitacre jason" and "Zoë" / "zoe" meet.</summary>
     private static string Normalise(string text)
     {
+        string decomposed;
+        try
+        {
+            decomposed = text.Normalize(NormalizationForm.FormD);
+        }
+        catch (ArgumentException)
+        {
+            // A noncharacter the reader let through: searched without accent folding rather than
+            // closing the app, since this runs while the package opens.
+            decomposed = text;
+        }
+
         var builder = new StringBuilder(text.Length);
         var pendingSpace = false;
-        foreach (var c in text.Normalize(NormalizationForm.FormD))
+        foreach (var c in decomposed)
         {
             if (CharUnicodeInfo.GetUnicodeCategory(c) == UnicodeCategory.NonSpacingMark)
             {

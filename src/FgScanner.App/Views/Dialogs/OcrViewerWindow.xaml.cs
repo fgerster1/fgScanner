@@ -52,6 +52,9 @@ public partial class OcrViewerWindow : Window
         var row = _rows[_navigator.Index];
         PageImage.Source = null;
         PageImage.Source = PageViewerWindow.LoadFullImage(row.ImagePath);
+        var hasImage = PageImage.Source is not null;
+        ImageMissingText.Visibility = hasImage ? Visibility.Collapsed : Visibility.Visible;
+        ZoomOutButton.IsEnabled = ZoomInButton.IsEnabled = FitButton.IsEnabled = hasImage;
         OcrText.Text = OcrTextSource.Read(row.ImagePath, row.OcrText, row.OcrState, row.IsBlank);
         OcrText.ScrollToHome();
         FileNameText.Text = row.ImagePath;
@@ -61,10 +64,16 @@ public partial class OcrViewerWindow : Window
         FitToViewport();
     }
 
+    /// <summary>At either end a step goes nowhere, and re-showing the same page would re-decode it,
+    /// undo the zoom and jump the text back to the top — once per key repeat.</summary>
     private void Move(Action step)
     {
+        var before = _navigator.Index;
         step();
-        ShowPage();
+        if (_navigator.Index != before)
+        {
+            ShowPage();
+        }
     }
 
     private void OnPrevious(object sender, RoutedEventArgs e) => Move(_navigator.Previous);
@@ -140,10 +149,11 @@ public partial class OcrViewerWindow : Window
     }
 
     /// <summary>Arrows page through — unless the text has focus, where they move the caret for
-    /// selecting a passage; the text box consumes them before they get here.</summary>
+    /// selecting a passage. Taken on the way down: the image's scroller handles Left/Right itself,
+    /// so once it had focus the arrows scrolled instead of paging.</summary>
     private void OnKeyDown(object sender, KeyEventArgs e)
     {
-        if (Keyboard.Modifiers != ModifierKeys.None)
+        if (Keyboard.Modifiers != ModifierKeys.None || OcrText.IsKeyboardFocusWithin)
         {
             return;
         }

@@ -89,7 +89,7 @@
         </DockPanel>
 
         <!-- Detail: pending values, entry grid, commit -->
-        <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
+        <GridSplitter Focusable="False" Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
                       VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext"
                       ShowsPreview="False" Cursor="SizeWE" KeyboardIncrement="20"
                       DragCompleted="OnSplitterDragCompleted"

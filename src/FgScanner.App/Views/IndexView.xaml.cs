@@ -31,6 +31,7 @@ public partial class IndexView : UserControl
             await RestorePaneSizesAsync();
         };
         Unloaded += (_, _) => SavePaneSizes();
+        SizeChanged += (_, _) => LimitPanes();
     }
 
     // ----- pane widths (SPEC-2026-009 §08-4) -----
@@ -73,10 +74,8 @@ public partial class IndexView : UserControl
     private bool _closingHooked;
 
     /// <summary>
-    /// The widths are saved again as the window closes. A drag's end is not the only way a width
-    /// changes — a splitter moved with the arrow keys never raises DragCompleted — and closing the
-    /// app while on this screen never unloads the view, so without this the last width set could be
-    /// the one that is lost.
+    /// The widths are saved again as the window closes: closing the app while on this screen never
+    /// unloads the view, so without this the last width set could be the one that is lost.
     /// </summary>
     private void HookWindowClosing()
     {
@@ -112,21 +111,19 @@ public partial class IndexView : UserControl
         }
     }
 
-    private void OnPaneRoomChanged(object sender, SizeChangedEventArgs e) => LimitPanes();
 
     /// <summary>
     /// Keeps the page pane at its minimum whatever the side panes were dragged to. The limit goes
     /// on MaxWidth, never Width, so a narrow window does not overwrite the width Jim chose on a wide one.
+    /// The room is the view's own width, which the section host sets: the pane grid reports its
+    /// overflowed width once the page pane is at its minimum, and the Accept and Add buttons then sit
+    /// past an edge nothing scrolls to.
     /// </summary>
     private void LimitPanes()
     {
-        var room = PaneGrid.ActualWidth;
-        DocumentListColumn.MaxWidth = WindowSizing.ClampPanel(double.PositiveInfinity, room,
-            PageMinWidth + SplitterThickness + AnswerPanelColumn.ActualWidth, SplitterThickness,
-            DocumentListMinWidth);
-        AnswerPanelColumn.MaxWidth = WindowSizing.ClampPanel(double.PositiveInfinity, room,
-            PageMinWidth + SplitterThickness + DocumentListColumn.ActualWidth, SplitterThickness,
-            AnswerPanelMinWidth);
+        (DocumentListColumn.MaxWidth, AnswerPanelColumn.MaxWidth) = PanelSize.Fit(
+            ActualWidth, DocumentListColumn.Width.Value, AnswerPanelColumn.Width.Value,
+            DocumentListMinWidth, AnswerPanelMinWidth, PageMinWidth + (2 * SplitterThickness));
     }
 
     /// <summary>
@@ -147,6 +144,55 @@ public partial class IndexView : UserControl
         {
             e.Handled = true;
         }
+    }
+
+    /// <summary>
+    /// The grid's own scroller takes every wheel turn, even with nothing to scroll, and the grid sits
+    /// across the whole answer panel — so the panel stopped scrolling under the pointer (§09: a bare
+    /// wheel keeps scrolling). A turn the grid cannot use goes on to the panel.
+    /// </summary>
+    private void OnPersonGridMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (Keyboard.Modifiers != ModifierKeys.None)
+        {
+            return;
+        }
+
+        var inner = FindDescendant<ScrollViewer>(PersonGrid);
+        var gridCanScroll = inner is not null && (e.Delta > 0
+            ? inner.VerticalOffset > 0
+            : inner.VerticalOffset < inner.ScrollableHeight);
+        if (gridCanScroll || PersonGrid.Parent is not UIElement parent)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        parent.RaiseEvent(new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+        {
+            RoutedEvent = MouseWheelEvent,
+            Source = PersonGrid,
+        });
+    }
+
+    private static T? FindDescendant<T>(DependencyObject root)
+        where T : DependencyObject
+    {
+        for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+            if (child is T found)
+            {
+                return found;
+            }
+
+            if (FindDescendant<T>(child) is { } deeper)
+            {
+                return deeper;
+            }
+        }
+
+        return null;
     }
 
     // ----- page zoom: the Groups preview's pattern (SPEC-2026-009 §08-3) -----
@@ -189,7 +235,15 @@ public partial class IndexView : UserControl
     /// Each page opens showing all of itself; otherwise a 300-DPI scan would start at 1:1,
     /// scrolled to the middle of the paper.
     /// </summary>
-    private void OnPageImageChanged(object sender, DataTransferEventArgs e) => FitPage();
+    private void OnPageImageChanged(object sender, DataTransferEventArgs e)
+    {
+        // A page whose file is gone says so; with no document chosen the pane is simply empty.
+        var hasImage = PageImage.Source is not null;
+        var missing = !hasImage && DataContext is IndexViewModel { CurrentPageImagePath: not null };
+        ImageMissingText.Visibility = missing ? Visibility.Visible : Visibility.Collapsed;
+        ZoomOutButton.IsEnabled = ZoomInButton.IsEnabled = FitButton.IsEnabled = hasImage;
+        FitPage();
+    }
 
     private void OnPageMouseDown(object sender, MouseButtonEventArgs e)
     {

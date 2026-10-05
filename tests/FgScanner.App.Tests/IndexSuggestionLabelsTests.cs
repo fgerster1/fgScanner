@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json.Nodes;
 using FgScanner.App.Views;
+using FgScanner.Core.IndexPackages;
 using Xunit;
 
 namespace FgScanner.App.Tests;
@@ -49,7 +50,7 @@ public sealed class IndexSuggestionLabelsTests : IDisposable
     /// <summary>The golden package with TOM99005 carrying the suggestion shapes PKG-0002 really
     /// holds: people by id (one not on the list), a key flag of "yes", and fields the contract
     /// does not ask about. Re-hashed so only the edit under test differs.</summary>
-    private string PackageWithRealSuggestionShapes()
+    private string PackageWithRealSuggestionShapes(bool portalFlagged = false)
     {
         var package = CopyOfGolden();
         var seedPath = Path.Combine(package, "seed.json");
@@ -75,6 +76,12 @@ public sealed class IndexSuggestionLabelsTests : IDisposable
         Add("amount", null, "130000", "> $130,000.");
         Add("expense_category", null, "Pending Liabilities");
         Add("payee", null, "P0001");
+        if (portalFlagged)
+        {
+            document["decisions"]!.AsArray().Add(
+                new JsonObject { ["field"] = "key_flag", ["qualifier"] = null, ["value"] = "true" });
+        }
+
         File.WriteAllText(seedPath, seed.ToJsonString());
 
         var manifestPath = Path.Combine(package, "manifest.json");
@@ -197,6 +204,59 @@ public sealed class IndexSuggestionLabelsTests : IDisposable
 
         var staged = Assert.Single(vm.StagedAnswers);
         Assert.Equal(("person", "mentioned", "P0002"), (staged.Field, staged.Qualifier, staged.Value));
+    }
+
+    [Fact]
+    public async Task An_unknown_id_is_shown_once_and_named_by_its_own_list()
+    {
+        var vm = await OpenOnTom99005();
+        var labels = new IndexLabels(vm.Package!);
+        var person = SuggestionRow.From(new SeedSuggestion(1, "person", "mentioned", "P9999", null), labels);
+        var subject = SuggestionRow.From(new SeedSuggestion(2, "subject", null, "no-such-subject", null), labels);
+        var docType = SuggestionRow.From(new SeedSuggestion(3, "doc_type", null, "no-such-type", null), labels);
+
+        Assert.Equal(("P9999", (string?)null, "not on the people list"),
+            (person.ValueLabel, person.IdText, person.InfoText));
+        Assert.Equal(("no-such-subject", (string?)null, "not on the subject list"),
+            (subject.ValueLabel, subject.IdText, subject.InfoText));
+        Assert.Equal(("no-such-type", (string?)null, "not on the document type list"),
+            (docType.ValueLabel, docType.IdText, docType.InfoText));
+    }
+
+    /// <summary>Neither schema nor reader makes an id unique, and the labels are built while the
+    /// package opens: a throw there would close FG Scanner instead of opening the batch.</summary>
+    [Fact]
+    public async Task A_repeated_id_in_a_list_does_not_stop_the_labels_being_built()
+    {
+        var vm = await OpenOnTom99005();
+        var package = vm.Package!;
+        var repeated = package with
+        {
+            People = [.. package.People, package.People[0] with { DisplayName = "Someone else" }],
+            Subjects = [.. package.Subjects, package.Subjects[0]],
+            DocTypes = [.. package.DocTypes, package.DocTypes[0]],
+        };
+
+        var labels = new IndexLabels(repeated);
+
+        Assert.Equal(package.People[0].DisplayName, labels.Person(package.People[0].Id));
+    }
+
+    /// <summary>The checkbox stages nothing for a flag the portal already holds; an Accept is the
+    /// same act and must not mint a second key-document decision with a new decidedAt.</summary>
+    [Fact]
+    public async Task Accepting_yes_on_a_document_the_portal_already_flagged_stages_nothing()
+    {
+        var vm = CreateViewModel();
+        await vm.OpenPackageAsync(PackageWithRealSuggestionShapes(portalFlagged: true));
+        vm.SelectedDocument = vm.Documents.Single(d => d.AnchorPageId == "TOM99005");
+        Assert.True(vm.KeyFlagChecked);
+
+        vm.AcceptSuggestionCommand.Execute(Row(vm, "key_flag", "yes").Source);
+
+        Assert.Null(vm.AnswerError);
+        Assert.Empty(vm.StagedAnswers);
+        Assert.True(vm.KeyFlagChecked);
     }
 
     [Fact]

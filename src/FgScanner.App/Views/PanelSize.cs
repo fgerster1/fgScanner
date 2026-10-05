@@ -18,4 +18,31 @@ public static class PanelSize
             : fallback;
 
     public static string Format(double size) => size.ToString("0", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The widest each side pane may be shown so both fit the room beside <paramref name="between"/>
+    /// (the middle pane's minimum and the splitters); infinity where nothing needs limiting. Worked
+    /// from the widths Jim chose, never the laid-out ones: a pane already cut off reports its cut
+    /// width, and limiting against that limits nothing. Any overflow is taken from each pane in
+    /// proportion to what it has above its minimum. Pass a zero second pane when there is only one.
+    /// </summary>
+    public static (double First, double Second) Fit(
+        double room, double first, double second, double firstMin, double secondMin, double between)
+    {
+        var over = first + second + between - room;
+        if (!(room > 0) || over <= 0)
+        {
+            return (double.PositiveInfinity, double.PositiveInfinity);
+        }
+
+        var firstSlack = Math.Max(0, first - firstMin);
+        var secondSlack = Math.Max(0, second - secondMin);
+        var slack = firstSlack + secondSlack;
+        if (slack <= over)
+        {
+            return (Math.Min(first, firstMin), Math.Min(second, secondMin));
+        }
+
+        return (first - (over * firstSlack / slack), second - (over * secondSlack / slack));
+    }
 }

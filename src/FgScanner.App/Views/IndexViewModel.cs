@@ -387,9 +387,14 @@ public sealed partial class IndexViewModel : ObservableObject
     /// <see cref="PersonToAdd"/>, and a Clear() makes WPF write a null selection back mid-refill.</summary>
     public System.Collections.ObjectModel.ObservableCollection<PackagePerson> PersonResults { get; } = [];
 
-    /// <summary>Says when more people matched than the grid shows; null otherwise.</summary>
+    public const string PersonSearchHint = "Type part of a name or nickname to list people.";
+
+    public const string PersonNoMatch = "No one on the list matches. Add sends the name as typed.";
+
+    /// <summary>What the grid cannot say by itself: that nothing is typed yet, that nobody matched, or
+    /// that more matched than it shows. Null when the rows speak for themselves.</summary>
     [ObservableProperty]
-    private string? _personResultsNote;
+    private string? _personResultsNote = PersonSearchHint;
 
     private PersonSearch? _personSearch;
 
@@ -400,10 +405,12 @@ public sealed partial class IndexViewModel : ObservableObject
         PersonToAdd = null;
         var result = _personSearch?.Filter(value) ?? new PersonSearch.Result([], 0);
         ShowPersonResults(result.People);
-        PersonResultsNote = result.Total > result.People.Count
-            ? string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                "{0} more match — keep typing to narrow it down.", result.Total - result.People.Count)
-            : null;
+        PersonResultsNote = value.Trim().Length == 0 ? PersonSearchHint
+            : result.Total == 0 ? PersonNoMatch
+            : result.Total > result.People.Count
+                ? string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "{0} more match — keep typing to narrow it down.", result.Total - result.People.Count)
+                : null;
     }
 
     private void ShowPersonResults(IReadOnlyList<PackagePerson> wanted)
@@ -584,16 +591,18 @@ public sealed partial class IndexViewModel : ObservableObject
     {
         if (SelectedDocument is { } document)
         {
-            // The portal's AI writes a key-document suggestion as "yes"; the answer file's word is
-            // "true" (SPEC-2026-009 Q7). Anything else stays refused by the validator, in words.
-            var value = suggestion.Field == IndexAnswerVocabulary.KeyFlag && suggestion.Value == "yes"
-                ? IndexAnswerVocabulary.KeyFlagTrue
-                : suggestion.Value;
-            TryStage(document.AnchorPageId, suggestion.Field, suggestion.Qualifier, value);
-            if (suggestion.Field == IndexAnswerVocabulary.KeyFlag && AnswerError is null)
+            // The portal's AI writes a key-document suggestion as "yes" (SPEC-2026-009 Q7). Accepting
+            // it is ticking the box, through the box's own rules: a flag the portal already holds
+            // stages nothing, where staging "true" again would export a second decision with a new
+            // decidedAt. Any other value stays refused by the validator, in words.
+            if (suggestion.Field == IndexAnswerVocabulary.KeyFlag && suggestion.Value == "yes")
             {
-                RefreshAnswerPanel();
+                AnswerError = null;
+                KeyFlagChecked = true;
+                return;
             }
+
+            TryStage(document.AnchorPageId, suggestion.Field, suggestion.Qualifier, suggestion.Value);
         }
     }
 
@@ -603,6 +612,19 @@ public sealed partial class IndexViewModel : ObservableObject
     {
         _labels = value is null ? null : new IndexLabels(value);
         _personSearch = value is null ? null : new PersonSearch(value.People);
+        if (value is null || _labels is not { } labels)
+        {
+            return;
+        }
+
+        // The package and its own people list disagree; Jim sees the bare id, and this says where (§14).
+        foreach (var id in value.Documents.SelectMany(d => d.Suggestions)
+                     .Where(s => s.Field == IndexAnswerVocabulary.Person && labels.Person(s.Value) is null)
+                     .Select(s => s.Value).Distinct(StringComparer.Ordinal))
+        {
+            Log.Warning("Index package {PackageId} suggests person {PersonId}, who is not on its people list",
+                value.PackageId, id);
+        }
     }
 
     /// <summary>The selected document's suggestions with names in place of ids (SPEC-2026-009 §08-1).</summary>

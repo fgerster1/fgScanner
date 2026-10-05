@@ -13,7 +13,9 @@ public static class OcrTextSource
 {
     public static string Read(string imagePath, string? ocrText, OcrStatus status, bool isBlank)
     {
-        var markdown = ReadMarkdown(imagePath);
+        // Only a finished OCR owns its .md: an edited image is re-queued with the old file still
+        // beside it until the worker claims the job, and that text describes the image before the edit.
+        var markdown = status == OcrStatus.Yes ? ReadMarkdown(imagePath) : null;
         if (!string.IsNullOrWhiteSpace(markdown))
         {
             return markdown;

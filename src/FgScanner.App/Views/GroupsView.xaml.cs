@@ -22,6 +22,7 @@ public partial class GroupsView : UserControl
     private const double PreviewMinWidth = 200;
     private const double PreviewMinHeight = 90;
     private const double GroupListMinWidth = 200;
+    private const double DetailMinWidth = 446;
 
     public GroupsView()
     {
@@ -38,6 +39,7 @@ public partial class GroupsView : UserControl
         };
         Unloaded += (_, _) => SavePanelSizes();
         Loaded += (_, _) => HookWindowClosing();
+        SizeChanged += (_, _) => LimitGroupList();
         AddHandler(TextLengthGuard.RefusedEvent, new EventHandler<LengthRefusedEventArgs>(OnLengthRefused));
     }
 
@@ -64,6 +66,7 @@ public partial class GroupsView : UserControl
             PreviewColumn.Width = await ReadLengthAsync(vm, PreviewWidthKey, 300, PreviewMinWidth);
             PreviewRow.Height = await ReadLengthAsync(vm, PreviewHeightKey, 190, PreviewMinHeight);
             GroupListColumn.Width = await ReadLengthAsync(vm, GroupListWidthKey, 270, GroupListMinWidth);
+            LimitGroupList();
         }
         catch (Exception ex)
         {
@@ -81,7 +84,21 @@ public partial class GroupsView : UserControl
     /// is not remembered in any sense the user would recognise.
     /// </summary>
     private void OnSplitterDragCompleted(
-        object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e) => SavePanelSizes();
+        object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        LimitGroupList();
+        SavePanelSizes();
+    }
+
+    /// <summary>
+    /// Keeps the detail pane at its minimum beside a group list widened on a larger window. The limit
+    /// goes on MaxWidth, never Width, so the width chosen there comes back when there is room again.
+    /// The room is this view's own width, set by the section host: the grid inside reports its
+    /// overflowed width once the detail pane is at its minimum.
+    /// </summary>
+    private void LimitGroupList() =>
+        GroupListColumn.MaxWidth = PanelSize.Fit(ActualWidth, GroupListColumn.Width.Value, 0,
+            GroupListMinWidth, 0, SplitterThickness + DetailMinWidth).First;
 
     /// <summary>
     /// The value panels and toolbars above the grid take at most this share of the height. On a

@@ -293,7 +293,8 @@ untouched).
 
 > **AC-4 (no autocomplete)** — Typing in the search box never selects a row and never changes
 > the typed text; Add with no row selected sends the typed text through the typed-name path
-> (`Zelda Walkthrough` staged as typed; `P1234` refused in words). *Proven by:*
+> (`Zelda Walkthrough` staged as typed; an id-shaped name that is not on the people list
+> refused in words; an exact on-list id stages that person — decided 2026-10-05, §05). *Proven by:*
 > `IndexTypedNameAndUndatedTests` (extended) + manual on the real window (headless blind spot).
 
 > **AC-5 (pick)** — Selecting the second "Whitacre, Jason" row and Add stages `P0433`, not
@@ -457,3 +458,20 @@ P6 `/code-review max` · P7 manual walk + docs. (No security prompt: not web-fac
 | **Franz approved** | ☑ 2026-10-03 (round A verdict: approve) |
 | **Built** | ☐ date: |
 | **Verified in production** | ☐ date: |
+
+**Code review (Prompt 6, `/code-review max`, 2026-10-05)** — 15 findings, every correctness one
+fixed. Spec drift: AC-4 reworded to Franz's 2026-10-05 typed-id decision (§05).
+Not changed, and why:
+- **New splitters are mouse-only** (Index ×2, Groups list, View OCR): a focusable splitter sat in
+  Tab order before the document list and swallowed Ctrl+Shift+←/→ rotate. Keyboard resizing is
+  given up for that; the Groups preview splitters (pre-existing) are untouched and keep the gap.
+- **A repeated id in a package list** is tolerated on screen (first entry wins, id shown beside it)
+  rather than refused: refusing belongs in the shared `PackageReader`, which this spec does not touch.
+- **Cleanups declined as out of scope (§03, smallest diff):** `OcrViewerWindow` near-copies
+  `PageViewerWindow` (no Home/End, Ctrl+−/+/0, 100%); pane-size save/restore duplicated between
+  Index and Groups; `OpenOcrViewer` copies `OpenPageViewer`; the row-projection `OnPropertyChanged`
+  relay; `ShowPersonResults`' unreachable `Move` branch; no view-model test of the "N more" note
+  (the cap itself is tested in `PersonSearchTests`).
+- **Window-only fixes need the manual walk** (headless blind spot): grid Tab and sorting, wheel
+  over the grid, column widths, role-before-Add, pane limits after a restart at 1200×760,
+  View OCR paging/no-wrap/missing image — Prompt 7 adds them to `docs/manual-tests.md`.

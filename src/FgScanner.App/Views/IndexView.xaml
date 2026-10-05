@@ -82,7 +82,7 @@
 
         <!-- Three panes Jim can widen or narrow (SPEC-2026-009 §08-4); the widths are remembered.
              The minimums keep every pane usable: 200 + 6 + 300 + 6 + 300 fits the section's 980. -->
-        <Grid x:Name="PaneGrid" SizeChanged="OnPaneRoomChanged">
+        <Grid x:Name="PaneGrid">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="DocumentListColumn" Width="280" MinWidth="200" />
                 <ColumnDefinition Width="6" />
@@ -91,13 +91,15 @@
                 <ColumnDefinition x:Name="AnswerPanelColumn" Width="340" MinWidth="300" />
             </Grid.ColumnDefinitions>
 
-            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
+            <!-- Mouse only: a focusable splitter sat between "Open batch…" and the document list in
+                 Tab order, where an arrow key resized the pane instead of moving through documents. -->
+            <GridSplitter Focusable="False" Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
                           VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext"
                           ShowsPreview="False" Cursor="SizeWE" KeyboardIncrement="20"
                           DragCompleted="OnSplitterDragCompleted"
                           ToolTip="Drag to make the document list wider or narrower"
                           AutomationProperties.Name="Resize the document list" />
-            <GridSplitter Grid.Column="3" Width="6" HorizontalAlignment="Stretch"
+            <GridSplitter Focusable="False" Grid.Column="3" Width="6" HorizontalAlignment="Stretch"
                           VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext"
                           ShowsPreview="False" Cursor="SizeWE" KeyboardIncrement="20"
                           DragCompleted="OnSplitterDragCompleted"
@@ -134,11 +136,11 @@
                                VerticalAlignment="Center" Margin="10,0" Opacity="0.8" />
                 </DockPanel>
                 <WrapPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
-                    <Button Content="−" Click="OnZoomOut" Padding="10,2" Margin="0,0,4,0"
+                    <Button x:Name="ZoomOutButton" Content="−" Click="OnZoomOut" Padding="10,2" Margin="0,0,4,0"
                             ToolTip="Zoom out" AutomationProperties.Name="Zoom out" />
-                    <Button Content="+" Click="OnZoomIn" Padding="10,2" Margin="0,0,4,0"
+                    <Button x:Name="ZoomInButton" Content="+" Click="OnZoomIn" Padding="10,2" Margin="0,0,4,0"
                             ToolTip="Zoom in" AutomationProperties.Name="Zoom in" />
-                    <Button Content="Fit" Click="OnFit" Padding="8,2" Margin="0,0,4,0"
+                    <Button x:Name="FitButton" Content="Fit" Click="OnFit" Padding="8,2" Margin="0,0,4,0"
                             ToolTip="Show the whole page" AutomationProperties.Name="Fit the page" />
                     <TextBlock x:Name="ZoomText" VerticalAlignment="Center" Opacity="0.7"
                                MinWidth="40" Margin="0,0,8,0" />
@@ -168,6 +170,10 @@
                     </ScrollViewer>
                 </Border>
             </DockPanel>
+            <!-- An empty pane would read as a blank page. -->
+            <TextBlock x:Name="ImageMissingText" Grid.Column="2" Text="Page image not found"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.7"
+                       Visibility="Collapsed" />
 
             <!-- The answer panel: five questions, nothing auto-applies —
                  an untouched suggestion is not an answer. -->
@@ -200,7 +206,7 @@
                                         <Button DockPanel.Dock="Right" Content="Accept"
                                                 VerticalAlignment="Top" Padding="8,3" Margin="6,0,0,0"
                                                 Visibility="{Binding CanAccept, Converter={x:Static views:BoolToVisibilityConverter.Instance}}"
-                                                AutomationProperties.Name="{Binding ValueLabel, StringFormat=Accept suggestion {0}}"
+                                                AutomationProperties.Name="{Binding AcceptName}"
                                                 Command="{Binding DataContext.AcceptSuggestionCommand,
                                                           RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                 CommandParameter="{Binding Source}" />
@@ -261,30 +267,38 @@
                               SelectedItem="{Binding PersonToAdd}"
                               AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single"
                               SelectionUnit="FullRow" HeadersVisibility="Column"
-                              CanUserAddRows="False" CanUserDeleteRows="False"
+                              CanUserAddRows="False" CanUserDeleteRows="False" CanUserSortColumns="False"
+                              KeyboardNavigation.TabNavigation="Once"
                               GridLinesVisibility="Horizontal" MinHeight="60" MaxHeight="230"
                               Margin="0,4,0,0" PreviewKeyDown="OnPersonGridKeyDown"
+                              PreviewMouseWheel="OnPersonGridMouseWheel"
                               AutomationProperties.Name="People found">
+                        <!-- Tab leaves in one step: walking the cells re-selects each row it enters,
+                             so the pick would become whoever sits last. No sorting: Also known as and
+                             Roles are lists, which do not compare, and a sort set on an empty grid
+                             stops later rows appearing. Star widths: an Auto column grows to its widest
+                             cell and never gives the room back, and Name tells namesakes apart. -->
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Name" Binding="{Binding DisplayName}" Width="2*" />
+                            <DataGridTextColumn Header="Name" Binding="{Binding DisplayName}" Width="3*" />
                             <DataGridTextColumn Header="Id" Binding="{Binding Id}" Width="Auto" />
-                            <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="Auto" />
+                            <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="*" />
                             <DataGridTextColumn Header="Also known as" Width="2*"
                                                 Binding="{Binding Aliases, Converter={x:Static views:JoinConverter.Instance}}" />
-                            <DataGridTextColumn Header="Roles" Width="Auto"
+                            <DataGridTextColumn Header="Roles" Width="*"
                                                 Binding="{Binding Roles, Converter={x:Static views:JoinConverter.Instance}}" />
                         </DataGrid.Columns>
                     </DataGrid>
                     <TextBlock Text="{Binding PersonResultsNote}" FontSize="11" Opacity="0.8" Margin="0,2,0,0"
                                Visibility="{Binding PersonResultsNote, Converter={x:Static views:StringToVisibilityConverter.Instance}}" />
-                    <DockPanel Margin="0,4,0,0" LastChildFill="False">
-                        <Button DockPanel.Dock="Right" Content="Add" Padding="8,3" Margin="6,0,0,0"
-                                Command="{Binding AddPersonCommand}" />
-                        <ComboBox DockPanel.Dock="Right" Width="110"
+                    <!-- Role before Add in Tab order (§09): Add reached first stages the default role. -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
+                        <ComboBox Width="110"
                                   ItemsSource="{Binding PersonQualifiers}"
                                   SelectedItem="{Binding PersonQualifierToAdd}"
                                   AutomationProperties.Name="Person role" />
-                    </DockPanel>
+                        <Button Content="Add" Padding="8,3" Margin="6,0,0,0"
+                                Command="{Binding AddPersonCommand}" />
+                    </StackPanel>
                     </StackPanel>
                     <TextBlock Opacity="0.7" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap"
                                Text="Click the person's row, then Add. Someone missing from the list? Type the name as the page spells it, leave every row unpicked, and click Add. Franz decides who it is; it is never added to the list without him." />

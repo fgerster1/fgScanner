@@ -86,6 +86,19 @@ public sealed class OcrTextSourceTests : IDisposable
         Assert.Equal(expected, OcrTextSource.Read(Image(), "  ", status, isBlank: false));
     }
 
+    /// <summary>An edited image is re-queued with its old .md still beside it until the worker
+    /// claims the job; that file describes the image before the edit.</summary>
+    [Theory]
+    [InlineData(OcrStatus.Pending, "OCR is still running for this page.")]
+    [InlineData(OcrStatus.No, "Not OCRed yet — use OCR pages on the Groups page.")]
+    [InlineData(OcrStatus.Failed, "OCR failed on this page — try Re-process.")]
+    public void A_md_left_from_before_an_edit_is_not_shown_until_ocr_finishes(OcrStatus status, string expected)
+    {
+        WriteMarkdown("text of the image before it was rotated");
+
+        Assert.Equal(expected, OcrTextSource.Read(Image(), null, status, isBlank: false));
+    }
+
     [Fact]
     public void A_blank_page_says_it_was_left_out()
     {

@@ -8,14 +8,26 @@ namespace FgScanner.App.Views;
 /// </summary>
 public sealed class IndexLabels(IndexPackage package)
 {
-    private readonly Dictionary<string, string> _people =
-        package.People.ToDictionary(p => p.Id, p => p.DisplayName, StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _people = Lookup(package.People, p => p.Id, p => p.DisplayName);
 
-    private readonly Dictionary<string, string> _subjects =
-        package.Subjects.ToDictionary(s => s.Id, s => s.Label, StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _subjects = Lookup(package.Subjects, s => s.Id, s => s.Label);
 
-    private readonly Dictionary<string, string> _docTypes =
-        package.DocTypes.ToDictionary(t => t.Id, t => t.Label, StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _docTypes = Lookup(package.DocTypes, t => t.Id, t => t.Label);
+
+    /// <summary>The first entry for an id wins. Nothing upstream makes ids unique, and these are built
+    /// while the package opens, where a throw would close the app; the id shown beside every label
+    /// keeps a disagreement visible.</summary>
+    private static Dictionary<string, string> Lookup<T>(
+        IEnumerable<T> entries, Func<T, string> id, Func<T, string> label)
+    {
+        var lookup = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var entry in entries)
+        {
+            lookup.TryAdd(id(entry), label(entry));
+        }
+
+        return lookup;
+    }
 
     public string? Person(string id) => _people.GetValueOrDefault(id);
 
@@ -53,8 +65,17 @@ public sealed class IndexLabels(IndexPackage package)
         };
         var isId = field is IndexAnswerVocabulary.Person or "payee"
             or IndexAnswerVocabulary.Subject or IndexAnswerVocabulary.DocType;
-        return label is null ? (value, value, false) : (label, isId ? value : null, true);
+        // An unknown id is its own label; repeating it beside itself would only read as a stammer.
+        return label is null ? (value, null, false) : (label, isId ? value : null, true);
     }
+
+    /// <summary>Which list an unknown id is missing from, said in the row.</summary>
+    public static string NotOnList(string field) => field switch
+    {
+        IndexAnswerVocabulary.Subject => "not on the subject list",
+        IndexAnswerVocabulary.DocType => "not on the document type list",
+        _ => "not on the people list",
+    };
 }
 
 /// <summary>One AI suggestion as the Suggestions list shows it. <see cref="Source"/> is what Accept
@@ -63,7 +84,12 @@ public sealed record SuggestionRow(
     SeedSuggestion Source, string FieldLabel, string ValueLabel, string? IdText, bool CanAccept, string? InfoText)
 {
     public const string NotAsked = "for information — not asked in this batch";
-    public const string NotOnList = "not on the people list";
+
+    /// <summary>What a screen reader and UI Automation call the Accept button. The id is in it because
+    /// namesakes would otherwise share one name (two "Judd"s on one PKG-0002 document).</summary>
+    public string AcceptName => IdText is null
+        ? $"Accept suggestion {ValueLabel}"
+        : $"Accept suggestion {ValueLabel} {IdText}";
 
     public static SuggestionRow From(SeedSuggestion suggestion, IndexLabels labels)
     {
@@ -71,7 +97,7 @@ public sealed record SuggestionRow(
         // A seed can carry fields the contract does not (PKG-0002: amount, payee, expense_category);
         // an Accept on one could only fail, so it is shown for its reason quote and nothing more.
         var asked = IndexAnswerVocabulary.Fields.Contains(suggestion.Field);
-        var info = !asked ? NotAsked : known ? null : NotOnList;
+        var info = !asked ? NotAsked : known ? null : IndexLabels.NotOnList(suggestion.Field);
         return new SuggestionRow(
             suggestion, IndexLabels.FieldLabel(suggestion.Field), label, id, asked, info);
     }
@@ -85,6 +111,6 @@ public sealed record StagedAnswerRow(StagedAnswer Source, string FieldLabel, str
         var (label, id, _) = labels.Value(answer.Field, answer.Value);
         // A typed name or a withdrawal is not an id: it shows as itself.
         return new StagedAnswerRow(answer, IndexLabels.FieldLabel(answer.Field),
-            answer.Value.Length == 0 ? "(withdrawn)" : label, id == label ? null : id);
+            answer.Value.Length == 0 ? "(withdrawn)" : label, id);
     }
 }
