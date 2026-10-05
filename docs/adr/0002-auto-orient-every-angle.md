@@ -68,3 +68,11 @@ owner's instruction was to correct the page, not just what is read from it.
 **Gate the OSD pass on low confidence.** The originally scoped design, and cheaper — most pages
 would skip it. Rejected because a sideways page in the "good" direction scores 91%, sails past any
 confidence gate, and stays sideways on disk forever.
+
+## Amendment 2026-10-05 (Franz): first reading only, confident detections only
+
+Every re-OCR ran this again, including the one a hand rotation queues, so a page the operator
+turned was turned back within seconds. On that handwritten page the detector read an upright sheet
+as "rotate 180" at orientation confidence 1.50; typed pages read 14.3-16.8. Now only a page's first
+reading may turn it (`Page.OrientationSettled`, set by a finished OCR or any hand edit), and a
+detection below 5.0 turns nothing. Detail: `docs/scope-auto-orientation.md` decisions 5-6.

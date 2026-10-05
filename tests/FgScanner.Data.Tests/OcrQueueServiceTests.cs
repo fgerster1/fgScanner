@@ -136,4 +136,98 @@ public sealed class OcrQueueServiceTests : IDisposable
         Assert.Equal(0, await _queue.EnqueueGroupAsync(group.Id, cancellationToken: Ct));
         Assert.Equal(1, await _queue.EnqueueGroupAsync(group.Id, force: true, cancellationToken: Ct));
     }
+
+    /// <summary>One misread page should not cost a whole group's re-run: the chosen pages are OCRed
+    /// if they never were, and re-OCRed if they were — and nothing else is touched.</summary>
+    [Fact]
+    public async Task Chosen_pages_are_queued_whatever_their_status_and_others_are_left_alone()
+    {
+        var (group, pages) = await CreateGroupWithPagesAsync(3);
+        await _queue.EnqueuePagesAsync([pages[0].Id], Ct);
+        var claimed = await _queue.ClaimNextAsync(Ct);
+        await _queue.CompleteAsync(claimed!.JobId, "first reading", 60, Ct);
+
+        var result = await _queue.EnqueuePagesAsync([pages[0].Id, pages[1].Id], Ct);
+
+        Assert.Equal(new OcrPageRequest(Queued: 2, Blank: 0, AlreadyQueued: 0), result);
+        var after = (await _groups.GetPagesAsync(group.Id, Ct)).ToDictionary(p => p.Id);
+        Assert.Equal(OcrStatus.Pending, after[pages[0].Id].OcrStatus);
+        Assert.Equal(OcrStatus.Pending, after[pages[1].Id].OcrStatus);
+        Assert.Equal(OcrStatus.No, after[pages[2].Id].OcrStatus);
+        Assert.Equal(2, await _queue.PendingCountAsync(Ct));
+    }
+
+    [Fact]
+    public async Task A_chosen_blank_page_is_skipped_and_counted()
+    {
+        var (group, pages) = await CreateGroupWithPagesAsync(2);
+        await using (var db = _db.Factory.CreateDbContext())
+        {
+            var blank = await db.Pages.SingleAsync(p => p.Id == pages[1].Id, Ct);
+            blank.IsBlank = true;
+            await db.SaveChangesAsync(Ct);
+        }
+
+        var result = await _queue.EnqueuePagesAsync([pages[0].Id, pages[1].Id], Ct);
+
+        Assert.Equal(new OcrPageRequest(Queued: 1, Blank: 1, AlreadyQueued: 0), result);
+        var after = (await _groups.GetPagesAsync(group.Id, Ct)).ToDictionary(p => p.Id);
+        Assert.Equal(OcrStatus.No, after[pages[1].Id].OcrStatus);
+    }
+
+    /// <summary>Automatic orientation belongs to a page's first reading only. After that — and after
+    /// any hand rotation — the page keeps the orientation it has (Franz, 2026-10-05: a rotated page
+    /// was turned back within seconds by the re-OCR its own edit queued).</summary>
+    [Fact]
+    public async Task Only_a_pages_first_reading_may_turn_it()
+    {
+        var (_, pages) = await CreateGroupWithPagesAsync(1);
+        await _queue.EnqueuePagesAsync([pages[0].Id], Ct);
+
+        var first = await _queue.ClaimNextAsync(Ct);
+        Assert.True(first!.AutoOrient);
+        await _queue.CompleteAsync(first.JobId, "text", 90, Ct);
+
+        await _queue.EnqueuePagesAsync([pages[0].Id], Ct);
+        var again = await _queue.ClaimNextAsync(Ct);
+        Assert.False(again!.AutoOrient);
+    }
+
+    [Fact]
+    public async Task A_hand_edit_settles_the_orientation_even_before_the_first_reading()
+    {
+        var (_, pages) = await CreateGroupWithPagesAsync(1);
+
+        await _queue.ReOcrEditedPageAsync(pages[0].Id, Ct);
+        await _queue.EnqueuePagesAsync([pages[0].Id], Ct);
+
+        var claimed = await _queue.ClaimNextAsync(Ct);
+        Assert.False(claimed!.AutoOrient);
+    }
+
+    [Fact]
+    public async Task A_page_re_read_after_a_hand_edit_is_not_turned()
+    {
+        var (_, pages) = await CreateGroupWithPagesAsync(1);
+        await _queue.EnqueuePagesAsync([pages[0].Id], Ct);
+        var first = await _queue.ClaimNextAsync(Ct);
+        await _queue.CompleteAsync(first!.JobId, "text", 90, Ct);
+
+        Assert.True(await _queue.ReOcrEditedPageAsync(pages[0].Id, Ct));
+
+        var claimed = await _queue.ClaimNextAsync(Ct);
+        Assert.False(claimed!.AutoOrient);
+    }
+
+    [Fact]
+    public async Task A_chosen_page_already_queued_gets_no_second_job()
+    {
+        var (_, pages) = await CreateGroupWithPagesAsync(1);
+        await _queue.EnqueuePagesAsync([pages[0].Id], Ct);
+
+        var again = await _queue.EnqueuePagesAsync([pages[0].Id], Ct);
+
+        Assert.Equal(new OcrPageRequest(Queued: 0, Blank: 0, AlreadyQueued: 1), again);
+        Assert.Equal(1, await _queue.PendingCountAsync(Ct));
+    }
 }

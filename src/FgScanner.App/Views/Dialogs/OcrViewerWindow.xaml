@@ -1,0 +1,74 @@
+<Window x:Class="FgScanner.App.Views.Dialogs.OcrViewerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:FgScanner.App.Views"
+        Title="View OCR" Width="1300" Height="860"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        views:DialogFit.KeepOnScreen="True"
+        PreviewKeyDown="OnKeyDown">
+    <DockPanel Margin="12">
+        <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <Button x:Name="PreviousButton" Content="◀ Previous" Click="OnPrevious" Padding="10,4" Margin="0,0,8,0" ToolTip="Left arrow" />
+            <TextBlock x:Name="PositionText" VerticalAlignment="Center" MinWidth="110"
+                       TextAlignment="Center" FontWeight="SemiBold" Margin="0,0,8,0" />
+            <Button x:Name="NextButton" Content="Next ▶" Click="OnNext" Padding="10,4" Margin="0,0,16,0" ToolTip="Right arrow" />
+
+            <Button x:Name="ZoomOutButton" Content="−" Click="OnZoomOut" Padding="12,4" Margin="0,0,4,0" ToolTip="Zoom out" AutomationProperties.Name="Zoom out" />
+            <Button x:Name="ZoomInButton" Content="+" Click="OnZoomIn" Padding="12,4" Margin="0,0,4,0" ToolTip="Zoom in" AutomationProperties.Name="Zoom in" />
+            <Button x:Name="FitButton" Content="Fit" Click="OnFit" Padding="10,4" Margin="0,0,8,0" ToolTip="Show the whole page" AutomationProperties.Name="Fit the page" />
+            <TextBlock x:Name="ZoomText" VerticalAlignment="Center" Opacity="0.7" MinWidth="52" />
+            <Button x:Name="OcrPageButton" Content="OCR this page" Click="OnOcrPage" Padding="10,4" Margin="8,0,8,0"
+                    ToolTip="OCR this page, or read it again (the old .md goes to Trash)" />
+            <CheckBox x:Name="WrapLinesBox" Content="Wrap lines" VerticalAlignment="Center" Margin="0,0,8,0"
+                      Checked="OnWrapLinesChanged" Unchecked="OnWrapLinesChanged"
+                      ToolTip="Off keeps table columns aligned; on fits long lines to the pane" />
+            <TextBlock x:Name="OcrStatusText" VerticalAlignment="Center" Opacity="0.8" TextWrapping="Wrap" />
+        </WrapPanel>
+
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+            <TextBlock x:Name="FileNameText" VerticalAlignment="Center" Opacity="0.7"
+                       TextTrimming="CharacterEllipsis" />
+            <Button Content="Close" IsCancel="True" Padding="14,4" HorizontalAlignment="Right"
+                    DockPanel.Dock="Right" />
+        </DockPanel>
+
+        <!-- The page beside its text, so the OCR can be checked against the paper (SPEC-2026-009 Q2). -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="250" />
+                <ColumnDefinition Width="6" />
+                <ColumnDefinition Width="*" MinWidth="250" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Ctrl+wheel zooms; an ungated wheel would steal ordinary scrolling. -->
+            <Border Grid.Column="0" BorderBrush="Gray" BorderThickness="1">
+                <ScrollViewer x:Name="Scroller"
+                              HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                              PreviewMouseWheel="OnScrollerMouseWheel"
+                              ScrollChanged="OnScrollerScrollChanged">
+                    <Image x:Name="PageImage" Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Image.LayoutTransform>
+                            <ScaleTransform x:Name="PageScale" ScaleX="1" ScaleY="1" />
+                        </Image.LayoutTransform>
+                    </Image>
+                </ScrollViewer>
+            </Border>
+            <!-- An empty pane beside the text would read as a blank page. -->
+            <TextBlock x:Name="ImageMissingText" Grid.Column="0" Text="Page image not found"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.7"
+                       Visibility="Collapsed" />
+
+            <GridSplitter Focusable="False" Grid.Column="1" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                          ResizeBehavior="PreviousAndNext" ShowsPreview="False" Cursor="SizeWE"
+                          KeyboardIncrement="20" ToolTip="Drag to resize"
+                          AutomationProperties.Name="Resize the page and the text" />
+
+            <!-- Read-only but selectable, so a passage can be copied out. Unwrapped unless "Wrap lines" is on: the .md keeps
+                 tables as space-aligned columns, and a wrapped row puts its amounts under the wrong column. -->
+            <TextBox x:Name="OcrText" Grid.Column="2" IsReadOnly="True" TextWrapping="NoWrap"
+                     AcceptsReturn="True" FontFamily="Consolas" FontSize="13" Padding="8"
+                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                     AutomationProperties.Name="OCR text" />
+        </Grid>
+    </DockPanel>
+</Window>

@@ -14,12 +14,15 @@ public partial class GroupsView : UserControl
 
     private const string PreviewWidthKey = "Session.PreviewPanelWidth";
     private const string PreviewHeightKey = "Session.PreviewPanelHeight";
+    private const string GroupListWidthKey = "Groups.GroupListWidth";
 
     // Mirror the grid minimums and splitter thickness in GroupsView.xaml.
     private const double EntryGridMinWidth = 240;
     private const double SplitterThickness = 6;
     private const double PreviewMinWidth = 200;
     private const double PreviewMinHeight = 90;
+    private const double GroupListMinWidth = 200;
+    private const double DetailMinWidth = 446;
 
     public GroupsView()
     {
@@ -35,6 +38,8 @@ public partial class GroupsView : UserControl
             }
         };
         Unloaded += (_, _) => SavePanelSizes();
+        Loaded += (_, _) => HookWindowClosing();
+        SizeChanged += (_, _) => LimitGroupList();
         AddHandler(TextLengthGuard.RefusedEvent, new EventHandler<LengthRefusedEventArgs>(OnLengthRefused));
     }
 
@@ -60,6 +65,8 @@ public partial class GroupsView : UserControl
         {
             PreviewColumn.Width = await ReadLengthAsync(vm, PreviewWidthKey, 300, PreviewMinWidth);
             PreviewRow.Height = await ReadLengthAsync(vm, PreviewHeightKey, 190, PreviewMinHeight);
+            GroupListColumn.Width = await ReadLengthAsync(vm, GroupListWidthKey, 270, GroupListMinWidth);
+            LimitGroupList();
         }
         catch (Exception ex)
         {
@@ -68,15 +75,8 @@ public partial class GroupsView : UserControl
     }
 
     private static async Task<GridLength> ReadLengthAsync(
-        GroupsViewModel vm, string key, double fallback, double minimum)
-    {
-        var stored = await vm.Settings.GetAsync(key, "");
-        return double.TryParse(stored, System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture, out var value)
-            && double.IsFinite(value) && value >= minimum
-            ? new GridLength(value)
-            : new GridLength(fallback);
-    }
+        GroupsViewModel vm, string key, double fallback, double minimum) =>
+        new(PanelSize.Read(await vm.Settings.GetAsync(key, ""), fallback, minimum));
 
     /// <summary>
     /// Saved on release rather than only on unload: closing the app while still on this screen
@@ -84,7 +84,21 @@ public partial class GroupsView : UserControl
     /// is not remembered in any sense the user would recognise.
     /// </summary>
     private void OnSplitterDragCompleted(
-        object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e) => SavePanelSizes();
+        object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        LimitGroupList();
+        SavePanelSizes();
+    }
+
+    /// <summary>
+    /// Keeps the detail pane at its minimum beside a group list widened on a larger window. The limit
+    /// goes on MaxWidth, never Width, so the width chosen there comes back when there is room again.
+    /// The room is this view's own width, set by the section host: the grid inside reports its
+    /// overflowed width once the detail pane is at its minimum.
+    /// </summary>
+    private void LimitGroupList() =>
+        GroupListColumn.MaxWidth = PanelSize.Fit(ActualWidth, GroupListColumn.Width.Value, 0,
+            GroupListMinWidth, 0, SplitterThickness + DetailMinWidth).First;
 
     /// <summary>
     /// The value panels and toolbars above the grid take at most this share of the height. On a
@@ -122,7 +136,24 @@ public partial class GroupsView : UserControl
             double.PositiveInfinity, DetailSplitGrid.ActualHeight, below, SplitterThickness, PreviewMinHeight);
     }
 
-    private void SavePanelSizes()
+    private bool _closingHooked;
+
+    /// <summary>
+    /// Sizes are saved again as the window closes: a splitter moved with the arrow keys never raises
+    /// DragCompleted, and closing the app while on this screen never unloads the view.
+    /// </summary>
+    private void HookWindowClosing()
+    {
+        if (!_closingHooked && Window.GetWindow(this) is { } window)
+        {
+            _closingHooked = true;
+            window.Closing += (_, _) => SavePanelSizes(waitForWrite: true);
+        }
+    }
+
+    /// <param name="waitForWrite">True while the window closes: an unawaited write can be cut off
+    /// by the process exiting. Safe to block on — the settings service never resumes on the UI thread.</param>
+    private void SavePanelSizes(bool waitForWrite = false)
     {
         if (DataContext is not GroupsViewModel vm)
         {
@@ -131,14 +162,23 @@ public partial class GroupsView : UserControl
 
         try
         {
+            var writes = new List<Task>();
             var width = PreviewColumn.Width.Value;
             var height = PreviewRow.Height.Value;
             if (width > 0 && height > 0)
             {
-                _ = vm.Settings.SetAsync(
-                    PreviewWidthKey, width.ToString("0", System.Globalization.CultureInfo.InvariantCulture));
-                _ = vm.Settings.SetAsync(
-                    PreviewHeightKey, height.ToString("0", System.Globalization.CultureInfo.InvariantCulture));
+                writes.Add(vm.Settings.SetAsync(PreviewWidthKey, PanelSize.Format(width)));
+                writes.Add(vm.Settings.SetAsync(PreviewHeightKey, PanelSize.Format(height)));
+            }
+
+            if (GroupListColumn.Width.Value > 0)
+            {
+                writes.Add(vm.Settings.SetAsync(GroupListWidthKey, PanelSize.Format(GroupListColumn.Width.Value)));
+            }
+
+            if (waitForWrite)
+            {
+                Task.WhenAll(writes).GetAwaiter().GetResult();
             }
         }
         catch (Exception ex)

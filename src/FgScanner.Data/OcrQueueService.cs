@@ -32,8 +32,17 @@ public sealed class OcrQueueService(IDbContextFactory<FgScannerDbContext> dbFact
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         var page = await db.Pages.FirstOrDefaultAsync(p => p.Id == pageId, cancellationToken).ConfigureAwait(false);
-        if (page is null || page.OcrStatus is not (OcrStatus.Yes or OcrStatus.Failed))
+        if (page is null)
         {
+            return false;
+        }
+
+        // The operator has turned or edited the page by hand: that orientation is theirs, even on a
+        // page never read, so no later OCR may turn it.
+        page.OrientationSettled = true;
+        if (page.OcrStatus is not (OcrStatus.Yes or OcrStatus.Failed))
+        {
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return false;
         }
 
@@ -61,6 +70,61 @@ public sealed class OcrQueueService(IDbContextFactory<FgScannerDbContext> dbFact
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         JobsEnqueued?.Invoke();
         return true;
+    }
+
+    /// <summary>
+    /// Queues OCR for pages the operator chose, whatever their status: a page never read is OCRed,
+    /// one already read is re-OCRed (its old .md goes to Trash when the job runs, as with Re-OCR all).
+    /// One misread page should not cost a whole group's re-run. Blank pages stay out, as everywhere
+    /// else, and are counted so the operator is told rather than left wondering.
+    /// </summary>
+    public async Task<OcrPageRequest> EnqueuePagesAsync(
+        IReadOnlyCollection<Guid> pageIds, CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var pages = await db.Pages.Where(p => pageIds.Contains(p.Id))
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        var alreadyQueued = (await db.Jobs
+                .Where(j => pageIds.Contains(j.PageId) && j.Type == JobType.Ocr
+                    && (j.State == JobState.Pending || j.State == JobState.InFlight))
+                .Select(j => j.PageId)
+                .ToListAsync(cancellationToken).ConfigureAwait(false))
+            .ToHashSet();
+
+        int queued = 0, blank = 0, open = 0;
+        foreach (var page in pages)
+        {
+            if (page.IsBlank)
+            {
+                blank++;
+            }
+            else if (alreadyQueued.Contains(page.Id))
+            {
+                open++;
+            }
+            else
+            {
+                db.Jobs.Add(new QueuedJob
+                {
+                    Id = Guid.NewGuid(),
+                    Type = JobType.Ocr,
+                    PageId = page.Id,
+                    State = JobState.Pending,
+                    CreatedUtc = DateTime.UtcNow,
+                    UpdatedUtc = DateTime.UtcNow,
+                });
+                page.OcrStatus = OcrStatus.Pending;
+                queued++;
+            }
+        }
+
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        if (queued > 0)
+        {
+            JobsEnqueued?.Invoke();
+        }
+
+        return new OcrPageRequest(queued, blank, open);
     }
 
     public async Task<int> EnqueueGroupAsync(
@@ -121,8 +185,9 @@ public sealed class OcrQueueService(IDbContextFactory<FgScannerDbContext> dbFact
     }
 
     /// <summary>The claimed job with everything the worker needs, or null when the queue is idle.</summary>
+    /// <param name="AutoOrient">Whether OCR may turn the page upright: only until its orientation is settled.</param>
     public sealed record ClaimedJob(
-        Guid JobId, Guid PageId, Guid GroupId, string ImagePath, int Attempt);
+        Guid JobId, Guid PageId, Guid GroupId, string ImagePath, int Attempt, bool AutoOrient = true);
 
     public async Task<ClaimedJob?> ClaimNextAsync(CancellationToken cancellationToken = default)
     {
@@ -145,7 +210,8 @@ public sealed class OcrQueueService(IDbContextFactory<FgScannerDbContext> dbFact
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return new ClaimedJob(
             job.Id, page.Id, page.Document!.GroupId,
-            Path.Combine(page.Document.Group!.DirectoryPath, page.FileName), job.Attempts);
+            Path.Combine(page.Document.Group!.DirectoryPath, page.FileName), job.Attempts,
+            AutoOrient: !page.OrientationSettled);
     }
 
     public async Task CompleteAsync(
@@ -159,6 +225,7 @@ public sealed class OcrQueueService(IDbContextFactory<FgScannerDbContext> dbFact
         page.OcrStatus = OcrStatus.Yes;
         page.OcrText = plainText;
         page.OcrMeanConfidence = meanConfidence;
+        page.OrientationSettled = true;
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -192,3 +259,7 @@ public sealed class OcrQueueService(IDbContextFactory<FgScannerDbContext> dbFact
                 cancellationToken).ConfigureAwait(false);
     }
 }
+
+/// <summary>What a request to OCR chosen pages did: pages queued, blank pages left out, and pages
+/// that already had an open job.</summary>
+public sealed record OcrPageRequest(int Queued, int Blank, int AlreadyQueued);

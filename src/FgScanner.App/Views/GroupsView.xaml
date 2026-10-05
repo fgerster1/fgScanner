@@ -9,12 +9,14 @@
              d:DataContext="{d:DesignInstance Type=views:GroupsViewModel}">
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="270" />
-            <ColumnDefinition Width="*" />
+            <ColumnDefinition x:Name="GroupListColumn" Width="270" MinWidth="200" />
+            <ColumnDefinition Width="6" />
+            <!-- The entry grid's 240 + splitter + the preview's 200: the group list may not squeeze the detail below them. -->
+            <ColumnDefinition Width="*" MinWidth="446" />
         </Grid.ColumnDefinitions>
 
         <!-- Group list -->
-        <DockPanel Grid.Column="0" Margin="0,0,12,0">
+        <DockPanel Grid.Column="0" Margin="0,0,6,0">
             <StackPanel DockPanel.Dock="Top">
                 <TextBlock Text="Groups" FontWeight="SemiBold" Margin="0,0,0,6" />
                 <TextBlock Text="Profile for new groups" Opacity="0.7" />
@@ -76,7 +78,7 @@
                             <TextBlock Text="{Binding DirectoryPath}" Opacity="0.55" FontSize="10"
                                        TextTrimming="CharacterEllipsis" />
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="{Binding State}" Opacity="0.6" FontSize="11" />
+                                <TextBlock Text="{Binding State, Converter={x:Static views:GroupStateConverter.Instance}}" Opacity="0.6" FontSize="11" />
                                 <TextBlock Text="{Binding Profile.Name, StringFormat=' · {0}'}" Opacity="0.6"
                                            FontSize="11" />
                             </StackPanel>
@@ -87,7 +89,14 @@
         </DockPanel>
 
         <!-- Detail: pending values, entry grid, commit -->
-        <DockPanel Grid.Column="1" DataContext="{Binding Detail}" SizeChanged="OnDetailPanelSizeChanged">
+        <GridSplitter Focusable="False" Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
+                      VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext"
+                      ShowsPreview="False" Cursor="SizeWE" KeyboardIncrement="20"
+                      DragCompleted="OnSplitterDragCompleted"
+                      ToolTip="Drag to make the group list wider or narrower"
+                      AutomationProperties.Name="Resize the group list" />
+
+        <DockPanel Grid.Column="2" DataContext="{Binding Detail}" SizeChanged="OnDetailPanelSizeChanged">
             <!-- Capped (OnDetailPanelSizeChanged) and scrolled on its own: on a short window the
                  value panels and two wrapping toolbars otherwise push the grid and preview away.
                  Not focusable, so clicking a caption leaves keyboard focus in the grid or field.
@@ -255,6 +264,7 @@
                     <Button Content="Re-process…" Command="{Binding ReprocessCommand}" Padding="10,6" Margin="0,0,6,0" ToolTip="Selective OCR/AI re-run" />
                     <Button Content="OCR pages" Command="{Binding OcrPagesCommand}" Padding="10,6" Margin="0,0,6,0" ToolTip="Recognize text on pages not yet OCRed" />
                     <Button Content="Re-OCR all" Command="{Binding ReOcrAllCommand}" Padding="10,6" Margin="0,0,6,0" ToolTip="Redo OCR on every page (old .md files go to Trash)" />
+                    <Button Content="OCR selected" Command="{Binding OcrSelectedCommand}" Padding="10,6" Margin="0,0,6,0" ToolTip="OCR the selected page(s), or read them again (the old .md goes to Trash)" />
                     <Button Content="AI describe" Command="{Binding DescribePagesCommand}" Padding="10,6" Margin="0,0,6,0" ToolTip="Generate AI descriptions with your Gemini key (cost estimate shown first)" Visibility="{Binding AiAvailable, Converter={x:Static views:BoolToVisibilityConverter.Instance}}" />
                     <Button Content="Record editor…" Command="{Binding OpenRecordEditorCommand}" Padding="10,6" Margin="0,0,6,0"
                             ToolTip="Edit the selected page's values beside its image, in a window of its own" />
@@ -402,6 +412,9 @@
                                        MinWidth="40" Margin="0,0,8,0" />
                             <Button Content="Open full size" Command="{Binding OpenPageViewerCommand}"
                                     Padding="8,2" ToolTip="Or double-click the preview" />
+                            <Button Content="View OCR" Command="{Binding OpenOcrViewerCommand}"
+                                    Padding="8,2" Margin="4,0,0,0"
+                                    ToolTip="The page beside the text recognised on it" />
                         </WrapPanel>
                     </Grid>
 

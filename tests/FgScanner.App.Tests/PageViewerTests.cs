@@ -434,4 +434,147 @@ public sealed class GroupPageViewerTests : IDisposable
         Assert.Equal(0, shownStart);
         Assert.Same(vm.Rows[2], vm.SelectedRow);
     }
+
+    private async Task<GroupDetailViewModel> GroupOfThree(string name, CancellationToken ct)
+    {
+        var group = await _groupService.CreateGroupAsync(_root, name, null, ct);
+        var staging = Directory.CreateDirectory(Path.Combine(_root, "staging-" + name)).FullName;
+        var files = new List<string>();
+        for (byte i = 1; i <= 3; i++)
+        {
+            var file = Path.Combine(staging, $"scan_0000{i}.png");
+            await File.WriteAllBytesAsync(file, [i, i, i, 7], ct);
+            files.Add(file);
+        }
+
+        await _groupService.AdoptPagesAsync(group.Id, files, _ => false, ct);
+        var vm = new GroupDetailViewModel(
+            group, _groupService, _profileService, _indexingService, _trashService, new ActiveGroupStore(),
+            CreateToolset());
+        await vm.LoadAsync();
+        return vm;
+    }
+
+    /// <summary>SPEC-2026-009 AC-10: View OCR opens on the selected page, pages through the group,
+    /// and the grid follows the page it closed on — the page viewer's behaviour.</summary>
+    [Fact]
+    public async Task View_OCR_opens_on_the_selected_page_and_the_grid_follows_it()
+    {
+        var vm = await GroupOfThree("Ocr", TestContext.Current.CancellationToken);
+        vm.SelectedRow = vm.Rows[1];
+        IReadOnlyList<DocumentRow>? shown = null;
+        var shownStart = -1;
+        vm.ShowOcrViewer = (rows, start) =>
+        {
+            shown = rows;
+            shownStart = start;
+            return 0;
+        };
+
+        vm.OpenOcrViewerCommand.Execute(null);
+
+        Assert.Equal(vm.Rows, shown);
+        Assert.Equal(1, shownStart);
+        Assert.Same(vm.Rows[0], vm.SelectedRow);
+        Assert.All(vm.Rows, r => Assert.Equal(FgScanner.Data.OcrStatus.No, r.OcrState));
+    }
+
+    [Fact]
+    public async Task View_OCR_from_the_record_editor_opens_on_the_editors_page()
+    {
+        var vm = await GroupOfThree("OcrEditor", TestContext.Current.CancellationToken);
+        vm.SelectedRow = vm.Rows[2];
+        using var editor = new RecordEditorViewModel(vm);
+        var shownStart = -1;
+        vm.ShowOcrViewer = (_, start) =>
+        {
+            shownStart = start;
+            return start;
+        };
+
+        editor.OpenOcrViewerCommand.Execute(null);
+
+        Assert.Equal(2, shownStart);
+    }
+
+    /// <summary>SPEC-2026-009 amendment (Franz, 2026-10-05): one misread page is OCRed or re-OCRed
+    /// on its own, never by re-running the whole group.</summary>
+    [Fact]
+    public async Task OCR_selected_queues_only_the_selected_page()
+    {
+        var vm = await GroupOfThree("OcrOne", TestContext.Current.CancellationToken);
+        vm.SelectedRow = vm.Rows[1];
+
+        await vm.OcrSelectedCommand.ExecuteAsync(null);
+
+        Assert.Equal(
+            [FgScanner.Data.OcrStatus.No, FgScanner.Data.OcrStatus.Pending, FgScanner.Data.OcrStatus.No],
+            vm.Rows.Select(r => r.OcrState));
+        Assert.Equal("1 page queued for OCR.", vm.StatusText);
+    }
+
+    [Fact]
+    public async Task OCR_selected_with_nothing_selected_asks_for_a_page()
+    {
+        var vm = await GroupOfThree("OcrNone", TestContext.Current.CancellationToken);
+        vm.SelectedRow = null;
+
+        await vm.OcrSelectedCommand.ExecuteAsync(null);
+
+        Assert.All(vm.Rows, r => Assert.Equal(FgScanner.Data.OcrStatus.No, r.OcrState));
+        Assert.Equal("Select a page first.", vm.StatusText);
+    }
+
+    [Fact]
+    public async Task OCR_this_page_in_the_record_editor_queues_the_editors_page()
+    {
+        var vm = await GroupOfThree("OcrEditorOne", TestContext.Current.CancellationToken);
+        vm.SelectedRow = vm.Rows[2];
+        using var editor = new RecordEditorViewModel(vm);
+
+        await editor.OcrSelectedCommand.ExecuteAsync(null);
+
+        Assert.Equal(FgScanner.Data.OcrStatus.Pending, vm.Rows[2].OcrState);
+        Assert.Equal(FgScanner.Data.OcrStatus.No, vm.Rows[0].OcrState);
+    }
+
+    /// <summary>What View OCR's "OCR this page" calls: the page shown, whatever is selected.</summary>
+    [Fact]
+    public async Task OCR_this_page_from_the_viewer_queues_the_page_shown()
+    {
+        var vm = await GroupOfThree("OcrViewerOne", TestContext.Current.CancellationToken);
+        vm.SelectedRow = vm.Rows[0];
+
+        var message = await vm.OcrPageAsync(vm.Rows[2]);
+
+        Assert.Equal("1 page queued for OCR.", message);
+        Assert.Equal(FgScanner.Data.OcrStatus.Pending, vm.Rows[2].OcrState);
+        Assert.Equal(FgScanner.Data.OcrStatus.No, vm.Rows[0].OcrState);
+    }
+
+    /// <summary>"State: Scanning" read as "something is running" (Franz, 2026-10-05). The stored state
+    /// keeps its name; the screen says whether the group is still open.</summary>
+    [Fact]
+    public async Task An_open_group_says_open_not_scanning()
+    {
+        var vm = await GroupOfThree("OpenLabel", TestContext.Current.CancellationToken);
+
+        Assert.Equal("3 page(s) · Open — not committed yet.", vm.StatusText);
+    }
+
+    [Theory]
+    [InlineData(FgScanner.Data.GroupState.Scanning, "Open")]
+    [InlineData(FgScanner.Data.GroupState.Indexing, "Open")]
+    [InlineData(FgScanner.Data.GroupState.Committed, "Committed")]
+    public void A_group_state_is_shown_as_open_or_committed(FgScanner.Data.GroupState state, string shown) =>
+        Assert.Equal(shown, GroupStateText.Of(state));
+
+    [Theory]
+    [InlineData(1, 0, 0, "1 page queued for OCR.")]
+    [InlineData(3, 0, 0, "3 pages queued for OCR.")]
+    [InlineData(0, 1, 0, "1 blank page skipped — blank pages are not OCRed.")]
+    [InlineData(2, 1, 1, "2 pages queued for OCR. 1 blank page skipped — blank pages are not OCRed. 1 page already queued.")]
+    [InlineData(0, 0, 2, "2 pages already queued.")]
+    public void The_status_line_says_what_an_OCR_request_did(int queued, int blank, int open, string expected) =>
+        Assert.Equal(expected, GroupDetailViewModel.OcrRequestText(new FgScanner.Data.OcrPageRequest(queued, blank, open)));
 }

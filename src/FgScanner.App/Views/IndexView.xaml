@@ -80,17 +80,45 @@
             <TextBlock Text="{Binding DraftNotice}" TextWrapping="Wrap" />
         </Border>
 
-        <Grid>
+        <!-- Three panes Jim can widen or narrow (SPEC-2026-009 §08-4); the widths are remembered.
+             The minimums keep every pane usable: 200 + 6 + 300 + 6 + 300 fits the section's 980. -->
+        <Grid x:Name="PaneGrid">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="280" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="300" />
+                <ColumnDefinition x:Name="DocumentListColumn" Width="280" MinWidth="200" />
+                <ColumnDefinition Width="6" />
+                <ColumnDefinition Width="*" MinWidth="300" />
+                <ColumnDefinition Width="6" />
+                <ColumnDefinition x:Name="AnswerPanelColumn" Width="340" MinWidth="300" />
             </Grid.ColumnDefinitions>
 
+            <!-- Mouse only: a focusable splitter sat between "Open batch…" and the document list in
+                 Tab order, where an arrow key resized the pane instead of moving through documents. -->
+            <GridSplitter Focusable="False" Grid.Column="1" Width="6" HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext"
+                          ShowsPreview="False" Cursor="SizeWE" KeyboardIncrement="20"
+                          DragCompleted="OnSplitterDragCompleted"
+                          ToolTip="Drag to make the document list wider or narrower"
+                          AutomationProperties.Name="Resize the document list" />
+            <GridSplitter Focusable="False" Grid.Column="3" Width="6" HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch" ResizeBehavior="PreviousAndNext"
+                          ShowsPreview="False" Cursor="SizeWE" KeyboardIncrement="20"
+                          DragCompleted="OnSplitterDragCompleted"
+                          ToolTip="Drag to make the answers wider or narrower"
+                          AutomationProperties.Name="Resize the answer panel" />
+
             <!-- Seed order IS priority order; no sorting. -->
-            <ListBox Grid.Column="0" Margin="0,0,6,0"
+            <ListBox Grid.Column="0"
                      ItemsSource="{Binding Documents}"
                      SelectedItem="{Binding SelectedDocument}">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <!-- Drawn text is not what UI Automation exposes: without this every document
+                             is announced as the record's type dump. The anchor page is the help text,
+                             since titles repeat ("Farm details and information"). -->
+                        <Setter Property="AutomationProperties.Name" Value="{Binding Title}" />
+                        <Setter Property="AutomationProperties.HelpText" Value="{Binding AnchorPageId}" />
+                    </Style>
+                </ListBox.ItemContainerStyle>
                 <ListBox.ItemTemplate>
                     <DataTemplate>
                         <StackPanel Margin="2">
@@ -107,7 +135,7 @@
                 </ListBox.ItemTemplate>
             </ListBox>
 
-            <DockPanel Grid.Column="1" Margin="0,0,6,0">
+            <DockPanel Grid.Column="2">
                 <DockPanel DockPanel.Dock="Bottom" Margin="0,6,0,0" LastChildFill="False">
                     <Button DockPanel.Dock="Left" Content="◀ Previous page"
                             Command="{Binding PreviousPageCommand}" Padding="10,4" />
@@ -116,16 +144,49 @@
                     <TextBlock DockPanel.Dock="Left" Text="{Binding PagePositionText}"
                                VerticalAlignment="Center" Margin="10,0" Opacity="0.8" />
                 </DockPanel>
+                <WrapPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
+                    <Button x:Name="ZoomOutButton" Content="−" Click="OnZoomOut" Padding="10,2" Margin="0,0,4,0"
+                            ToolTip="Zoom out" AutomationProperties.Name="Zoom out" />
+                    <Button x:Name="ZoomInButton" Content="+" Click="OnZoomIn" Padding="10,2" Margin="0,0,4,0"
+                            ToolTip="Zoom in" AutomationProperties.Name="Zoom in" />
+                    <Button x:Name="FitButton" Content="Fit" Click="OnFit" Padding="8,2" Margin="0,0,4,0"
+                            ToolTip="Show the whole page" AutomationProperties.Name="Fit the page" />
+                    <TextBlock x:Name="ZoomText" VerticalAlignment="Center" Opacity="0.7"
+                               MinWidth="40" Margin="0,0,8,0" />
+                    <Button Content="Open full size" Command="{Binding OpenPageViewerCommand}"
+                            Padding="8,2" ToolTip="Or double-click the page" />
+                </WrapPanel>
                 <Border BorderThickness="1" BorderBrush="#33808080">
-                    <Image Source="{Binding CurrentPageImagePath,
-                                    Converter={x:Static views:PreviewImageConverter.Instance}}"
-                           Stretch="Uniform" StretchDirection="DownOnly" />
+                    <!-- Ctrl+wheel zooms; an ungated wheel would steal ordinary scrolling.
+                         LayoutTransform so the ScrollViewer's extent grows with the zoom. -->
+                    <ScrollViewer x:Name="PageScroller"
+                                  HorizontalScrollBarVisibility="Auto"
+                                  VerticalScrollBarVisibility="Auto"
+                                  PreviewMouseWheel="OnPageMouseWheel"
+                                  ScrollChanged="OnPageScrollChanged">
+                        <Image x:Name="PageImage"
+                               Source="{Binding CurrentPageImagePath,
+                                        Converter={x:Static views:PreviewImageConverter.Instance},
+                                        NotifyOnTargetUpdated=True}"
+                               TargetUpdated="OnPageImageChanged"
+                               MouseLeftButtonDown="OnPageMouseDown"
+                               Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               ToolTip="Ctrl+wheel to zoom · double-click to open full size">
+                            <Image.LayoutTransform>
+                                <ScaleTransform x:Name="PageScale" ScaleX="1" ScaleY="1" />
+                            </Image.LayoutTransform>
+                        </Image>
+                    </ScrollViewer>
                 </Border>
             </DockPanel>
+            <!-- An empty pane would read as a blank page. -->
+            <TextBlock x:Name="ImageMissingText" Grid.Column="2" Text="Page image not found"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.7"
+                       Visibility="Collapsed" />
 
             <!-- The answer panel: five questions, nothing auto-applies —
                  an untouched suggestion is not an answer. -->
-            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+            <ScrollViewer Grid.Column="4" VerticalScrollBarVisibility="Auto">
                 <StackPanel IsEnabled="{Binding SelectedDocument,
                     Converter={x:Static views:NotNullToBoolConverter.Instance}}">
 
@@ -135,25 +196,41 @@
                     </Border>
 
                     <TextBlock Text="Suggestions" FontWeight="SemiBold" Margin="0,0,0,4" />
-                    <ItemsControl ItemsSource="{Binding SelectedDocument.Suggestions}">
+                    <!-- Names with the id beside them (SPEC-2026-009 Q5): two people can share a name. -->
+                    <ItemsControl ItemsSource="{Binding SuggestionRows}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border BorderThickness="1" BorderBrush="#33808080" CornerRadius="4"
                                         Padding="8,6" Margin="0,0,0,6">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding CanAccept}" Value="False">
+                                                    <Setter Property="Opacity" Value="0.6" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
                                     <DockPanel>
                                         <Button DockPanel.Dock="Right" Content="Accept"
                                                 VerticalAlignment="Top" Padding="8,3" Margin="6,0,0,0"
-                                                AutomationProperties.Name="{Binding Value, StringFormat=Accept suggestion {0}}"
+                                                Visibility="{Binding CanAccept, Converter={x:Static views:BoolToVisibilityConverter.Instance}}"
+                                                AutomationProperties.Name="{Binding AcceptName}"
                                                 Command="{Binding DataContext.AcceptSuggestionCommand,
                                                           RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                CommandParameter="{Binding}" />
+                                                CommandParameter="{Binding Source}" />
                                         <StackPanel>
-                                            <TextBlock>
-                                                <Run Text="{Binding Field, Mode=OneWay}" FontWeight="SemiBold" />
+                                            <TextBlock TextWrapping="Wrap">
+                                                <Run Text="{Binding FieldLabel, Mode=OneWay}" FontWeight="SemiBold" />
+                                                <Run Text="{Binding Source.Qualifier, Mode=OneWay}" Foreground="Gray" />
                                                 <Run Text="→" />
-                                                <Run Text="{Binding Value, Mode=OneWay}" />
+                                                <Run Text="{Binding ValueLabel, Mode=OneWay}" />
+                                                <Run Text="{Binding IdText, Mode=OneWay, StringFormat=· {0}, TargetNullValue=''}" Foreground="Gray" />
                                             </TextBlock>
-                                            <TextBlock Text="{Binding ReasonQuote}" TextWrapping="Wrap"
+                                            <TextBlock Text="{Binding InfoText}" FontSize="11" Opacity="0.8"
+                                                       TextWrapping="Wrap"
+                                                       Visibility="{Binding InfoText, Converter={x:Static views:StringToVisibilityConverter.Instance}}" />
+                                            <TextBlock Text="{Binding Source.ReasonQuote}" TextWrapping="Wrap"
                                                        FontStyle="Italic" Opacity="0.8" Margin="0,2,0,0" />
                                         </StackPanel>
                                     </DockPanel>
@@ -177,7 +254,7 @@
                     <DockPanel>
                         <Button DockPanel.Dock="Right" Content="Set" Padding="8,3" Margin="6,0,0,0"
                                 Command="{Binding SetDateCommand}" />
-                        <ComboBox DockPanel.Dock="Right" Width="80" Margin="6,0,0,0"
+                        <ComboBox DockPanel.Dock="Right" Width="120" Margin="6,0,0,0"
                                   ItemsSource="{Binding DateQualifiers}"
                                   SelectedItem="{Binding SelectedDateQualifier}"
                                   AutomationProperties.Name="Date qualifier" />
@@ -186,26 +263,54 @@
                                  ToolTip="yyyy-mm-dd — never reformatted for you" />
                     </DockPanel>
 
+                    <StackPanel x:Name="PeopleSection">
                     <TextBlock Text="People" FontWeight="SemiBold" Margin="0,8,0,2" />
-                    <DockPanel>
-                        <Button DockPanel.Dock="Right" Content="Add" Padding="8,3" Margin="6,0,0,0"
-                                Command="{Binding AddPersonCommand}" />
-                        <ComboBox DockPanel.Dock="Right" Width="100" Margin="6,0,0,0"
+                    <!-- Search, then pick a row (SPEC-2026-009 §08-2). Typing only lists: a row is picked
+                         by selecting it, and with none picked Add sends what was typed (ADR-0016). -->
+                    <TextBox x:Name="PersonSearchBox"
+                             Text="{Binding PersonText, UpdateSourceTrigger=PropertyChanged}"
+                             TextChanged="OnPersonSearchChanged"
+                             AutomationProperties.Name="Search people"
+                             ToolTip="Type part of a name or nickname" />
+                    <DataGrid x:Name="PersonGrid" ItemsSource="{Binding PersonResults}"
+                              SelectedItem="{Binding PersonToAdd}"
+                              AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single"
+                              SelectionUnit="FullRow" HeadersVisibility="Column"
+                              CanUserAddRows="False" CanUserDeleteRows="False" CanUserSortColumns="False"
+                              KeyboardNavigation.TabNavigation="Once"
+                              GridLinesVisibility="Horizontal" MinHeight="60" MaxHeight="230"
+                              Margin="0,4,0,0" PreviewKeyDown="OnPersonGridKeyDown"
+                              PreviewMouseWheel="OnPersonGridMouseWheel"
+                              AutomationProperties.Name="People found">
+                        <!-- Tab leaves in one step (OnPersonGridKeyDown): walking the cells re-selects each row it enters,
+                             so the pick would become whoever sits last. No sorting: Also known as and
+                             Roles are lists, which do not compare, and a sort set on an empty grid
+                             stops later rows appearing. Star widths: an Auto column grows to its widest
+                             cell and never gives the room back, and Name tells namesakes apart. -->
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Name" Binding="{Binding DisplayName}" Width="3*" />
+                            <DataGridTextColumn Header="Id" Binding="{Binding Id}" Width="Auto" />
+                            <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="*" />
+                            <DataGridTextColumn Header="Also known as" Width="2*"
+                                                Binding="{Binding Aliases, Converter={x:Static views:JoinConverter.Instance}}" />
+                            <DataGridTextColumn Header="Roles" Width="*"
+                                                Binding="{Binding Roles, Converter={x:Static views:JoinConverter.Instance}}" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <TextBlock Text="{Binding PersonResultsNote}" FontSize="11" Opacity="0.8" Margin="0,2,0,0"
+                               Visibility="{Binding PersonResultsNote, Converter={x:Static views:StringToVisibilityConverter.Instance}}" />
+                    <!-- Role before Add in Tab order (§09): Add reached first stages the default role. -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
+                        <ComboBox x:Name="PersonRoleBox" Width="135"
                                   ItemsSource="{Binding PersonQualifiers}"
                                   SelectedItem="{Binding PersonQualifierToAdd}"
                                   AutomationProperties.Name="Person role" />
-                        <!-- Text search stays off: it autocompletes a typed prefix to the
-                             first listed name, so a name meant to travel as typed (ADR-0016)
-                             would silently become someone on the list. -->
-                        <ComboBox ItemsSource="{Binding People}"
-                                  SelectedItem="{Binding PersonToAdd}"
-                                  Text="{Binding PersonText, UpdateSourceTrigger=PropertyChanged}"
-                                  DisplayMemberPath="DisplayName"
-                                  IsEditable="True" IsTextSearchEnabled="False"
-                                  AutomationProperties.Name="Person" />
-                    </DockPanel>
+                        <Button Content="Add" Padding="8,3" Margin="6,0,0,0"
+                                Command="{Binding AddPersonCommand}" />
+                    </StackPanel>
+                    </StackPanel>
                     <TextBlock Opacity="0.7" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap"
-                               Text="Someone missing from the list? Type the name as the page spells it and click Add. Franz decides who it is; it is never added to the list without him." />
+                               Text="Click the person's row, then Add. Someone missing from the list? Type the name as the page spells it, leave every row unpicked, and click Add. Franz decides who it is; it is never added to the list without him." />
 
                     <TextBlock Text="Subjects" FontWeight="SemiBold" Margin="0,8,0,2" />
                     <ItemsControl ItemsSource="{Binding SubjectChoices}">
@@ -222,7 +327,7 @@
 
                     <TextBlock Text="Staged answers for this document" FontWeight="SemiBold"
                                Margin="0,10,0,2" />
-                    <ItemsControl ItemsSource="{Binding StagedAnswers}">
+                    <ItemsControl ItemsSource="{Binding StagedAnswerRows}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <DockPanel Margin="0,1">
@@ -230,11 +335,12 @@
                                             AutomationProperties.Name="Remove staged answer"
                                             Command="{Binding DataContext.RemoveStagedAnswerCommand,
                                                       RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                            CommandParameter="{Binding}" />
-                                    <TextBlock>
-                                        <Run Text="{Binding Field, Mode=OneWay}" />
-                                        <Run Text="{Binding Qualifier, Mode=OneWay}" Foreground="Gray" />
-                                        <Run Text="{Binding Value, Mode=OneWay}" FontWeight="SemiBold" />
+                                            CommandParameter="{Binding Source}" />
+                                    <TextBlock TextWrapping="Wrap">
+                                        <Run Text="{Binding FieldLabel, Mode=OneWay}" />
+                                        <Run Text="{Binding Source.Qualifier, Mode=OneWay}" Foreground="Gray" />
+                                        <Run Text="{Binding ValueLabel, Mode=OneWay}" FontWeight="SemiBold" />
+                                        <Run Text="{Binding IdText, Mode=OneWay, StringFormat=· {0}, TargetNullValue=''}" Foreground="Gray" />
                                     </TextBlock>
                                 </DockPanel>
                             </DataTemplate>

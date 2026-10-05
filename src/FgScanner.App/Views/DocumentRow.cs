@@ -30,6 +30,11 @@ public sealed class DocumentRow : ObservableObject
 
     public required string AiStatus { get; init; }
 
+    /// <summary>The stored OCR state, for View OCR's "why is there no text" sentence.</summary>
+    public FgScanner.Data.OcrStatus OcrState { get; init; }
+
+    public bool IsBlank { get; init; }
+
     /// <summary>Recognised text, surfaced read-only in the detail pane.</summary>
     public string? OcrText { get; init; }
 

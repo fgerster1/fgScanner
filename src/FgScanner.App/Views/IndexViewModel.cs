@@ -158,6 +158,39 @@ public sealed partial class IndexViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// The pop-out viewer over the selected document's pages. The panel follows the page the
+    /// viewer closed on, so the answers being typed sit beside the page that was just read.
+    /// </summary>
+    [RelayCommand]
+    private void OpenPageViewer()
+    {
+        if (SelectedDocument is not { } document || _packageDirectory is not { } root)
+        {
+            return;
+        }
+
+        var paths = document.Pages
+            .Select(p => System.IO.Path.Combine(
+                root, p.Image.Replace('/', System.IO.Path.DirectorySeparatorChar)))
+            .ToList();
+        var landed = ShowPageViewer(paths, _pageIndex);
+        if (landed >= 0 && landed < paths.Count && landed != _pageIndex)
+        {
+            _pageIndex = landed;
+            RaisePageChanged();
+        }
+    }
+
+    /// <summary>
+    /// Where the view remembers the pane widths Jim dragged (SPEC-2026-009 §07). Null in tests and
+    /// before startup wiring; the panes then simply keep their design widths.
+    /// </summary>
+    public FgScanner.Data.AppSettingsService? Settings { get; set; }
+
+    /// <summary>Replaceable so the viewer's effect on the page shown can be tested without a window.</summary>
+    public Func<IReadOnlyList<string>, int, int> ShowPageViewer { get; set; } = Dialogs.PageViewerWindow.ShowModal;
+
     private void RaisePageChanged()
     {
         OnPropertyChanged(nameof(CurrentPageImagePath));
@@ -342,12 +375,73 @@ public sealed partial class IndexViewModel : ObservableObject
     [ObservableProperty]
     private string _personQualifierToAdd = "mentioned";
 
-    /// <summary>What is typed in the person box (it is editable). A spelling
-    /// on the list, case and punctuation ignored, the portal's own rule —
-    /// becomes that person; any other name travels as typed, and the portal
-    /// resolves it or holds it as a proposal for Franz (ADR-0016).</summary>
+    /// <summary>What is typed in the people search. It lists matches and never picks one: with no
+    /// row picked, a spelling on the list — case and punctuation ignored, the portal's own rule —
+    /// becomes that person, and any other name travels as typed for the portal to resolve or hold
+    /// as a proposal for Franz (ADR-0016).</summary>
     [ObservableProperty]
     private string _personText = "";
+
+    /// <summary>The people the search text could mean, for the results grid (SPEC-2026-009 §08-2).
+    /// Changed entry by entry, never cleared: the grid binds its selection to
+    /// <see cref="PersonToAdd"/>, and a Clear() makes WPF write a null selection back mid-refill.</summary>
+    public System.Collections.ObjectModel.ObservableCollection<PackagePerson> PersonResults { get; } = [];
+
+    public const string PersonSearchHint = "Type part of a name or nickname to list people.";
+
+    public const string PersonNoMatch = "No one on the list matches. Add sends the name as typed.";
+
+    /// <summary>What the grid cannot say by itself: that nothing is typed yet, that nobody matched, or
+    /// that more matched than it shows. Null when the rows speak for themselves.</summary>
+    [ObservableProperty]
+    private string? _personResultsNote = PersonSearchHint;
+
+    private PersonSearch? _personSearch;
+
+    partial void OnPersonTextChanged(string value)
+    {
+        // A pick belongs to the search it was made in. Kept after the text changes, Add would stage
+        // that person while the box shows a different name.
+        PersonToAdd = null;
+        var result = _personSearch?.Filter(value) ?? new PersonSearch.Result([], 0);
+        ShowPersonResults(result.People);
+        PersonResultsNote = value.Trim().Length == 0 ? PersonSearchHint
+            : result.Total == 0 ? PersonNoMatch
+            : result.Total > result.People.Count
+                ? string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "{0} more match — keep typing to narrow it down.", result.Total - result.People.Count)
+                : null;
+    }
+
+    private void ShowPersonResults(IReadOnlyList<PackagePerson> wanted)
+    {
+        var keep = wanted.ToHashSet();
+        for (var i = PersonResults.Count - 1; i >= 0; i--)
+        {
+            if (!keep.Contains(PersonResults[i]))
+            {
+                PersonResults.RemoveAt(i);
+            }
+        }
+
+        for (var i = 0; i < wanted.Count; i++)
+        {
+            if (i < PersonResults.Count && ReferenceEquals(PersonResults[i], wanted[i]))
+            {
+                continue;
+            }
+
+            var at = PersonResults.IndexOf(wanted[i]);
+            if (at >= 0)
+            {
+                PersonResults.Move(at, i);
+            }
+            else
+            {
+                PersonResults.Insert(i, wanted[i]);
+            }
+        }
+    }
 
     [RelayCommand]
     public void AddPerson()
@@ -359,20 +453,14 @@ public sealed partial class IndexViewModel : ObservableObject
 
         var typed = PersonText.Trim();
         string value;
-        if (PersonToAdd is { } picked && typed == picked.DisplayName.Trim())
+        if (PersonToAdd is { } picked)
         {
-            // A pick from the list writes its display name into the text, and
-            // namesakes exist: re-resolving that text would stage whichever
-            // namesake comes first, not the one Jim picked.
+            // A row picked in the grid is that person, whatever else shares the name.
             value = picked.Id;
         }
         else if (typed.Length > 0)
         {
             value = MatchPerson(typed)?.Id ?? typed;
-        }
-        else if (PersonToAdd is { } person)
-        {
-            value = person.Id;
         }
         else
         {
@@ -503,8 +591,64 @@ public sealed partial class IndexViewModel : ObservableObject
     {
         if (SelectedDocument is { } document)
         {
-            TryStage(document.AnchorPageId, suggestion.Field,
-                suggestion.Qualifier, suggestion.Value);
+            // The portal's AI writes a key-document suggestion as "yes" (SPEC-2026-009 Q7). Accepting
+            // it is ticking the box, through the box's own rules: a flag the portal already holds
+            // stages nothing, where staging "true" again would export a second decision with a new
+            // decidedAt. Any other value stays refused by the validator, in words.
+            if (suggestion.Field == IndexAnswerVocabulary.KeyFlag && suggestion.Value == "yes")
+            {
+                AnswerError = null;
+                KeyFlagChecked = true;
+                return;
+            }
+
+            TryStage(document.AnchorPageId, suggestion.Field, suggestion.Qualifier, suggestion.Value);
+        }
+    }
+
+    private IndexLabels? _labels;
+
+    partial void OnPackageChanged(IndexPackage? value)
+    {
+        _labels = value is null ? null : new IndexLabels(value);
+        _personSearch = value is null ? null : new PersonSearch(value.People);
+        if (value is null || _labels is not { } labels)
+        {
+            return;
+        }
+
+        // The package and its own people list disagree; Jim sees the bare id, and this says where (§14).
+        foreach (var id in value.Documents.SelectMany(d => d.Suggestions)
+                     .Where(s => s.Field == IndexAnswerVocabulary.Person && labels.Person(s.Value) is null)
+                     .Select(s => s.Value).Distinct(StringComparer.Ordinal))
+        {
+            Log.Warning("Index package {PackageId} suggests person {PersonId}, who is not on its people list",
+                value.PackageId, id);
+        }
+    }
+
+    /// <summary>The selected document's suggestions with names in place of ids (SPEC-2026-009 §08-1).</summary>
+    public IReadOnlyList<SuggestionRow> SuggestionRows =>
+        SelectedDocument is { } document && _labels is { } labels
+            ? document.Suggestions.Select(s => SuggestionRow.From(s, labels)).ToArray()
+            : [];
+
+    /// <summary><see cref="StagedAnswers"/> with names in place of ids.</summary>
+    public IReadOnlyList<StagedAnswerRow> StagedAnswerRows =>
+        _labels is { } labels ? StagedAnswers.Select(a => StagedAnswerRow.From(a, labels)).ToArray() : [];
+
+    /// <summary>The rows are projections, so they follow whatever they project: every place that
+    /// announces a new document, package or staged set announces the rows with it.</summary>
+    protected override void OnPropertyChanged(System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        base.OnPropertyChanged(e);
+        if (e.PropertyName is nameof(StagedAnswers))
+        {
+            base.OnPropertyChanged(new System.ComponentModel.PropertyChangedEventArgs(nameof(StagedAnswerRows)));
+        }
+        else if (e.PropertyName is nameof(SelectedDocument) or nameof(Package))
+        {
+            base.OnPropertyChanged(new System.ComponentModel.PropertyChangedEventArgs(nameof(SuggestionRows)));
         }
     }
 
@@ -542,6 +686,8 @@ public sealed partial class IndexViewModel : ObservableObject
     /// banner would delete the next package's folder.</summary>
     private void ResetPackageState()
     {
+        PersonText = "";
+        PersonToAdd = null;
         _exported = new(StringComparer.Ordinal);
         _lastExportPath = null;
         _exportedVersion = null;

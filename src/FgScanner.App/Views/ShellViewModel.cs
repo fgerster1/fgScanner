@@ -24,7 +24,7 @@ public sealed partial class ShellViewModel : ObservableObject
 
         // No injected dependencies yet (the reader is static); built here so the
         // window can bind it off the shell without another DI registration.
-        IndexViewModel = new IndexViewModel();
+        IndexViewModel = new IndexViewModel { Settings = appSettings };
 
         // Feature flags (PLAN prompt 10, SPEC-2026-008): a flagged-off section is hidden
         // entirely. The list is rebuilt whenever a flag moves, so the setting no longer

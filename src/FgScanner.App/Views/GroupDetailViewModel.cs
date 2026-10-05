@@ -44,6 +44,8 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         _trashService = trashService;
         _activeGroup = activeGroup;
         _toolset = toolset;
+        // Set here, not as an initializer: the viewer's "OCR this page" calls back into this instance.
+        ShowOcrViewer = (rows, start) => Dialogs.OcrViewerWindow.ShowModal(rows, start, OcrPageAsync);
         UndoRedo.Changed += () =>
         {
             UndoCommand.NotifyCanExecuteChanged();
@@ -250,6 +252,8 @@ public sealed partial class GroupDetailViewModel : ObservableObject
                 ImagePath = Path.Combine(Group.DirectoryPath, page.FileName),
                 Folder = Group.DirectoryPath,
                 OcrStatus = FormatOcrStatus(page),
+                OcrState = page.OcrStatus,
+                IsBlank = page.IsBlank,
                 AiStatus = page.AiStatus.ToString(),
                 OcrText = page.OcrText,
                 AiDescription = page.AiDescription,
@@ -260,7 +264,9 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         }
 
         RestoreSelection(selectedPages, focusedPage);
-        StatusText = $"{Rows.Count} page(s). State: {Group.State}.";
+        StatusText = Group.State == GroupState.Committed
+            ? $"{Rows.Count} page(s) · Committed."
+            : $"{Rows.Count} page(s) · Open — not committed yet.";
     }
 
     /// <summary>
@@ -433,6 +439,30 @@ public sealed partial class GroupDetailViewModel : ObservableObject
     /// Replaceable so the viewer's effect on the grid can be tested without a window.
     /// </summary>
     public Func<IReadOnlyList<string>, int, int> ShowPageViewer { get; set; } = Dialogs.PageViewerWindow.ShowModal;
+
+    /// <summary>
+    /// Opens the selected page beside its OCR text (SPEC-2026-009 §08-5), with the rest of the group a
+    /// key away; the grid follows the page it closed on, as it does for the page viewer.
+    /// </summary>
+    [RelayCommand]
+    private void OpenOcrViewer()
+    {
+        if (Rows.Count == 0)
+        {
+            return;
+        }
+
+        var start = SelectedRow is null ? 0 : Rows.IndexOf(SelectedRow);
+        var shown = Rows.ToList();
+        var landed = ShowOcrViewer(shown, Math.Max(0, start));
+        if (landed >= 0 && landed < shown.Count)
+        {
+            SelectedRow = Rows.FirstOrDefault(r => r.DocumentId == shown[landed].DocumentId) ?? shown[landed];
+        }
+    }
+
+    /// <summary>Replaceable so View OCR's effect on the grid can be tested without a window.</summary>
+    public Func<IReadOnlyList<DocumentRow>, int, int> ShowOcrViewer { get; set; }
 
     /// <summary>
     /// Opens the record editor on the selected page. Modal for the viewer's reason: the editor works
@@ -722,6 +752,69 @@ public sealed partial class GroupDetailViewModel : ObservableObject
             Log.Error(ex, "Queueing re-OCR");
             StatusText = $"Re-OCR queueing failed: {ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// OCR — or re-OCR — just the selected page(s) (SPEC-2026-009 amendment, Franz 2026-10-05): one
+    /// misread page should not need the whole group re-run. The record editor shares this command,
+    /// since its page is this view model's selection.
+    /// </summary>
+    [RelayCommand]
+    private async Task OcrSelectedAsync()
+    {
+        var targets = EditTargets;
+        if (targets.Count == 0)
+        {
+            StatusText = "Select a page first.";
+            return;
+        }
+
+        StatusText = await QueueOcrAsync([.. targets.Select(r => r.PageId)]);
+    }
+
+    /// <summary>View OCR's "OCR this page": the page the viewer shows, whatever the grid has selected.</summary>
+    public async Task<string> OcrPageAsync(DocumentRow row)
+    {
+        var message = await QueueOcrAsync([row.PageId]);
+        StatusText = message;
+        return message;
+    }
+
+    private async Task<string> QueueOcrAsync(IReadOnlyCollection<Guid> pageIds)
+    {
+        try
+        {
+            var result = await _toolset.OcrQueue.EnqueuePagesAsync(pageIds);
+            await ReloadRowsAsync();
+            return OcrRequestText(result);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Queueing OCR for chosen pages");
+            return $"OCR queueing failed: {ex.Message}";
+        }
+    }
+
+    public static string OcrRequestText(OcrPageRequest result)
+    {
+        static string Pages(int n) => n == 1 ? "1 page" : $"{n} pages";
+        var parts = new List<string>();
+        if (result.Queued > 0)
+        {
+            parts.Add($"{Pages(result.Queued)} queued for OCR.");
+        }
+
+        if (result.Blank > 0)
+        {
+            parts.Add($"{result.Blank} blank {(result.Blank == 1 ? "page" : "pages")} skipped — blank pages are not OCRed.");
+        }
+
+        if (result.AlreadyQueued > 0)
+        {
+            parts.Add($"{Pages(result.AlreadyQueued)} already queued.");
+        }
+
+        return string.Join(" ", parts);
     }
 
     private async Task PersistRowAsync(DocumentRow row)

@@ -259,6 +259,13 @@ public class Page
 
     public bool IsBlank { get; set; }
 
+    /// <summary>
+    /// The page's orientation is decided — by its first finished OCR, or by the operator turning or
+    /// editing it — so OCR must never turn it again. Automatic orientation re-ran on every re-OCR,
+    /// including the one a hand rotation queues, and turned the operator's correction back.
+    /// </summary>
+    public bool OrientationSettled { get; set; }
+
     public OcrStatus OcrStatus { get; set; }
 
     public AiStatus AiStatus { get; set; }

@@ -59,3 +59,12 @@ Franz chose to close both in FG Scanner (2026-10-02).
   Franz, never a person, until he answers it on the portal's People page.
 - The phase-4 rule "never type a name" (SPEC-2026-008 non-goal) is superseded by this
   decision.
+
+## Carried into the search grid (SPEC-2026-009, 2026-10-05)
+
+The editable person pull-down became a search box over a read-only results grid. The
+guarantee is unchanged and now rests on the grid: typing only lists people; it never
+selects a row, and neither Enter nor Tab moves the pick. A picked row stages exactly its
+id; editing the search text drops the pick; with no row picked, Add sends the text through
+the typed-name path above. One refinement (Franz, 2026-10-05): a typed id that is exactly
+on the people list stages that person; an id-shaped name off the list is still refused.
