@@ -181,25 +181,41 @@
                     </Border>
 
                     <TextBlock Text="Suggestions" FontWeight="SemiBold" Margin="0,0,0,4" />
-                    <ItemsControl ItemsSource="{Binding SelectedDocument.Suggestions}">
+                    <!-- Names with the id beside them (SPEC-2026-009 Q5): two people can share a name. -->
+                    <ItemsControl ItemsSource="{Binding SuggestionRows}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border BorderThickness="1" BorderBrush="#33808080" CornerRadius="4"
                                         Padding="8,6" Margin="0,0,0,6">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding CanAccept}" Value="False">
+                                                    <Setter Property="Opacity" Value="0.6" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
                                     <DockPanel>
                                         <Button DockPanel.Dock="Right" Content="Accept"
                                                 VerticalAlignment="Top" Padding="8,3" Margin="6,0,0,0"
-                                                AutomationProperties.Name="{Binding Value, StringFormat=Accept suggestion {0}}"
+                                                Visibility="{Binding CanAccept, Converter={x:Static views:BoolToVisibilityConverter.Instance}}"
+                                                AutomationProperties.Name="{Binding ValueLabel, StringFormat=Accept suggestion {0}}"
                                                 Command="{Binding DataContext.AcceptSuggestionCommand,
                                                           RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                CommandParameter="{Binding}" />
+                                                CommandParameter="{Binding Source}" />
                                         <StackPanel>
-                                            <TextBlock>
-                                                <Run Text="{Binding Field, Mode=OneWay}" FontWeight="SemiBold" />
+                                            <TextBlock TextWrapping="Wrap">
+                                                <Run Text="{Binding FieldLabel, Mode=OneWay}" FontWeight="SemiBold" />
+                                                <Run Text="{Binding Source.Qualifier, Mode=OneWay}" Foreground="Gray" />
                                                 <Run Text="→" />
-                                                <Run Text="{Binding Value, Mode=OneWay}" />
+                                                <Run Text="{Binding ValueLabel, Mode=OneWay}" />
+                                                <Run Text="{Binding IdText, Mode=OneWay, StringFormat=· {0}, TargetNullValue=''}" Foreground="Gray" />
                                             </TextBlock>
-                                            <TextBlock Text="{Binding ReasonQuote}" TextWrapping="Wrap"
+                                            <TextBlock Text="{Binding InfoText}" FontSize="11" Opacity="0.8"
+                                                       TextWrapping="Wrap"
+                                                       Visibility="{Binding InfoText, Converter={x:Static views:StringToVisibilityConverter.Instance}}" />
+                                            <TextBlock Text="{Binding Source.ReasonQuote}" TextWrapping="Wrap"
                                                        FontStyle="Italic" Opacity="0.8" Margin="0,2,0,0" />
                                         </StackPanel>
                                     </DockPanel>
@@ -268,7 +284,7 @@
 
                     <TextBlock Text="Staged answers for this document" FontWeight="SemiBold"
                                Margin="0,10,0,2" />
-                    <ItemsControl ItemsSource="{Binding StagedAnswers}">
+                    <ItemsControl ItemsSource="{Binding StagedAnswerRows}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <DockPanel Margin="0,1">
@@ -276,11 +292,12 @@
                                             AutomationProperties.Name="Remove staged answer"
                                             Command="{Binding DataContext.RemoveStagedAnswerCommand,
                                                       RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                            CommandParameter="{Binding}" />
-                                    <TextBlock>
-                                        <Run Text="{Binding Field, Mode=OneWay}" />
-                                        <Run Text="{Binding Qualifier, Mode=OneWay}" Foreground="Gray" />
-                                        <Run Text="{Binding Value, Mode=OneWay}" FontWeight="SemiBold" />
+                                            CommandParameter="{Binding Source}" />
+                                    <TextBlock TextWrapping="Wrap">
+                                        <Run Text="{Binding FieldLabel, Mode=OneWay}" />
+                                        <Run Text="{Binding Source.Qualifier, Mode=OneWay}" Foreground="Gray" />
+                                        <Run Text="{Binding ValueLabel, Mode=OneWay}" FontWeight="SemiBold" />
+                                        <Run Text="{Binding IdText, Mode=OneWay, StringFormat=· {0}, TargetNullValue=''}" Foreground="Gray" />
                                     </TextBlock>
                                 </DockPanel>
                             </DataTemplate>

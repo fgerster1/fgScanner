@@ -536,8 +536,46 @@ public sealed partial class IndexViewModel : ObservableObject
     {
         if (SelectedDocument is { } document)
         {
-            TryStage(document.AnchorPageId, suggestion.Field,
-                suggestion.Qualifier, suggestion.Value);
+            // The portal's AI writes a key-document suggestion as "yes"; the answer file's word is
+            // "true" (SPEC-2026-009 Q7). Anything else stays refused by the validator, in words.
+            var value = suggestion.Field == IndexAnswerVocabulary.KeyFlag && suggestion.Value == "yes"
+                ? IndexAnswerVocabulary.KeyFlagTrue
+                : suggestion.Value;
+            TryStage(document.AnchorPageId, suggestion.Field, suggestion.Qualifier, value);
+            if (suggestion.Field == IndexAnswerVocabulary.KeyFlag && AnswerError is null)
+            {
+                RefreshAnswerPanel();
+            }
+        }
+    }
+
+    private IndexLabels? _labels;
+
+    partial void OnPackageChanged(IndexPackage? value) =>
+        _labels = value is null ? null : new IndexLabels(value);
+
+    /// <summary>The selected document's suggestions with names in place of ids (SPEC-2026-009 §08-1).</summary>
+    public IReadOnlyList<SuggestionRow> SuggestionRows =>
+        SelectedDocument is { } document && _labels is { } labels
+            ? document.Suggestions.Select(s => SuggestionRow.From(s, labels)).ToArray()
+            : [];
+
+    /// <summary><see cref="StagedAnswers"/> with names in place of ids.</summary>
+    public IReadOnlyList<StagedAnswerRow> StagedAnswerRows =>
+        _labels is { } labels ? StagedAnswers.Select(a => StagedAnswerRow.From(a, labels)).ToArray() : [];
+
+    /// <summary>The rows are projections, so they follow whatever they project: every place that
+    /// announces a new document, package or staged set announces the rows with it.</summary>
+    protected override void OnPropertyChanged(System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        base.OnPropertyChanged(e);
+        if (e.PropertyName is nameof(StagedAnswers))
+        {
+            base.OnPropertyChanged(new System.ComponentModel.PropertyChangedEventArgs(nameof(StagedAnswerRows)));
+        }
+        else if (e.PropertyName is nameof(SelectedDocument) or nameof(Package))
+        {
+            base.OnPropertyChanged(new System.ComponentModel.PropertyChangedEventArgs(nameof(SuggestionRows)));
         }
     }
 
