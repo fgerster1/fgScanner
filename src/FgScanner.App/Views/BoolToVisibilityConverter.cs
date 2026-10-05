@@ -26,3 +26,15 @@ public sealed class NotNullToBoolConverter : IValueConverter
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();
 }
+
+/// <summary>A list of names on one line, for the people grid's "Also known as" column.</summary>
+public sealed class JoinConverter : IValueConverter
+{
+    public static JoinConverter Instance { get; } = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is IEnumerable<string> items ? string.Join("; ", items) : "";
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}

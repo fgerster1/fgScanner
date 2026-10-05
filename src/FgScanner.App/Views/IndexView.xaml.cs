@@ -129,6 +129,26 @@ public partial class IndexView : UserControl
             AnswerPanelMinWidth);
     }
 
+    /// <summary>
+    /// A document with many suggestions pushes the people search to the bottom of the answer panel,
+    /// where the results would fill in out of sight. Typing scrolls the whole section — box, results
+    /// and Add — into view once the grid has its new rows.
+    /// </summary>
+    private void OnPersonSearchChanged(object sender, TextChangedEventArgs e) =>
+        Dispatcher.BeginInvoke(() => PeopleSection.BringIntoView(), System.Windows.Threading.DispatcherPriority.Loaded);
+
+    /// <summary>
+    /// Enter in a DataGrid moves the selection down a row, so pressing it on the person Jim chose
+    /// would quietly pick the next one. Here it keeps the pick where it is (SPEC-2026-009 §09).
+    /// </summary>
+    private void OnPersonGridKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            e.Handled = true;
+        }
+    }
+
     // ----- page zoom: the Groups preview's pattern (SPEC-2026-009 §08-3) -----
 
     private void OnPageMouseWheel(object sender, MouseWheelEventArgs e)

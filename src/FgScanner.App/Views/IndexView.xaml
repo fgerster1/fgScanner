@@ -248,26 +248,46 @@
                                  ToolTip="yyyy-mm-dd — never reformatted for you" />
                     </DockPanel>
 
+                    <StackPanel x:Name="PeopleSection">
                     <TextBlock Text="People" FontWeight="SemiBold" Margin="0,8,0,2" />
-                    <DockPanel>
+                    <!-- Search, then pick a row (SPEC-2026-009 §08-2). Typing only lists: a row is picked
+                         by selecting it, and with none picked Add sends what was typed (ADR-0016). -->
+                    <TextBox x:Name="PersonSearchBox"
+                             Text="{Binding PersonText, UpdateSourceTrigger=PropertyChanged}"
+                             TextChanged="OnPersonSearchChanged"
+                             AutomationProperties.Name="Search people"
+                             ToolTip="Type part of a name or nickname" />
+                    <DataGrid x:Name="PersonGrid" ItemsSource="{Binding PersonResults}"
+                              SelectedItem="{Binding PersonToAdd}"
+                              AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single"
+                              SelectionUnit="FullRow" HeadersVisibility="Column"
+                              CanUserAddRows="False" CanUserDeleteRows="False"
+                              GridLinesVisibility="Horizontal" MinHeight="60" MaxHeight="230"
+                              Margin="0,4,0,0" PreviewKeyDown="OnPersonGridKeyDown"
+                              AutomationProperties.Name="People found">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Name" Binding="{Binding DisplayName}" Width="2*" />
+                            <DataGridTextColumn Header="Id" Binding="{Binding Id}" Width="Auto" />
+                            <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="Auto" />
+                            <DataGridTextColumn Header="Also known as" Width="2*"
+                                                Binding="{Binding Aliases, Converter={x:Static views:JoinConverter.Instance}}" />
+                            <DataGridTextColumn Header="Roles" Width="Auto"
+                                                Binding="{Binding Roles, Converter={x:Static views:JoinConverter.Instance}}" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <TextBlock Text="{Binding PersonResultsNote}" FontSize="11" Opacity="0.8" Margin="0,2,0,0"
+                               Visibility="{Binding PersonResultsNote, Converter={x:Static views:StringToVisibilityConverter.Instance}}" />
+                    <DockPanel Margin="0,4,0,0" LastChildFill="False">
                         <Button DockPanel.Dock="Right" Content="Add" Padding="8,3" Margin="6,0,0,0"
                                 Command="{Binding AddPersonCommand}" />
-                        <ComboBox DockPanel.Dock="Right" Width="100" Margin="6,0,0,0"
+                        <ComboBox DockPanel.Dock="Right" Width="110"
                                   ItemsSource="{Binding PersonQualifiers}"
                                   SelectedItem="{Binding PersonQualifierToAdd}"
                                   AutomationProperties.Name="Person role" />
-                        <!-- Text search stays off: it autocompletes a typed prefix to the
-                             first listed name, so a name meant to travel as typed (ADR-0016)
-                             would silently become someone on the list. -->
-                        <ComboBox ItemsSource="{Binding People}"
-                                  SelectedItem="{Binding PersonToAdd}"
-                                  Text="{Binding PersonText, UpdateSourceTrigger=PropertyChanged}"
-                                  DisplayMemberPath="DisplayName"
-                                  IsEditable="True" IsTextSearchEnabled="False"
-                                  AutomationProperties.Name="Person" />
                     </DockPanel>
+                    </StackPanel>
                     <TextBlock Opacity="0.7" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap"
-                               Text="Someone missing from the list? Type the name as the page spells it and click Add. Franz decides who it is; it is never added to the list without him." />
+                               Text="Click the person's row, then Add. Someone missing from the list? Type the name as the page spells it, leave every row unpicked, and click Add. Franz decides who it is; it is never added to the list without him." />
 
                     <TextBlock Text="Subjects" FontWeight="SemiBold" Margin="0,8,0,2" />
                     <ItemsControl ItemsSource="{Binding SubjectChoices}">

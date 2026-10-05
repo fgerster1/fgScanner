@@ -99,9 +99,9 @@ public sealed class IndexPromptTenReviewTests : IDisposable
         var package = CopyOfGolden();
         AddPerson(package, "P0003", "Loepp, Thomas C.");
         var vm = await Open(package);
-        // The editable combo writes the picked item's DisplayName into its text.
-        vm.PersonToAdd = vm.People.Single(p => p.Id == "P0003");
-        vm.PersonText = "Loepp, Thomas C.";
+        // SPEC-2026-009: Jim searches, then picks the namesake's row in the results grid.
+        vm.PersonText = "Loepp";
+        vm.PersonToAdd = vm.PersonResults.Single(p => p.Id == "P0003");
 
         vm.AddPersonCommand.Execute(null);
 

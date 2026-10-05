@@ -375,12 +375,66 @@ public sealed partial class IndexViewModel : ObservableObject
     [ObservableProperty]
     private string _personQualifierToAdd = "mentioned";
 
-    /// <summary>What is typed in the person box (it is editable). A spelling
-    /// on the list, case and punctuation ignored, the portal's own rule —
-    /// becomes that person; any other name travels as typed, and the portal
-    /// resolves it or holds it as a proposal for Franz (ADR-0016).</summary>
+    /// <summary>What is typed in the people search. It lists matches and never picks one: with no
+    /// row picked, a spelling on the list — case and punctuation ignored, the portal's own rule —
+    /// becomes that person, and any other name travels as typed for the portal to resolve or hold
+    /// as a proposal for Franz (ADR-0016).</summary>
     [ObservableProperty]
     private string _personText = "";
+
+    /// <summary>The people the search text could mean, for the results grid (SPEC-2026-009 §08-2).
+    /// Changed entry by entry, never cleared: the grid binds its selection to
+    /// <see cref="PersonToAdd"/>, and a Clear() makes WPF write a null selection back mid-refill.</summary>
+    public System.Collections.ObjectModel.ObservableCollection<PackagePerson> PersonResults { get; } = [];
+
+    /// <summary>Says when more people matched than the grid shows; null otherwise.</summary>
+    [ObservableProperty]
+    private string? _personResultsNote;
+
+    private PersonSearch? _personSearch;
+
+    partial void OnPersonTextChanged(string value)
+    {
+        // A pick belongs to the search it was made in. Kept after the text changes, Add would stage
+        // that person while the box shows a different name.
+        PersonToAdd = null;
+        var result = _personSearch?.Filter(value) ?? new PersonSearch.Result([], 0);
+        ShowPersonResults(result.People);
+        PersonResultsNote = result.Total > result.People.Count
+            ? string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "{0} more match — keep typing to narrow it down.", result.Total - result.People.Count)
+            : null;
+    }
+
+    private void ShowPersonResults(IReadOnlyList<PackagePerson> wanted)
+    {
+        var keep = wanted.ToHashSet();
+        for (var i = PersonResults.Count - 1; i >= 0; i--)
+        {
+            if (!keep.Contains(PersonResults[i]))
+            {
+                PersonResults.RemoveAt(i);
+            }
+        }
+
+        for (var i = 0; i < wanted.Count; i++)
+        {
+            if (i < PersonResults.Count && ReferenceEquals(PersonResults[i], wanted[i]))
+            {
+                continue;
+            }
+
+            var at = PersonResults.IndexOf(wanted[i]);
+            if (at >= 0)
+            {
+                PersonResults.Move(at, i);
+            }
+            else
+            {
+                PersonResults.Insert(i, wanted[i]);
+            }
+        }
+    }
 
     [RelayCommand]
     public void AddPerson()
@@ -392,20 +446,14 @@ public sealed partial class IndexViewModel : ObservableObject
 
         var typed = PersonText.Trim();
         string value;
-        if (PersonToAdd is { } picked && typed == picked.DisplayName.Trim())
+        if (PersonToAdd is { } picked)
         {
-            // A pick from the list writes its display name into the text, and
-            // namesakes exist: re-resolving that text would stage whichever
-            // namesake comes first, not the one Jim picked.
+            // A row picked in the grid is that person, whatever else shares the name.
             value = picked.Id;
         }
         else if (typed.Length > 0)
         {
             value = MatchPerson(typed)?.Id ?? typed;
-        }
-        else if (PersonToAdd is { } person)
-        {
-            value = person.Id;
         }
         else
         {
@@ -551,8 +599,11 @@ public sealed partial class IndexViewModel : ObservableObject
 
     private IndexLabels? _labels;
 
-    partial void OnPackageChanged(IndexPackage? value) =>
+    partial void OnPackageChanged(IndexPackage? value)
+    {
         _labels = value is null ? null : new IndexLabels(value);
+        _personSearch = value is null ? null : new PersonSearch(value.People);
+    }
 
     /// <summary>The selected document's suggestions with names in place of ids (SPEC-2026-009 §08-1).</summary>
     public IReadOnlyList<SuggestionRow> SuggestionRows =>
@@ -613,6 +664,8 @@ public sealed partial class IndexViewModel : ObservableObject
     /// banner would delete the next package's folder.</summary>
     private void ResetPackageState()
     {
+        PersonText = "";
+        PersonToAdd = null;
         _exported = new(StringComparer.Ordinal);
         _lastExportPath = null;
         _exportedVersion = null;
