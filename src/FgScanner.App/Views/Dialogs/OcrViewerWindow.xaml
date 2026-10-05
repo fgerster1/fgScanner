@@ -17,6 +17,9 @@
             <Button x:Name="ZoomInButton" Content="+" Click="OnZoomIn" Padding="12,4" Margin="0,0,4,0" ToolTip="Zoom in" AutomationProperties.Name="Zoom in" />
             <Button x:Name="FitButton" Content="Fit" Click="OnFit" Padding="10,4" Margin="0,0,8,0" ToolTip="Show the whole page" AutomationProperties.Name="Fit the page" />
             <TextBlock x:Name="ZoomText" VerticalAlignment="Center" Opacity="0.7" MinWidth="52" />
+            <Button x:Name="OcrPageButton" Content="OCR this page" Click="OnOcrPage" Padding="10,4" Margin="8,0,8,0"
+                    ToolTip="OCR this page, or read it again (the old .md goes to Trash)" />
+            <TextBlock x:Name="OcrStatusText" VerticalAlignment="Center" Opacity="0.8" TextWrapping="Wrap" />
         </WrapPanel>
 
         <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">

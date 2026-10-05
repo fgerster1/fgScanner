@@ -654,10 +654,20 @@ check the fixes made by the Prompt 6 code review.
 
 **5 · View OCR (P5)**
 - [ ] Groups → a page with OCR → View OCR shows the image beside its text; a page never OCRed shows
-      "Not OCRed yet — use OCR pages on the Groups page."; the same from the record editor.
+      "Not OCRed yet — use OCR this page."; the same from the record editor.
 - [ ] *(review)* A table page (bank statement, ledger): rows stay on one line, scroll sideways.
 - [ ] *(review)* On the last page, zoom in and press → → nothing moves or re-fits. Click the image,
       then ←/→ → pages turn.
 - [ ] *(review)* Rotate an OCRed page, then View OCR before the queue reaches it → "OCR is still
       running for this page.", not the text of the unrotated image.
+
+**6 · OCR one page (added 2026-10-05)** — use a scratch group: a re-OCR replaces the page's text.
+- [ ] Groups → select one page → "OCR selected" → status "1 page queued for OCR."; only that row's
+      OCR column changes, then reads Yes when the queue gets to it.
+- [ ] Select two pages, one of them blank → "1 page queued for OCR. 1 blank page skipped — blank
+      pages are not OCRed."
+- [ ] Record editor → "OCR this page" → the editor's page is queued, the status line says so.
+- [ ] View OCR → "OCR this page" → the message shows beside the button and the text pane reads
+      "OCR is still running for this page."; reopening View OCR after the queue runs shows the new
+      text, and the old `.md` is in Trash.
 

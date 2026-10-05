@@ -173,6 +173,14 @@ list (e.g. `P1234` in PKG-0002 = "Two Licensed Physicians") stages that person; 
 name OFF the list is refused (the pre-existing ADR-0016 rule, unchanged). The walk notes had
 expected every `P1234` to be refused; that expectation was wrong for PKG-0002, not the code.
 
+**Added during the build (2026-10-05, Franz) — OCR one page:** a single page can be OCRed, or
+re-OCRed, without re-running the group. One action, "OCR selected" on the Groups toolbar (the
+selected pages) and "OCR this page" in the record editor and in View OCR (the page shown — this
+reverses the viewer's read-only-actions rule, at Franz's request). Never-read pages are OCRed,
+read ones re-OCRed with the old `.md` to Trash as Re-OCR all does; blank pages are skipped and the
+status line says so; a page already queued gets no second job. `OcrQueueService.EnqueuePagesAsync`;
+proven by `OcrQueueServiceTests` and `PageViewerTests` ("OCR selected …", "OCR this page …").
+
 10. **Q10 — Order of the remaining three specs** — proceeding as: portal people merge next
     (small, under a day), then "index everything", then text messages + email. **→ confirmed.**
 
@@ -242,8 +250,8 @@ mins (200+6+300+6+300 = 812 → keep 980 so defaults fit). Nav rail untouched.
 **5 · View OCR.** New `Dialogs/OcrViewerWindow` (per Q2): image pane reusing the zoom pattern,
 text pane read-only monospace `TextBox` (selectable, copyable), Previous/Next page. Source per
 Q3: `.md` beside the image → front matter stripped → shown as text; else `Page.OcrText`; else a
-sentence by status (`No`: "Not OCRed yet — use OCR pages on the Groups page."; `Pending`:
-"OCR is still running for this page."; `Failed`: "OCR failed on this page — try Re-process.").
+sentence by status (`No`: "Not OCRed yet — use OCR this page."; `Pending`:
+"OCR is still running for this page."; `Failed`: "OCR failed on this page — use OCR this page to try again.").
 Opened from a "View OCR" button in Groups' preview tools and in the record editor's zoom tools,
 for the selected page. The existing Groups "OCR text" box stays.
 

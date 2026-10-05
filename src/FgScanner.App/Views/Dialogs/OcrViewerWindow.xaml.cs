@@ -17,13 +17,21 @@ public partial class OcrViewerWindow : Window
     private readonly PageNavigator _navigator;
     private readonly ZoomController _zoom = new();
     private readonly FitPolicy _fit;
+    private readonly Func<DocumentRow, Task<string>>? _ocrPage;
 
-    public OcrViewerWindow(IReadOnlyList<DocumentRow> rows, int startIndex)
+    /// <summary>Pages queued from this window. The rows are a snapshot taken when it opened, so without
+    /// this a page just sent to OCR would still show its old text, or "not OCRed yet".</summary>
+    private readonly HashSet<Guid> _queued = [];
+
+    /// <param name="ocrPage">Queues OCR for one page and says what happened; null hides the button.</param>
+    public OcrViewerWindow(IReadOnlyList<DocumentRow> rows, int startIndex, Func<DocumentRow, Task<string>>? ocrPage = null)
     {
         InitializeComponent();
         _fit = new FitPolicy(_zoom);
         _rows = rows;
+        _ocrPage = ocrPage;
         _navigator = new PageNavigator(rows.Count, startIndex);
+        OcrPageButton.Visibility = ocrPage is null ? Visibility.Collapsed : Visibility.Visible;
         Loaded += (_, _) => ShowPage();
     }
 
@@ -33,11 +41,12 @@ public partial class OcrViewerWindow : Window
     /// Shows the viewer over whichever window is active — the Groups page or the record editor,
     /// which is itself modal — and returns the index of the page it closed on.
     /// </summary>
-    public static int ShowModal(IReadOnlyList<DocumentRow> rows, int startIndex)
+    public static int ShowModal(
+        IReadOnlyList<DocumentRow> rows, int startIndex, Func<DocumentRow, Task<string>>? ocrPage = null)
     {
         var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
             ?? Application.Current?.MainWindow;
-        var viewer = new OcrViewerWindow(rows, startIndex) { Owner = owner };
+        var viewer = new OcrViewerWindow(rows, startIndex, ocrPage) { Owner = owner };
         viewer.ShowDialog();
         return viewer.CurrentIndex;
     }
@@ -55,7 +64,9 @@ public partial class OcrViewerWindow : Window
         var hasImage = PageImage.Source is not null;
         ImageMissingText.Visibility = hasImage ? Visibility.Collapsed : Visibility.Visible;
         ZoomOutButton.IsEnabled = ZoomInButton.IsEnabled = FitButton.IsEnabled = hasImage;
-        OcrText.Text = OcrTextSource.Read(row.ImagePath, row.OcrText, row.OcrState, row.IsBlank);
+        OcrText.Text = _queued.Contains(row.PageId)
+            ? OcrTextSource.Read(row.ImagePath, null, Data.OcrStatus.Pending, row.IsBlank)
+            : OcrTextSource.Read(row.ImagePath, row.OcrText, row.OcrState, row.IsBlank);
         OcrText.ScrollToHome();
         FileNameText.Text = row.ImagePath;
         PositionText.Text = _navigator.Position;
@@ -73,6 +84,31 @@ public partial class OcrViewerWindow : Window
         if (_navigator.Index != before)
         {
             ShowPage();
+        }
+    }
+
+    /// <summary>OCR — or re-OCR — the page on screen (SPEC-2026-009 amendment, Franz 2026-10-05).</summary>
+    private async void OnOcrPage(object sender, RoutedEventArgs e)
+    {
+        if (_ocrPage is null || _rows.Count == 0)
+        {
+            return;
+        }
+
+        var row = _rows[_navigator.Index];
+        OcrPageButton.IsEnabled = false;
+        try
+        {
+            OcrStatusText.Text = await _ocrPage(row);
+            if (!row.IsBlank)
+            {
+                _queued.Add(row.PageId);
+                ShowPage();
+            }
+        }
+        finally
+        {
+            OcrPageButton.IsEnabled = true;
         }
     }
 

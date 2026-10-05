@@ -496,4 +496,68 @@ public sealed class GroupPageViewerTests : IDisposable
 
         Assert.Equal(2, shownStart);
     }
+
+    /// <summary>SPEC-2026-009 amendment (Franz, 2026-10-05): one misread page is OCRed or re-OCRed
+    /// on its own, never by re-running the whole group.</summary>
+    [Fact]
+    public async Task OCR_selected_queues_only_the_selected_page()
+    {
+        var vm = await GroupOfThree("OcrOne", TestContext.Current.CancellationToken);
+        vm.SelectedRow = vm.Rows[1];
+
+        await vm.OcrSelectedCommand.ExecuteAsync(null);
+
+        Assert.Equal(
+            [FgScanner.Data.OcrStatus.No, FgScanner.Data.OcrStatus.Pending, FgScanner.Data.OcrStatus.No],
+            vm.Rows.Select(r => r.OcrState));
+        Assert.Equal("1 page queued for OCR.", vm.StatusText);
+    }
+
+    [Fact]
+    public async Task OCR_selected_with_nothing_selected_asks_for_a_page()
+    {
+        var vm = await GroupOfThree("OcrNone", TestContext.Current.CancellationToken);
+        vm.SelectedRow = null;
+
+        await vm.OcrSelectedCommand.ExecuteAsync(null);
+
+        Assert.All(vm.Rows, r => Assert.Equal(FgScanner.Data.OcrStatus.No, r.OcrState));
+        Assert.Equal("Select a page first.", vm.StatusText);
+    }
+
+    [Fact]
+    public async Task OCR_this_page_in_the_record_editor_queues_the_editors_page()
+    {
+        var vm = await GroupOfThree("OcrEditorOne", TestContext.Current.CancellationToken);
+        vm.SelectedRow = vm.Rows[2];
+        using var editor = new RecordEditorViewModel(vm);
+
+        await editor.OcrSelectedCommand.ExecuteAsync(null);
+
+        Assert.Equal(FgScanner.Data.OcrStatus.Pending, vm.Rows[2].OcrState);
+        Assert.Equal(FgScanner.Data.OcrStatus.No, vm.Rows[0].OcrState);
+    }
+
+    /// <summary>What View OCR's "OCR this page" calls: the page shown, whatever is selected.</summary>
+    [Fact]
+    public async Task OCR_this_page_from_the_viewer_queues_the_page_shown()
+    {
+        var vm = await GroupOfThree("OcrViewerOne", TestContext.Current.CancellationToken);
+        vm.SelectedRow = vm.Rows[0];
+
+        var message = await vm.OcrPageAsync(vm.Rows[2]);
+
+        Assert.Equal("1 page queued for OCR.", message);
+        Assert.Equal(FgScanner.Data.OcrStatus.Pending, vm.Rows[2].OcrState);
+        Assert.Equal(FgScanner.Data.OcrStatus.No, vm.Rows[0].OcrState);
+    }
+
+    [Theory]
+    [InlineData(1, 0, 0, "1 page queued for OCR.")]
+    [InlineData(3, 0, 0, "3 pages queued for OCR.")]
+    [InlineData(0, 1, 0, "1 blank page skipped — blank pages are not OCRed.")]
+    [InlineData(2, 1, 1, "2 pages queued for OCR. 1 blank page skipped — blank pages are not OCRed. 1 page already queued.")]
+    [InlineData(0, 0, 2, "2 pages already queued.")]
+    public void The_status_line_says_what_an_OCR_request_did(int queued, int blank, int open, string expected) =>
+        Assert.Equal(expected, GroupDetailViewModel.OcrRequestText(new FgScanner.Data.OcrPageRequest(queued, blank, open)));
 }

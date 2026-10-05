@@ -33,9 +33,9 @@ public static class OcrTextSource
 
         return status switch
         {
-            OcrStatus.No => "Not OCRed yet — use OCR pages on the Groups page.",
+            OcrStatus.No => "Not OCRed yet — use OCR this page.",
             OcrStatus.Pending => "OCR is still running for this page.",
-            OcrStatus.Failed => "OCR failed on this page — try Re-process.",
+            OcrStatus.Failed => "OCR failed on this page — use OCR this page to try again.",
             _ => "OCR found no text on this page.",
         };
     }

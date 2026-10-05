@@ -177,6 +177,8 @@
                         <TextBlock x:Name="ZoomText" VerticalAlignment="Center" Opacity="0.7" MinWidth="52" />
                         <Button Content="View OCR" Command="{Binding OpenOcrViewerCommand}" Padding="10,2"
                                 Margin="8,0,0,0" ToolTip="This page beside the text recognised on it" />
+                        <Button Content="OCR this page" Command="{Binding OcrSelectedCommand}" Padding="10,2"
+                                Margin="4,0,0,0" ToolTip="OCR this page, or read it again (the old .md goes to Trash)" />
                     </WrapPanel>
 
                     <Border BorderBrush="Gray" BorderThickness="1">

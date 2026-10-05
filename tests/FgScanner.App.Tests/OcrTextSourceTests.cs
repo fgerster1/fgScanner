@@ -76,9 +76,9 @@ public sealed class OcrTextSourceTests : IDisposable
     }
 
     [Theory]
-    [InlineData(OcrStatus.No, "Not OCRed yet — use OCR pages on the Groups page.")]
+    [InlineData(OcrStatus.No, "Not OCRed yet — use OCR this page.")]
     [InlineData(OcrStatus.Pending, "OCR is still running for this page.")]
-    [InlineData(OcrStatus.Failed, "OCR failed on this page — try Re-process.")]
+    [InlineData(OcrStatus.Failed, "OCR failed on this page — use OCR this page to try again.")]
     [InlineData(OcrStatus.Yes, "OCR found no text on this page.")]
     public void With_no_text_at_all_a_sentence_says_why(OcrStatus status, string expected)
     {
@@ -90,8 +90,8 @@ public sealed class OcrTextSourceTests : IDisposable
     /// claims the job; that file describes the image before the edit.</summary>
     [Theory]
     [InlineData(OcrStatus.Pending, "OCR is still running for this page.")]
-    [InlineData(OcrStatus.No, "Not OCRed yet — use OCR pages on the Groups page.")]
-    [InlineData(OcrStatus.Failed, "OCR failed on this page — try Re-process.")]
+    [InlineData(OcrStatus.No, "Not OCRed yet — use OCR this page.")]
+    [InlineData(OcrStatus.Failed, "OCR failed on this page — use OCR this page to try again.")]
     public void A_md_left_from_before_an_edit_is_not_shown_until_ocr_finishes(OcrStatus status, string expected)
     {
         WriteMarkdown("text of the image before it was rotated");
