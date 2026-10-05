@@ -32,6 +32,7 @@ public partial class OcrViewerWindow : Window
         _ocrPage = ocrPage;
         _navigator = new PageNavigator(rows.Count, startIndex);
         OcrPageButton.Visibility = ocrPage is null ? Visibility.Collapsed : Visibility.Visible;
+        WrapLinesBox.IsChecked = s_wrapLines;
         Loaded += (_, _) => ShowPage();
     }
 
@@ -85,6 +86,21 @@ public partial class OcrViewerWindow : Window
         {
             ShowPage();
         }
+    }
+
+    /// <summary>Kept for the rest of the session, so the next View OCR opens the way it was left.</summary>
+    private static bool s_wrapLines;
+
+    /// <summary>
+    /// Unwrapped by default: the .md keeps tables as space-aligned columns, and a wrapped row puts its
+    /// amounts under the wrong column. Prose reads better wrapped, so it is the operator's choice
+    /// (Franz, 2026-10-05). Wrapping needs the sideways scroll bar off, or lines never meet the edge.
+    /// </summary>
+    private void OnWrapLinesChanged(object sender, RoutedEventArgs e)
+    {
+        s_wrapLines = WrapLinesBox.IsChecked == true;
+        OcrText.TextWrapping = s_wrapLines ? TextWrapping.Wrap : TextWrapping.NoWrap;
+        OcrText.HorizontalScrollBarVisibility = s_wrapLines ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto;
     }
 
     /// <summary>OCR — or re-OCR — the page on screen (SPEC-2026-009 amendment, Franz 2026-10-05).</summary>

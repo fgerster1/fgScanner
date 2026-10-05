@@ -656,6 +656,8 @@ check the fixes made by the Prompt 6 code review.
 - [ ] Groups → a page with OCR → View OCR shows the image beside its text; a page never OCRed shows
       "Not OCRed yet — use OCR this page."; the same from the record editor.
 - [ ] *(review)* A table page (bank statement, ledger): rows stay on one line, scroll sideways.
+- [ ] Tick "Wrap lines" → long lines wrap to the pane and the sideways scroll bar goes; untick →
+      back to one line per row. Close and reopen View OCR → it opens the way it was left.
 - [ ] *(review)* On the last page, zoom in and press → → nothing moves or re-fits. Click the image,
       then ←/→ → pages turn.
 - [ ] *(review)* Rotate an OCRed page, then View OCR before the queue reaches it → "OCR is still

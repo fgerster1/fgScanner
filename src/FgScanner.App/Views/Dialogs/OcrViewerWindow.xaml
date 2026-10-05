@@ -19,6 +19,9 @@
             <TextBlock x:Name="ZoomText" VerticalAlignment="Center" Opacity="0.7" MinWidth="52" />
             <Button x:Name="OcrPageButton" Content="OCR this page" Click="OnOcrPage" Padding="10,4" Margin="8,0,8,0"
                     ToolTip="OCR this page, or read it again (the old .md goes to Trash)" />
+            <CheckBox x:Name="WrapLinesBox" Content="Wrap lines" VerticalAlignment="Center" Margin="0,0,8,0"
+                      Checked="OnWrapLinesChanged" Unchecked="OnWrapLinesChanged"
+                      ToolTip="Off keeps table columns aligned; on fits long lines to the pane" />
             <TextBlock x:Name="OcrStatusText" VerticalAlignment="Center" Opacity="0.8" TextWrapping="Wrap" />
         </WrapPanel>
 
@@ -60,7 +63,7 @@
                           KeyboardIncrement="20" ToolTip="Drag to resize"
                           AutomationProperties.Name="Resize the page and the text" />
 
-            <!-- Read-only but selectable, so a passage can be copied out. Not wrapped: the .md keeps
+            <!-- Read-only but selectable, so a passage can be copied out. Unwrapped unless "Wrap lines" is on: the .md keeps
                  tables as space-aligned columns, and a wrapped row puts its amounts under the wrong column. -->
             <TextBox x:Name="OcrText" Grid.Column="2" IsReadOnly="True" TextWrapping="NoWrap"
                      AcceptsReturn="True" FontFamily="Consolas" FontSize="13" Padding="8"
