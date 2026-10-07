@@ -490,6 +490,71 @@ public sealed partial class GroupDetailViewModel : ObservableObject
     public Action<RecordEditorViewModel> ShowRecordEditor { get; set; } = Dialogs.RecordEditorWindow.ShowModal;
 
     /// <summary>
+    /// Asks before "Propose documents" writes anything. Replaceable so the proposal can be tested
+    /// without a window.
+    /// </summary>
+    public Func<string, bool> ConfirmProposal { get; set; } = message =>
+        System.Windows.MessageBox.Show(
+            message, "Propose documents",
+            System.Windows.MessageBoxButton.OKCancel,
+            System.Windows.MessageBoxImage.Question) == System.Windows.MessageBoxResult.OK;
+
+    /// <summary>
+    /// Fills a blank DocNo from runs of sheets sharing Title, DocType and DocDate (SPEC-2026-009
+    /// Q1). The portal import makes each DocNo run one document and mints permanent page ids from
+    /// that grouping, so the runs are shown first and nothing is written without a yes.
+    /// </summary>
+    [RelayCommand]
+    private async Task ProposeDocumentsAsync()
+    {
+        if (!Fields.Any(f => f.Name == "DocNo"))
+        {
+            StatusText = "This group's field layout has no DocNo field to propose.";
+            return;
+        }
+
+        if (Rows.All(r => !string.IsNullOrWhiteSpace(r.Values["DocNo"])))
+        {
+            StatusText = "Every sheet already has a DocNo — nothing to propose.";
+            return;
+        }
+
+        var rows = Rows.ToList();
+        var proposed = Core.Capture.DocumentRunProposer.Propose(
+            [.. rows.Select(r => new Core.Capture.DocumentRunRow(
+                Value(r, "Title"), Value(r, "DocType"), Value(r, "DocDate"), Value(r, "DocNo"),
+                Value(r, "NoteState")))]);
+        var runs = rows.Zip(proposed)
+            .Where(p => string.IsNullOrWhiteSpace(p.First.Values["DocNo"]))
+            .GroupBy(p => p.Second)
+            .Select(g => $"  DocNo {g.Key}: {g.First().First.ImageName} + {g.Count() - 1} more")
+            .ToList();
+        var message = $"{proposed.Distinct().Count()} documents from {rows.Count} sheets.\n\n"
+            + string.Join("\n", runs.Take(15))
+            + (runs.Count > 15 ? $"\n  … and {runs.Count - 15} more" : "")
+            + "\n\nSheets that already have a DocNo keep it. Apply?";
+        if (!ConfirmProposal(message))
+        {
+            return;
+        }
+
+        foreach (var (row, docNo) in rows.Zip(proposed))
+        {
+            if (string.IsNullOrWhiteSpace(row.Values["DocNo"]))
+            {
+                await _indexingService.MergeFieldValuesAsync(
+                    row.DocumentId, new Dictionary<string, string?> { ["DocNo"] = docNo });
+            }
+        }
+
+        await LoadAsync();
+        StatusText = $"DocNo filled in: {proposed.Distinct().Count()} documents.";
+
+        static string? Value(DocumentRow row, string name) =>
+            row.Values.Snapshot().GetValueOrDefault(name);
+    }
+
+    /// <summary>
     /// Reviews suspected duplicates in this group. Deletion goes through the Trash, so a wrong
     /// answer to an image hint stays recoverable.
     /// </summary>

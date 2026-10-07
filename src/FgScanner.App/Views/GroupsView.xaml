@@ -255,6 +255,9 @@
                             ToolTip="Write the values above onto every row that does not already have one" />
                 </WrapPanel>
                 <WrapPanel Margin="0,0,0,6">
+                    <Button Content="Propose documents…" Command="{Binding ProposeDocumentsCommand}"
+                            Padding="10,6" Margin="0,0,6,0"
+                            ToolTip="Fill a blank DocNo from runs of sheets with the same Title, type and date; shown before anything is written" />
                     <Button Content="Review &amp; Commit" Command="{Binding CommitCommand}" FontWeight="SemiBold"
                             Padding="10,6" Margin="0,0,6,0" />
                     <Button Content="Re-export index files" Command="{Binding ReexportCommand}" Padding="10,6" Margin="0,0,6,0" />
