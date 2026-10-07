@@ -151,4 +151,31 @@ public sealed class EvidenceProfileSeedTests : IDisposable
         Assert.Contains(repaired.Fields, f => f.Name == "NoteAuthor");
         Assert.DoesNotContain(repaired.Fields, f => f.Name == "NoteAuthour");
     }
+
+    /// <summary>
+    /// SPEC-2026-009 AC-3: every evidence page gets an OCR .md, which the portal cross-checks
+    /// against its own transcript. The station's Evidence profile had OCR off, so 861 of 883
+    /// pages had none. OCR is a profile flag, not a field, so turning it on mints no version.
+    /// </summary>
+    [Fact]
+    public async Task EnsureEvidenceProfile_turns_ocr_on_without_new_version()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var profile = await _profiles.EnsureEvidenceProfileAsync(ct);
+        Assert.True((await ReadProfileAsync(profile.Id)).OcrEnabled);
+
+        await _profiles.UpdateOcrEnabledAsync(profile.Id, false, ct);
+        var before = await _profiles.GetLatestSchemaAsync(profile.Id, ct);
+
+        await _profiles.EnsureEvidenceProfileAsync(ct);
+
+        Assert.True((await ReadProfileAsync(profile.Id)).OcrEnabled);
+        Assert.Equal(before.Version, (await _profiles.GetLatestSchemaAsync(profile.Id, ct)).Version);
+    }
+
+    private async Task<Profile> ReadProfileAsync(Guid id)
+    {
+        await using var db = new FgScannerDbContext(DbBootstrapper.BuildOptions(_dbPath));
+        return await db.Profiles.SingleAsync(p => p.Id == id, TestContext.Current.CancellationToken);
+    }
 }

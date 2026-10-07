@@ -108,6 +108,11 @@ public sealed class ProfileService(IDbContextFactory<FgScannerDbContext> dbFacto
             .ToList();
 
         await SaveSchemaAsync(profile.Id, fields, cancellationToken).ConfigureAwait(false);
+
+        // Every evidence page needs its OCR .md: the portal cross-checks it against its own
+        // transcript, and a station that scanned with OCR off left 861 of 883 pages without one.
+        await UpdateOcrEnabledAsync(profile.Id, true, cancellationToken).ConfigureAwait(false);
+        profile.OcrEnabled = true;
         return profile;
     }
 

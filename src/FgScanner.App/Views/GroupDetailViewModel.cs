@@ -961,9 +961,70 @@ public sealed partial class GroupDetailViewModel : ObservableObject
             .Where(f => !string.IsNullOrEmpty(f.Value))
             .ToDictionary(f => f.Field.Name, f => (string?)f.Value);
 
+    /// <summary>
+    /// Asks whether to commit while pages are still unread. Replaceable so the question can be
+    /// tested without a window.
+    /// </summary>
+    public Func<string, bool> ConfirmCommitWhileReading { get; set; } = message =>
+        System.Windows.MessageBox.Show(
+            message, "Pages still being read",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Warning) == System.Windows.MessageBoxResult.Yes;
+
+    // OCR finishing after commit re-exports index.json into the committed folder, so a copy taken
+    // to the transfer drive now would be stale and missing its .md files (SPEC-2026-009 AC-1c).
+    // Unread pages only count where the profile reads pages; otherwise they never will be.
+    private async Task<bool> ReadyToCommitAsync()
+    {
+        var pages = (await _groupService.GetPagesAsync(Group.Id)).Where(p => !p.IsBlank).ToList();
+        var queued = pages.Count(p => p.OcrStatus == OcrStatus.Pending);
+        var reads = Group.ProfileId is { } profileId
+            && (await _profileService.ListAsync()).Any(p => p.Id == profileId && p.OcrEnabled);
+        var unread = reads ? pages.Count(p => p.OcrStatus is OcrStatus.No or OcrStatus.Failed) : 0;
+        if (queued + unread == 0)
+        {
+            return true;
+        }
+
+        if (ConfirmCommitWhileReading(
+                $"{queued + unread} page(s) in this group have not been read yet ({queued} queued, {unread} not started).\n\n"
+                + "Text read after commit rewrites this group's index files, so a copy of the folder made now "
+                + "would be out of date and missing its .md files.\n\n"
+                + "Commit anyway? Choose No to wait until reading finishes."))
+        {
+            return true;
+        }
+
+        StatusText = $"Not committed: {queued + unread} page(s) still to be read. Commit again when OCR finishes.";
+        return false;
+    }
+
+    [RelayCommand]
+    private async Task ReadAllUnreadPagesAsync()
+    {
+        try
+        {
+            var queued = await _toolset.OcrQueue.EnqueueAllUnreadAsync();
+            await ReloadRowsAsync();
+            StatusText = queued == 0
+                ? "Every page in every group is already read or queued."
+                : $"{queued} page(s) across all groups queued for OCR.";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Queueing OCR for every group");
+            StatusText = $"OCR queue failed: {ex.Message}";
+        }
+    }
+
     [RelayCommand]
     private async Task CommitAsync()
     {
+        if (!await ReadyToCommitAsync())
+        {
+            return;
+        }
+
         var validation = await _indexingService.ValidateAsync(Group.Id);
         if (validation.HasErrors)
         {

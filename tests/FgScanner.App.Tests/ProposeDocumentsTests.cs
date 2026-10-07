@@ -88,7 +88,7 @@ public sealed class ProposeDocumentsTests : IDisposable
         {
             var file = Path.Combine(group.DirectoryPath, $"scan_{i + 1:00000}.png");
             await File.WriteAllBytesAsync(file, [(byte)i, 1, 2], ct);
-            var adopted = await _groupService.AdoptPagesAsync(group.Id, [file], _ => true, ct);
+            var adopted = await _groupService.AdoptPagesAsync(group.Id, [file], ct);
             var documentId = adopted.Adopted.Single().DocumentId;
             await _indexingService.SetFieldValuesAsync(
                 documentId,
