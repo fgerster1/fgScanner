@@ -67,3 +67,15 @@ pipeline, a wrong "who captured this" is a claim someone could rely on, while a 
 exactly the kind of fact item #10 was written to get *out* of operator hands, and the operator
 running retro-process usually cannot know who scanned a file years earlier any better than the
 software can.
+
+## Note, 2026-10 — Jim's 2026-08/09 groups (JimsStuff SPEC-2026-009, Q9)
+
+Jim scanned his first 883 pages (2026-08-30 to 09-13) on a station signed in as "Franz Gerster",
+so every one of those pages' `capturedBy` — and the `$(user)` default of 17 groups' `Operator` —
+names that Windows account, not the person who fed the paper. Franz decided (2026-10-07, Q9 = b):
+**`capturedBy` is never rewritten.** It is a capture-time fact about the account and a stable
+export key, and rewriting it after the fact would be exactly the fabricated provenance this ADR
+refuses. **`Operator`**, an editable batch field, is set to Jim on each group before commit, and
+the portal's import runbook (`JimsStuff/docs/fgscanner-import-runbook.md`) records that for these
+groups `capturedBy` names the account and `Operator` names the person. Jim's own laptop's account
+is checked on the release day so later captures name him. Neither export key changes.

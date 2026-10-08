@@ -166,7 +166,9 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         }
 
         PendingFields.Clear();
-        foreach (var field in Fields.Where(f => f.Scope != FieldScope.Batch))
+        // NoteState is owned by the annotated capture sequence: pending values persist across scans,
+        // so one typed here stamped every later sheet (SPEC-2026-009 AC-1f).
+        foreach (var field in Fields.Where(f => f.Scope != FieldScope.Batch && !IsNoteState(f.Name)))
         {
             var editor = new PendingFieldEditor(field);
             if (typedRow?.TryGetValue(field.Name, out var carried) == true)
@@ -195,6 +197,9 @@ public sealed partial class GroupDetailViewModel : ObservableObject
             BatchFields.Add(editor);
         }
     }
+
+    private static bool IsNoteState(string fieldName) =>
+        string.Equals(fieldName, "NoteState", StringComparison.OrdinalIgnoreCase);
 
     public async Task LoadAsync()
     {
@@ -488,6 +493,119 @@ public sealed partial class GroupDetailViewModel : ObservableObject
     /// grid can be tested without a window.
     /// </summary>
     public Action<RecordEditorViewModel> ShowRecordEditor { get; set; } = Dialogs.RecordEditorWindow.ShowModal;
+
+    /// <summary>
+    /// Asks before "Propose documents" writes anything. Replaceable so the proposal can be tested
+    /// without a window.
+    /// </summary>
+    public Func<string, bool> ConfirmProposal { get; set; } = Dialogs.ProposalDialog.Confirm;
+
+    /// <summary>Shows why nothing was proposed. Replaceable for the same reason.</summary>
+    public Action<string> ShowProposalRefusal { get; set; } = Dialogs.ProposalDialog.Inform;
+
+    // A committed folder may already be on the transfer drive; regrouping it is the post-commit
+    // rewrite SPEC-2026-009 R11 exists to prevent.
+    private bool CanProposeDocuments() => Group.State != GroupState.Committed;
+
+    /// <summary>
+    /// Fills a blank DocNo from runs of sheets sharing Title, DocType and DocDate (SPEC-2026-009
+    /// Q1). The portal import makes each DocNo run one document and mints permanent page ids from
+    /// that grouping, so the runs are shown first and nothing is written without a yes.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanProposeDocuments))]
+    private async Task ProposeDocumentsAsync()
+    {
+        if (Fields.FirstOrDefault(f => f.Name == "DocNo") is not { } docNoField)
+        {
+            StatusText = "This group's field layout has no DocNo field to propose.";
+            return;
+        }
+
+        if (docNoField.Scope == FieldScope.Batch)
+        {
+            StatusText = "DocNo is a batch field in this layout — one value for the whole group — so it cannot mark where each document starts.";
+            return;
+        }
+
+        if (Rows.All(r => !string.IsNullOrWhiteSpace(r.Values["DocNo"])))
+        {
+            StatusText = "Every sheet already has a DocNo — nothing to propose.";
+            return;
+        }
+
+        var rows = Rows.ToList();
+        var input = rows.Select(r => new Core.Capture.DocumentRunRow(
+            Value(r, "Title"), Value(r, "DocType"), Value(r, "DocDate"), Value(r, "DocNo"),
+            Value(r, "NoteState"))).ToList();
+        var proposal = Core.Capture.DocumentRunProposer.Propose(input);
+        if (proposal.Malformed.Count > 0)
+        {
+            ShowProposalRefusal(
+                $"Nothing was proposed. {proposal.Malformed.Count} sticky-note sheet(s) are not an as-found capture "
+                + "followed by its clean capture, and the portal import would refuse this whole group "
+                + "or attach a note to the wrong sheet.\n\n"
+                + "Look at each sheet below and correct its NoteState (or clear it if the sheet has no note), "
+                + "then propose again:\n\n"
+                + string.Join("\n", proposal.Malformed.Select(i =>
+                    $"  {rows[i].ImageName}  {input[i].NoteState}  {input[i].Title}")));
+            StatusText = $"Not proposed: {proposal.Malformed.Count} sticky-note sheet(s) need their NoteState fixed first.";
+            return;
+        }
+
+        var docNos = proposal.DocNos;
+        var (records, notes) = Core.Capture.DocumentRunProposer.ImportDocuments(input, docNos);
+        var message = $"{Documents(records)}"
+            + (notes > 0 ? $" and {notes} sticky-note capture{(notes == 1 ? "" : "s")}" : "")
+            + $" from {rows.Count} sheets.\n\n"
+            + string.Join("\n", Runs())
+            + "\n\nSheets that already have a DocNo keep it. Sheets scanned into this group afterwards "
+            + "continue the last document unless a new DocNo is typed before scanning. Apply?";
+        if (!ConfirmProposal(message))
+        {
+            return;
+        }
+
+        try
+        {
+            var filled = await _indexingService.FillBlankFieldAsync(
+                Group.Id, "DocNo",
+                rows.Zip(docNos)
+                    .Where(p => string.IsNullOrWhiteSpace(p.First.Values["DocNo"]))
+                    .ToDictionary(p => p.First.DocumentId, p => p.Second));
+            // Like Split and Combine: undo would replay an earlier reorder under the new numbers.
+            UndoRedo.Clear();
+            await ReloadRowsAsync();
+            StatusText = $"DocNo filled in on {filled} sheet(s): {Documents(records)}.";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Proposing documents");
+            StatusText = $"DocNo was not filled in: {ex.Message}";
+        }
+
+        static string Documents(int n) => n == 1 ? "1 document" : $"{n} documents";
+
+        IEnumerable<string> Runs()
+        {
+            for (var start = 0; start < rows.Count;)
+            {
+                var end = start;
+                while (end + 1 < rows.Count && docNos[end + 1] == docNos[start])
+                {
+                    end++;
+                }
+
+                var count = end - start + 1;
+                var title = input.Skip(start).Take(count)
+                    .Select(r => r.Title).FirstOrDefault(t => !string.IsNullOrWhiteSpace(t)) ?? "(no title)";
+                yield return $"  DocNo {docNos[start]}: {title} ({count} sheet{(count == 1 ? "" : "s")})";
+                start = end + 1;
+            }
+        }
+
+        static string? Value(DocumentRow row, string name) =>
+            row.Values.Snapshot().GetValueOrDefault(name);
+    }
 
     /// <summary>
     /// Reviews suspected duplicates in this group. Deletion goes through the Trash, so a wrong
@@ -896,9 +1014,100 @@ public sealed partial class GroupDetailViewModel : ObservableObject
             .Where(f => !string.IsNullOrEmpty(f.Value))
             .ToDictionary(f => f.Field.Name, f => (string?)f.Value);
 
+    /// <summary>
+    /// Asks whether to commit while pages are still unread. Replaceable so the question can be
+    /// tested without a window.
+    /// </summary>
+    // No is the default: Enter pressed by habit after the commit shortcut must not commit a group
+    // whose folder is about to be rewritten.
+    public Func<string, bool> ConfirmCommitWhileReading { get; set; } = message =>
+        System.Windows.MessageBox.Show(
+            message, "Pages still being read",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Warning,
+            System.Windows.MessageBoxResult.No) == System.Windows.MessageBoxResult.Yes;
+
+    // OCR finishing after commit re-exports index.json into the committed folder, so a copy taken
+    // to the transfer drive now would be stale and missing its .md files (SPEC-2026-009 AC-1c).
+    // Every unread page counts, whatever the profile, and waiting reads them — gating on the
+    // profile made the check silent on Jim's station, whose Evidence profile had reading off
+    // (R-D3). A page OCR could not read never will be, so it is named and never waited on.
+    private async Task<(bool Ready, int Unreadable)> ReadyToCommitAsync()
+    {
+        var pages = (await _groupService.GetPagesAsync(Group.Id)).Where(p => !p.IsBlank).ToList();
+        var queued = pages.Count(p => p.OcrStatus == OcrStatus.Pending);
+        var unread = pages.Count(p => p.OcrStatus == OcrStatus.No);
+        var unreadable = pages.Count(p => p.OcrStatus == OcrStatus.Failed);
+        if (queued + unread == 0)
+        {
+            return (true, unreadable);
+        }
+
+        if (ConfirmCommitWhileReading(
+                $"{queued + unread} page(s) in this group have not been read yet ({queued} queued, {unread} not started).\n\n"
+                + "Text read after commit rewrites this group's index files, so a copy of the folder made now "
+                + "would be out of date and missing its .md files.\n\n"
+                + "Commit anyway? Choose No to read them first: the unread pages are queued now, and you "
+                + "commit again when reading finishes."
+                + (unreadable > 0 ? $"\n\n{unreadable} page(s) could not be read; commit does not wait for those." : "")))
+        {
+            return (true, unreadable);
+        }
+
+        ValidationSummary = "";
+        var started = unread > 0 ? await _toolset.OcrQueue.EnqueueGroupAsync(Group.Id) : 0;
+        StatusText = $"Not committed. {started} page(s) queued for reading"
+            + (queued > 0 ? $", {queued} already queued" : "")
+            + ". Commit again when reading finishes.";
+        return (false, unreadable);
+    }
+
+    [RelayCommand]
+    private async Task ReadAllUnreadPagesAsync()
+    {
+        try
+        {
+            var queued = await _toolset.OcrQueue.EnqueueAllUnreadAsync();
+            await ReloadRowsAsync();
+            StatusText = queued == 0
+                ? "Every page in every open group is already read or queued."
+                : $"{queued} page(s) across all open groups queued for OCR.";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Queueing OCR for every group");
+            StatusText = $"OCR queue failed: {ex.Message}";
+        }
+    }
+
     [RelayCommand]
     private async Task CommitAsync()
     {
+        var (ready, unreadable) = await ReadyToCommitAsync();
+        if (!ready)
+        {
+            return;
+        }
+
+        // The portal import refuses a whole group over one of these (SPEC-2026-009 AC-1g, R-D2);
+        // by the time it does, the folder has been copied and the box re-shelved.
+        var refusals = Core.Capture.ImportRefusals.Annotations(
+            [.. Rows.Select(r =>
+            {
+                var values = r.Values.Snapshot();
+                return new Core.Capture.AnnotationRow(
+                    r.ImageName, values.GetValueOrDefault("DocNo"), values.GetValueOrDefault("NoteState"),
+                    values.GetValueOrDefault("NoteAuthor"));
+            })]);
+        if (refusals.Count > 0)
+        {
+            ValidationSummary = $"The portal import would refuse this whole group ({refusals.Count} problem(s)):\n"
+                + string.Join("\n", refusals.Take(12).Select(e => $"  {e}"))
+                + (refusals.Count > 12 ? $"\n  … and {refusals.Count - 12} more" : "");
+            StatusText = "Fix the sticky-note sheets named below, then commit again.";
+            return;
+        }
+
         var validation = await _indexingService.ValidateAsync(Group.Id);
         if (validation.HasErrors)
         {
@@ -917,10 +1126,12 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         ValidationSummary = "";
         var (_, export) = await _indexingService.CommitGroupAsync(Group.Id);
         Group.State = GroupState.Committed;
+        ProposeDocumentsCommand.NotifyCanExecuteChanged();
         var locked = export?.Results.Where(r => r.Outcome == ExportOutcome.Locked).ToList() ?? [];
-        StatusText = locked.Count == 0
+        StatusText = (locked.Count == 0
             ? $"Committed. Index files written: {string.Join(", ", export!.Results.Select(r => Path.GetFileName(r.Path)))}."
-            : $"Committed. {locked[0].Message}";
+            : $"Committed. {locked[0].Message}")
+            + (unreadable > 0 ? $" {unreadable} page(s) could not be read and have no text." : "");
     }
 
     [RelayCommand]

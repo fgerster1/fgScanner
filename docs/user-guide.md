@@ -165,6 +165,23 @@ has Undo, Redo, Add missed page…, Import PDF/images… and Delete page (to Tra
 goes exactly where the grid's cells go — it is the same record, in a bigger window. Closing it
 leaves the Groups list on the page you were editing.
 
+**Propose documents…** fills in DocNo — which sheets form one document — for every sheet that
+has none. Consecutive sheets with the same Title, DocType and DocDate become one document; a
+sheet with none of the three (usually a kept blank back) joins the document before it; a DocNo
+you typed on any sheet is kept, and its document's other sheets take it. A sticky-note sheet
+(as-found, then clean) always stays with its own document. A window lists every document it
+would make — press **Apply** to write them or **Cancel** (the default) to change nothing. If a
+sticky-note sheet is not an as-found capture followed by its clean capture, nothing is proposed
+and the window names each sheet to fix. Propose is the last step before Review & Commit: a sheet
+scanned into the group afterwards continues the last document unless you type a new DocNo
+first. It is not offered on a committed group.
+
+**Review & Commit** first asks about pages that have not been read yet: **No** (the default)
+queues them for OCR and commits nothing — commit again once reading has finished. Pages OCR
+could not read are named but never waited on. Commit also refuses a group the portal import
+would refuse — a sticky-note capture with no clean sheet after it in its DocNo, a missing
+NoteAuthor — and names each sheet.
+
 **Preview and page viewer.** Fit shows the whole page — in the preview beside the grid and in the
 full-size viewer (double-click the preview). 100% is the page at its actual paper size. The page
 keeps fitting as you resize the panel until you zoom with + or −; press Fit to go back. On a small
@@ -239,7 +256,11 @@ next time it starts if it closed unexpectedly.
 Settings). Each page gets a `<image>.md` Markdown sidecar beside it, the OCRed
 column updates in the index, and the text becomes searchable in the database.
 Pages under 65% confidence show "⚠ review". "Re-OCR all" redoes everything —
-old `.md` files go to the Trash. "Export PDF…" can embed a selectable text layer.
+old `.md` files go to the Trash. **"Read all unread pages"** queues every
+never-read or failed page in **every open group** at once (committed groups are
+left alone — reading one would rewrite a folder that may already be copied).
+The Evidence profile reads pages as they are scanned; "Build the Evidence
+profile" in Settings turns that on for a station that had it off. "Export PDF…" can embed a selectable text layer.
 
 ## AI descriptions (optional)
 

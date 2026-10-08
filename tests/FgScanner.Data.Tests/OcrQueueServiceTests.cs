@@ -25,14 +25,16 @@ public sealed class OcrQueueServiceTests : IDisposable
 
     private async Task<(Group Group, List<Page> Pages)> CreateGroupWithPagesAsync(int count)
     {
-        var group = await _groups.CreateGroupAsync(_groupsRoot, "Q", null, Ct);
+        var group = await _groups.CreateGroupAsync(_groupsRoot, "Q" + Guid.NewGuid().ToString("N")[..6], null, Ct);
         var incoming = Path.Combine(_db.Root, "in-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(incoming);
         var files = new List<string>();
         for (var i = 1; i <= count; i++)
         {
             var f = Path.Combine(incoming, $"p{i}.png");
-            await File.WriteAllBytesAsync(f, [(byte)i], Ct);
+            // Unique bytes per call: adoption skips a checksum the group has already seen, so
+            // repeating a file within one group would silently adopt nothing.
+            await File.WriteAllBytesAsync(f, [(byte)i, .. Guid.NewGuid().ToByteArray()], Ct);
             files.Add(f);
         }
 
@@ -229,5 +231,65 @@ public sealed class OcrQueueServiceTests : IDisposable
 
         Assert.Equal(new OcrPageRequest(Queued: 0, Blank: 0, AlreadyQueued: 1), again);
         Assert.Equal(1, await _queue.PendingCountAsync(Ct));
+    }
+
+    /// <summary>
+    /// SPEC-2026-009 AC-2: one action reads every page still unread across all groups — 861 of
+    /// Jim's 883 had no OCR because the Evidence profile had it off.
+    /// </summary>
+    [Fact]
+    public async Task EnqueueAllUnread_queues_unread_and_failed_pages_across_groups()
+    {
+        var (_, first) = await CreateGroupWithPagesAsync(2);
+        var (_, second) = await CreateGroupWithPagesAsync(2);
+        await using (var db = _db.Factory.CreateDbContext())
+        {
+            (await db.Pages.SingleAsync(p => p.Id == first[1].Id, Ct)).OcrStatus = OcrStatus.Yes;
+            (await db.Pages.SingleAsync(p => p.Id == second[0].Id, Ct)).OcrStatus = OcrStatus.Failed;
+            (await db.Pages.SingleAsync(p => p.Id == second[1].Id, Ct)).IsBlank = true;
+            await db.SaveChangesAsync(Ct);
+        }
+
+        var created = await _queue.EnqueueAllUnreadAsync(Ct);
+
+        Assert.Equal(2, created);
+        await using var check = _db.Factory.CreateDbContext();
+        var queued = await check.Jobs.Where(j => j.Type == JobType.Ocr).Select(j => j.PageId).ToListAsync(Ct);
+        Assert.Equal(
+            new[] { first[0].Id, second[0].Id }.OrderBy(id => id),
+            queued.OrderBy(id => id));
+    }
+
+    /// <summary>SPEC-2026-009 AC-2b: reading a committed group writes .md files into its folder,
+    /// may turn its images and re-exports its index.json — after the folder may already be on the
+    /// transfer drive. "Read all" is pressed from another group's screen, so it must not reach one.</summary>
+    [Fact]
+    public async Task EnqueueAllUnread_skips_committed_groups()
+    {
+        var (committed, _) = await CreateGroupWithPagesAsync(2);
+        var (_, open) = await CreateGroupWithPagesAsync(1);
+        await using (var db = _db.Factory.CreateDbContext())
+        {
+            (await db.Groups.SingleAsync(g => g.Id == committed.Id, Ct)).State = GroupState.Committed;
+            await db.SaveChangesAsync(Ct);
+        }
+
+        var created = await _queue.EnqueueAllUnreadAsync(Ct);
+
+        Assert.Equal(1, created);
+        await using var check = _db.Factory.CreateDbContext();
+        Assert.Equal([open[0].Id], await check.Jobs.Select(j => j.PageId).ToListAsync(Ct));
+    }
+
+    [Fact]
+    public async Task EnqueueAllUnread_twice_queues_nothing_twice()
+    {
+        await CreateGroupWithPagesAsync(2);
+
+        await _queue.EnqueueAllUnreadAsync(Ct);
+        var again = await _queue.EnqueueAllUnreadAsync(Ct);
+
+        Assert.Equal(0, again);
+        Assert.Equal(2, await _queue.PendingCountAsync(Ct));
     }
 }

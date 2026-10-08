@@ -127,12 +127,26 @@ public sealed class OcrQueueService(IDbContextFactory<FgScannerDbContext> dbFact
         return new OcrPageRequest(queued, blank, open);
     }
 
-    public async Task<int> EnqueueGroupAsync(
-        Guid groupId, bool force = false, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Queues every unread or failed page in every group (SPEC-2026-009): a station that scanned
+    /// with OCR off is left with hundreds of pages and no .md, and per-group OCR is one click per
+    /// group for each of them.
+    /// </summary>
+    public Task<int> EnqueueAllUnreadAsync(CancellationToken cancellationToken = default) =>
+        EnqueueAsync(groupId: null, force: false, cancellationToken);
+
+    public Task<int> EnqueueGroupAsync(
+        Guid groupId, bool force = false, CancellationToken cancellationToken = default) =>
+        EnqueueAsync(groupId, force, cancellationToken);
+
+    private async Task<int> EnqueueAsync(Guid? groupId, bool force, CancellationToken cancellationToken)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         var pages = await db.Pages
-            .Where(p => p.Document!.GroupId == groupId)
+            .Where(p => groupId == null || p.Document!.GroupId == groupId)
+            // Across groups, never a committed one: reading it rewrites a folder that may already be
+            // on the transfer drive (SPEC-2026-009 AC-2b). Its own screen can still read it on purpose.
+            .Where(p => groupId != null || p.Document!.Group!.State != GroupState.Committed)
             .Where(p => force || p.OcrStatus == OcrStatus.No || p.OcrStatus == OcrStatus.Failed)
             .Where(p => !p.IsBlank)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
