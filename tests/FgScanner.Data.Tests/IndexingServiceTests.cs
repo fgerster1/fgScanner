@@ -190,6 +190,44 @@ public sealed class IndexingServiceTests : IDisposable
         Assert.Equal(2, doc.Sequence);
     }
 
+    /// <summary>JimsStuff SPEC-2026-009 Revision F: the portal import refuses a whole group whose
+    /// index.json names an image the folder does not have (fgscanner_group.verify). Jim's 9/20
+    /// copy has one (Dental scan_00001.jpg); commit let it through, and the refusal came after
+    /// the folder had been copied. A blank sheet is exported too, so its file counts.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Commit_refuses_a_page_whose_image_file_is_missing(bool blank)
+    {
+        var (profile, schema) = await CreateProfileWithFieldsAsync();
+        var group = await _groups.CreateGroupAsync(_groupsRoot, "Missing", (profile.Id, schema.Version), Ct);
+        var incoming = Path.Combine(_db.Root, "in-missing-" + blank);
+        Directory.CreateDirectory(incoming);
+        var first = Path.Combine(incoming, "a.png");
+        var second = Path.Combine(incoming, "b.png");
+        await File.WriteAllBytesAsync(first, [1, 2, 3], Ct);
+        await File.WriteAllBytesAsync(second, [4, 5, 6], Ct);
+        var adopted = await _groups.AdoptPagesAsync(
+            group.Id, [first, second], f => blank && f.EndsWith("b.png", StringComparison.Ordinal), Ct);
+        await _indexing.ApplyInitialValuesAsync(
+            group.Id, [.. adopted.Adopted.Select(p => p.DocumentId)], null, Ct);
+        foreach (var doc in (await _indexing.ValidateAsync(group.Id, Ct)).Documents)
+        {
+            await _indexing.SetFieldValuesAsync(doc.DocumentId, new Dictionary<string, string?>
+            {
+                ["Vendor"] = "Acme",
+            }, Ct);
+        }
+
+        File.Delete(Path.Combine(group.DirectoryPath, "scan_00002.png"));
+
+        var (validation, export) = await _indexing.CommitGroupAsync(group.Id, Ct);
+
+        Assert.Null(export);
+        Assert.Contains(validation.GroupErrors, e => e.StartsWith("scan_00002.png: the image file is missing", StringComparison.Ordinal));
+        Assert.NotEqual(GroupState.Committed, (await _groups.FindAsync(group.Id, Ct))!.State);
+    }
+
     [Fact]
     public async Task Blank_page_reaches_json_flagged_but_stays_out_of_csv()
     {

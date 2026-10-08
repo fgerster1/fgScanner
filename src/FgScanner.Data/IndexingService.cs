@@ -360,6 +360,19 @@ public sealed class IndexingService(
             }
         }
 
+        // The portal import refuses a whole group whose index.json names an image the folder does
+        // not have, and by then the folder has been copied and the box re-shelved (JimsStuff
+        // SPEC-2026-009 Revision F). Every exported page counts, blank sheets included.
+        var fileNames = await db.Pages
+            .Where(p => p.Document!.GroupId == groupId)
+            .OrderBy(p => p.Document!.Sequence).ThenBy(p => p.Sequence)
+            .Select(p => p.FileName)
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        groupErrors.AddRange(fileNames
+            .Where(name => !File.Exists(Path.Combine(group.DirectoryPath, name)))
+            .Select(name => $"{name}: the image file is missing from the group folder — restore it from "
+                + "Trash or scan the sheet again; the portal import refuses a group with a missing image"));
+
         var results = new List<DocumentValidation>();
         foreach (var (doc, imageName) in documents)
         {
