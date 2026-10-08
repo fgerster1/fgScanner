@@ -1060,18 +1060,20 @@ public sealed partial class ScanViewModel : ObservableObject, IDisposable
     /// until the group changes, and a NoteState that outlived its sheet would stamp `as-found`
     /// onto every plain sheet after it.
     /// </summary>
-    private IReadOnlyDictionary<string, string?>? StampNoteState(
+    private Dictionary<string, string?>? StampNoteState(
         IReadOnlyDictionary<string, string?>? pending)
     {
-        if (Annotated.NoteStateForNextCapture is not { } noteState)
+        // Copied without any NoteState first: only the sequence may set it, and one typed into the
+        // pending values outside a sheet stamped every later plain sheet (SPEC-2026-009 AC-1f).
+        var stamped = pending?
+            .Where(kv => !string.Equals(kv.Key, "NoteState", StringComparison.OrdinalIgnoreCase))
+            .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
+        if (Annotated.NoteStateForNextCapture is { } noteState)
         {
-            return pending;
+            stamped ??= [];
+            stamped["NoteState"] = noteState;
         }
 
-        var stamped = pending is null
-            ? []
-            : new Dictionary<string, string?>(pending, StringComparer.Ordinal);
-        stamped["NoteState"] = noteState;
         return stamped;
     }
 

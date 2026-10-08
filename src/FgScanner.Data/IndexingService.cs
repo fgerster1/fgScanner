@@ -109,6 +109,50 @@ public sealed class IndexingService(
     }
 
     /// <summary>
+    /// Fills one field on many documents of a group in a single save, and only where it is still
+    /// blank — a value typed since the caller read the rows is kept. Returns how many changed.
+    /// One save because "Propose documents" numbers a whole box: a failure part-way through left
+    /// a group half-numbered, and re-proposing then treated the written half as typed.
+    /// </summary>
+    public async Task<int> FillBlankFieldAsync(
+        Guid groupId, string fieldName, IReadOnlyDictionary<Guid, string> valuesByDocument,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var ids = valuesByDocument.Keys.ToList();
+        var documents = await db.Documents
+            .Where(d => d.GroupId == groupId && ids.Contains(d.Id))
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        var changed = 0;
+        foreach (var document in documents)
+        {
+            var stored = JsonSerializer.Deserialize<Dictionary<string, string?>>(document.CustomFieldsJson) ?? [];
+            var merged = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (key, value) in stored)
+            {
+                merged[key] = value;
+            }
+
+            if (!string.IsNullOrWhiteSpace(merged.GetValueOrDefault(fieldName)))
+            {
+                continue;
+            }
+
+            merged[fieldName] = valuesByDocument[document.Id];
+            document.CustomFieldsJson = JsonSerializer.Serialize(merged, JsonOptions);
+            changed++;
+        }
+
+        if (changed > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return changed;
+    }
+
+    /// <summary>
     /// Writes a group's batch-scoped values (e.g. Box, Operator) — the one place they live, and
     /// answered once per group rather than once per row (mirrors SetFieldValuesAsync above, on
     /// Group.BatchFieldsJson instead of Document.CustomFieldsJson).

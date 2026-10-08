@@ -124,6 +124,26 @@ public sealed class AnnotatedScanTests : IDisposable
         Assert.Equal([null], await NoteStatesAsync(group.Id));
     }
 
+    /// <summary>SPEC-2026-009 AC-1f: pending values persist across scans, so a NoteState typed into
+    /// the "values for the next scan" panel stamped every later sheet — the likely source of Jim's
+    /// 90 as-found rows with no clean partner. Only the capture sequence may set it.</summary>
+    [Fact]
+    public async Task Pending_note_state_never_reaches_a_scan()
+    {
+        var scan = CreateScanViewModel();
+        var group = await AnEvidenceGroupAsync();
+        _activeGroup.PendingValues = new Dictionary<string, string?>
+        {
+            ["NoteState"] = "as-found",
+            ["Title"] = "Deed",
+        };
+
+        await scan.ScanCommand.ExecuteAsync(null);
+        await scan.SaveToGroupCommand.ExecuteAsync(null);
+
+        Assert.Equal([null], await NoteStatesAsync(group.Id));
+    }
+
     [Fact]
     public async Task The_annotated_scan_stamps_the_sheet_as_found()
     {

@@ -166,7 +166,9 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         }
 
         PendingFields.Clear();
-        foreach (var field in Fields.Where(f => f.Scope != FieldScope.Batch))
+        // NoteState is owned by the annotated capture sequence: pending values persist across scans,
+        // so one typed here stamped every later sheet (SPEC-2026-009 AC-1f).
+        foreach (var field in Fields.Where(f => f.Scope != FieldScope.Batch && !IsNoteState(f.Name)))
         {
             var editor = new PendingFieldEditor(field);
             if (typedRow?.TryGetValue(field.Name, out var carried) == true)
@@ -195,6 +197,9 @@ public sealed partial class GroupDetailViewModel : ObservableObject
             BatchFields.Add(editor);
         }
     }
+
+    private static bool IsNoteState(string fieldName) =>
+        string.Equals(fieldName, "NoteState", StringComparison.OrdinalIgnoreCase);
 
     public async Task LoadAsync()
     {
@@ -493,23 +498,32 @@ public sealed partial class GroupDetailViewModel : ObservableObject
     /// Asks before "Propose documents" writes anything. Replaceable so the proposal can be tested
     /// without a window.
     /// </summary>
-    public Func<string, bool> ConfirmProposal { get; set; } = message =>
-        System.Windows.MessageBox.Show(
-            message, "Propose documents",
-            System.Windows.MessageBoxButton.OKCancel,
-            System.Windows.MessageBoxImage.Question) == System.Windows.MessageBoxResult.OK;
+    public Func<string, bool> ConfirmProposal { get; set; } = Dialogs.ProposalDialog.Confirm;
+
+    /// <summary>Shows why nothing was proposed. Replaceable for the same reason.</summary>
+    public Action<string> ShowProposalRefusal { get; set; } = Dialogs.ProposalDialog.Inform;
+
+    // A committed folder may already be on the transfer drive; regrouping it is the post-commit
+    // rewrite SPEC-2026-009 R11 exists to prevent.
+    private bool CanProposeDocuments() => Group.State != GroupState.Committed;
 
     /// <summary>
     /// Fills a blank DocNo from runs of sheets sharing Title, DocType and DocDate (SPEC-2026-009
     /// Q1). The portal import makes each DocNo run one document and mints permanent page ids from
     /// that grouping, so the runs are shown first and nothing is written without a yes.
     /// </summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanProposeDocuments))]
     private async Task ProposeDocumentsAsync()
     {
-        if (!Fields.Any(f => f.Name == "DocNo"))
+        if (Fields.FirstOrDefault(f => f.Name == "DocNo") is not { } docNoField)
         {
             StatusText = "This group's field layout has no DocNo field to propose.";
+            return;
+        }
+
+        if (docNoField.Scope == FieldScope.Batch)
+        {
+            StatusText = "DocNo is a batch field in this layout — one value for the whole group — so it cannot mark where each document starts.";
             return;
         }
 
@@ -520,35 +534,74 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         }
 
         var rows = Rows.ToList();
-        var proposed = Core.Capture.DocumentRunProposer.Propose(
-            [.. rows.Select(r => new Core.Capture.DocumentRunRow(
-                Value(r, "Title"), Value(r, "DocType"), Value(r, "DocDate"), Value(r, "DocNo"),
-                Value(r, "NoteState")))]);
-        var runs = rows.Zip(proposed)
-            .Where(p => string.IsNullOrWhiteSpace(p.First.Values["DocNo"]))
-            .GroupBy(p => p.Second)
-            .Select(g => $"  DocNo {g.Key}: {g.First().First.ImageName} + {g.Count() - 1} more")
-            .ToList();
-        var message = $"{proposed.Distinct().Count()} documents from {rows.Count} sheets.\n\n"
-            + string.Join("\n", runs.Take(15))
-            + (runs.Count > 15 ? $"\n  … and {runs.Count - 15} more" : "")
-            + "\n\nSheets that already have a DocNo keep it. Apply?";
+        var input = rows.Select(r => new Core.Capture.DocumentRunRow(
+            Value(r, "Title"), Value(r, "DocType"), Value(r, "DocDate"), Value(r, "DocNo"),
+            Value(r, "NoteState"))).ToList();
+        var proposal = Core.Capture.DocumentRunProposer.Propose(input);
+        if (proposal.Malformed.Count > 0)
+        {
+            ShowProposalRefusal(
+                $"Nothing was proposed. {proposal.Malformed.Count} sticky-note sheet(s) are not an as-found capture "
+                + "followed by its clean capture, and the portal import would refuse this whole group "
+                + "or attach a note to the wrong sheet.\n\n"
+                + "Look at each sheet below and correct its NoteState (or clear it if the sheet has no note), "
+                + "then propose again:\n\n"
+                + string.Join("\n", proposal.Malformed.Select(i =>
+                    $"  {rows[i].ImageName}  {input[i].NoteState}  {input[i].Title}")));
+            StatusText = $"Not proposed: {proposal.Malformed.Count} sticky-note sheet(s) need their NoteState fixed first.";
+            return;
+        }
+
+        var docNos = proposal.DocNos;
+        var (records, notes) = Core.Capture.DocumentRunProposer.ImportDocuments(input, docNos);
+        var message = $"{Documents(records)}"
+            + (notes > 0 ? $" and {notes} sticky-note capture{(notes == 1 ? "" : "s")}" : "")
+            + $" from {rows.Count} sheets.\n\n"
+            + string.Join("\n", Runs())
+            + "\n\nSheets that already have a DocNo keep it. Sheets scanned into this group afterwards "
+            + "continue the last document unless a new DocNo is typed before scanning. Apply?";
         if (!ConfirmProposal(message))
         {
             return;
         }
 
-        foreach (var (row, docNo) in rows.Zip(proposed))
+        try
         {
-            if (string.IsNullOrWhiteSpace(row.Values["DocNo"]))
-            {
-                await _indexingService.MergeFieldValuesAsync(
-                    row.DocumentId, new Dictionary<string, string?> { ["DocNo"] = docNo });
-            }
+            var filled = await _indexingService.FillBlankFieldAsync(
+                Group.Id, "DocNo",
+                rows.Zip(docNos)
+                    .Where(p => string.IsNullOrWhiteSpace(p.First.Values["DocNo"]))
+                    .ToDictionary(p => p.First.DocumentId, p => p.Second));
+            // Like Split and Combine: undo would replay an earlier reorder under the new numbers.
+            UndoRedo.Clear();
+            await ReloadRowsAsync();
+            StatusText = $"DocNo filled in on {filled} sheet(s): {Documents(records)}.";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Proposing documents");
+            StatusText = $"DocNo was not filled in: {ex.Message}";
         }
 
-        await LoadAsync();
-        StatusText = $"DocNo filled in: {proposed.Distinct().Count()} documents.";
+        static string Documents(int n) => n == 1 ? "1 document" : $"{n} documents";
+
+        IEnumerable<string> Runs()
+        {
+            for (var start = 0; start < rows.Count;)
+            {
+                var end = start;
+                while (end + 1 < rows.Count && docNos[end + 1] == docNos[start])
+                {
+                    end++;
+                }
+
+                var count = end - start + 1;
+                var title = input.Skip(start).Take(count)
+                    .Select(r => r.Title).FirstOrDefault(t => !string.IsNullOrWhiteSpace(t)) ?? "(no title)";
+                yield return $"  DocNo {docNos[start]}: {title} ({count} sheet{(count == 1 ? "" : "s")})";
+                start = end + 1;
+            }
+        }
 
         static string? Value(DocumentRow row, string name) =>
             row.Values.Snapshot().GetValueOrDefault(name);
@@ -1043,6 +1096,7 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         ValidationSummary = "";
         var (_, export) = await _indexingService.CommitGroupAsync(Group.Id);
         Group.State = GroupState.Committed;
+        ProposeDocumentsCommand.NotifyCanExecuteChanged();
         var locked = export?.Results.Where(r => r.Outcome == ExportOutcome.Locked).ToList() ?? [];
         StatusText = locked.Count == 0
             ? $"Committed. Index files written: {string.Join(", ", export!.Results.Select(r => Path.GetFileName(r.Path)))}."
