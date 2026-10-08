@@ -148,6 +148,22 @@ the JimsStuff portal (`JimsStuff/pipeline/import_fgscanner.py`) parses committed
   opens in the browser with the files on the clipboard and the operator presses Ctrl+V (no Windows
   mechanism can attach to webmail, but a browser takes a pasted file); Explorer, to drag from, is
   only the fallback when the clipboard cannot be set. Franz uses Gmail and Jim uses Yahoo, so on both stations it is the webmail path.
+- **DocNo decides document boundaries before commit, and the portal mints permanent page ids
+  from it** (JimsStuff SPEC-2026-009). "Propose documents…" (`Core.Capture.DocumentRunProposer`)
+  fills blank DocNos from runs of Title/DocType/DocDate and must follow the importer's own
+  pairing — an annotation capture belongs to the NEXT `clean` sheet in its DocNo run
+  (`fgscanner_group._subject_of`); a malformed sticky-note sequence refuses the proposal rather
+  than being numbered, because guessing glues a stack into one document or orphans a note. Commit
+  runs the importer's whole-group refusals on the station (`Core.Capture.ImportRefusals`, a port
+  of `_annotation_problems`, which also serves as the proposer tests' oracle) — keep both in step
+  with the portal. **DocNo is sticky**, so Propose is the last step before commit: a sheet
+  scanned afterwards continues the last document. **The pre-scan panel never offers NoteState**,
+  and pending values drop it outside a sequence — that is how 90 of Jim's as-found rows lost
+  their clean partners.
+- **The Evidence profile reads pages on capture** (`EnsureEvidenceProfileAsync` sets
+  `OcrEnabled`), commit counts unread pages whatever the profile and "No" queues them, and "Read
+  all unread pages" never reaches a committed group: OCR finishing after commit re-exports
+  `index.json` into a folder that may already be on the transfer drive.
 - `Feature.PreserveOriginals` stays ON for evidence groups (ADR-0003); the `originals\`
   subfolder and its checksums are part of the folder's evidentiary integrity.
 - **A field's length and memo flag are layout and validation settings, never part of the export
