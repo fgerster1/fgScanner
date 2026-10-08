@@ -31,32 +31,12 @@ public class DocumentRunProposerTests
         return proposal.DocNos;
     }
 
-    // The importer's own pairing (fgscanner_group._subject_of): an annotation capture is a note
-    // ON the next clean sheet in the same DocNo run, and a group where one has none is refused
-    // whole. Every proposal these tests accept is held to that rule.
+    // Every proposal these tests accept is held to the importer's own refusals — the same port
+    // commit runs (ImportRefusalsTests pins it to the importer's cases).
     private static void EveryAnnotationHasItsCleanSheet(
-        DocumentRunRow[] rows, IReadOnlyList<string> docNos)
-    {
-        for (var i = 0; i < rows.Length; i++)
-        {
-            if (rows[i].NoteState is not (AsFound or NoteFace))
-            {
-                continue;
-            }
-
-            var paired = false;
-            for (var j = i + 1; j < rows.Length && docNos[j] == docNos[i]; j++)
-            {
-                if (rows[j].NoteState == Clean)
-                {
-                    paired = true;
-                    break;
-                }
-            }
-
-            Assert.True(paired, $"row {i} ({rows[i].NoteState}) has no clean sheet after it in DocNo {docNos[i]}");
-        }
-    }
+        DocumentRunRow[] rows, IReadOnlyList<string> docNos) =>
+        Assert.Empty(ImportRefusals.Annotations(
+            [.. rows.Select((r, i) => new AnnotationRow($"row {i}", docNos[i], r.NoteState, "Jim"))]));
 
     [Fact]
     public void Consecutive_sheets_with_one_title_share_a_document() =>

@@ -25,15 +25,15 @@ public sealed class OcrQueueServiceTests : IDisposable
 
     private async Task<(Group Group, List<Page> Pages)> CreateGroupWithPagesAsync(int count)
     {
-        var group = await _groups.CreateGroupAsync(_groupsRoot, "Q", null, Ct);
+        var group = await _groups.CreateGroupAsync(_groupsRoot, "Q" + Guid.NewGuid().ToString("N")[..6], null, Ct);
         var incoming = Path.Combine(_db.Root, "in-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(incoming);
         var files = new List<string>();
         for (var i = 1; i <= count; i++)
         {
             var f = Path.Combine(incoming, $"p{i}.png");
-            // Unique bytes per call: adoption skips a checksum it has seen, so two groups built
-            // from identical files would silently get no pages.
+            // Unique bytes per call: adoption skips a checksum the group has already seen, so
+            // repeating a file within one group would silently adopt nothing.
             await File.WriteAllBytesAsync(f, [(byte)i, .. Guid.NewGuid().ToByteArray()], Ct);
             files.Add(f);
         }
@@ -258,6 +258,27 @@ public sealed class OcrQueueServiceTests : IDisposable
         Assert.Equal(
             new[] { first[0].Id, second[0].Id }.OrderBy(id => id),
             queued.OrderBy(id => id));
+    }
+
+    /// <summary>SPEC-2026-009 AC-2b: reading a committed group writes .md files into its folder,
+    /// may turn its images and re-exports its index.json — after the folder may already be on the
+    /// transfer drive. "Read all" is pressed from another group's screen, so it must not reach one.</summary>
+    [Fact]
+    public async Task EnqueueAllUnread_skips_committed_groups()
+    {
+        var (committed, _) = await CreateGroupWithPagesAsync(2);
+        var (_, open) = await CreateGroupWithPagesAsync(1);
+        await using (var db = _db.Factory.CreateDbContext())
+        {
+            (await db.Groups.SingleAsync(g => g.Id == committed.Id, Ct)).State = GroupState.Committed;
+            await db.SaveChangesAsync(Ct);
+        }
+
+        var created = await _queue.EnqueueAllUnreadAsync(Ct);
+
+        Assert.Equal(1, created);
+        await using var check = _db.Factory.CreateDbContext();
+        Assert.Equal([open[0].Id], await check.Jobs.Select(j => j.PageId).ToListAsync(Ct));
     }
 
     [Fact]

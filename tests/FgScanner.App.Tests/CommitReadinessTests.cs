@@ -40,6 +40,8 @@ public sealed class CommitReadinessTests : IDisposable
 
     public void Dispose()
     {
+        // Pooled connections hold the database file open, which left a folder per test behind.
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try
         {
             Directory.Delete(_root, recursive: true);
@@ -69,13 +71,15 @@ public sealed class CommitReadinessTests : IDisposable
         new DuplicateFinder(new TestFactory(_dbPath)));
 
     private async Task<(Guid GroupId, GroupDetailViewModel Vm)> CreateGroupAsync(
-        bool ocrEnabled, OcrStatus pageStatus, int pages = 2)
+        bool ocrEnabled, OcrStatus pageStatus, int pages = 2, string[]? fields = null)
     {
         var ct = TestContext.Current.CancellationToken;
         var profile = await _profileService.CreateAsync("P" + Guid.NewGuid().ToString("N")[..6], ct);
         await _profileService.UpdateOcrEnabledAsync(profile.Id, ocrEnabled, ct);
         await _profileService.SaveSchemaAsync(
-            profile.Id, [new FieldDefinition { Name = "Title", Type = FieldType.Text, Order = 0 }], ct);
+            profile.Id,
+            [.. (fields ?? ["Title"]).Select((n, i) => new FieldDefinition { Name = n, Type = FieldType.Text, Order = i })],
+            ct);
         var schema = await _profileService.GetLatestSchemaAsync(profile.Id, ct);
         var group = await _groupService.CreateGroupAsync(_root, "G" + Guid.NewGuid().ToString("N")[..6],
             (profile.Id, schema.Version), ct);
@@ -120,20 +124,41 @@ public sealed class CommitReadinessTests : IDisposable
             return false;
         };
 
+        vm.ValidationSummary = "1 problem(s) block the commit: from an earlier try";
+
         await vm.CommitCommand.ExecuteAsync(null);
 
         Assert.Contains("2 page(s)", asked);
         Assert.NotEqual(GroupState.Committed, await StoredStateAsync(groupId));
+        Assert.Equal("", vm.ValidationSummary);
+    }
+
+    /// <summary>R-D3: "wait" used to queue nothing, so the same question came back on every try
+    /// until the operator found a reading command the dialog never named.</summary>
+    [Fact]
+    public async Task Waiting_queues_this_groups_unread_pages_and_says_so()
+    {
+        var (groupId, vm) = await CreateGroupAsync(ocrEnabled: true, OcrStatus.No);
+        vm.ConfirmCommitWhileReading = _ => false;
+
+        await vm.CommitCommand.ExecuteAsync(null);
+
+        Assert.Contains("2 page(s) queued", vm.StatusText);
+        await using var db = new FgScannerDbContext(DbBootstrapper.BuildOptions(_dbPath));
+        Assert.Equal(2, await db.Jobs.CountAsync(
+            j => j.Type == JobType.Ocr && j.Page!.Document!.GroupId == groupId, TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task Commit_anyway_commits_with_pages_unread()
     {
         var (groupId, vm) = await CreateGroupAsync(ocrEnabled: true, OcrStatus.Pending);
-        vm.ConfirmCommitWhileReading = _ => true;
+        var asked = false;
+        vm.ConfirmCommitWhileReading = _ => asked = true;
 
         await vm.CommitCommand.ExecuteAsync(null);
 
+        Assert.True(asked);
         Assert.Equal(GroupState.Committed, await StoredStateAsync(groupId));
     }
 
@@ -150,11 +175,30 @@ public sealed class CommitReadinessTests : IDisposable
         Assert.Equal(GroupState.Committed, await StoredStateAsync(groupId));
     }
 
-    /// <summary>A profile that never reads pages would otherwise warn on every commit, forever.</summary>
+    /// <summary>R-D3: Jim's Evidence profile had reading off, which made the check silent on the
+    /// one station it was written for. "Wait" now reads the pages, so asking can't loop forever.</summary>
     [Fact]
-    public async Task Commit_on_a_profile_without_ocr_asks_nothing_about_unread_pages()
+    public async Task Commit_counts_unread_pages_whatever_the_profile()
     {
         var (groupId, vm) = await CreateGroupAsync(ocrEnabled: false, OcrStatus.No);
+        string? asked = null;
+        vm.ConfirmCommitWhileReading = message =>
+        {
+            asked = message;
+            return false;
+        };
+
+        await vm.CommitCommand.ExecuteAsync(null);
+
+        Assert.Contains("2 page(s)", asked);
+        Assert.NotEqual(GroupState.Committed, await StoredStateAsync(groupId));
+    }
+
+    /// <summary>§12: a page OCR could not read never will, so commit names it and does not wait.</summary>
+    [Fact]
+    public async Task Failed_pages_are_named_but_never_waited_on()
+    {
+        var (groupId, vm) = await CreateGroupAsync(ocrEnabled: true, OcrStatus.Failed);
         var asked = false;
         vm.ConfirmCommitWhileReading = _ => asked = true;
 
@@ -162,6 +206,29 @@ public sealed class CommitReadinessTests : IDisposable
 
         Assert.False(asked);
         Assert.Equal(GroupState.Committed, await StoredStateAsync(groupId));
+        Assert.Contains("2 page(s) could not be read", vm.StatusText);
+    }
+
+    /// <summary>AC-1g, R-D2: the portal import refuses this whole group; refusing here, with the
+    /// box still on the desk, is the cheap place to find out.</summary>
+    [Fact]
+    public async Task Commit_names_an_orphan_annotation()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (groupId, vm) = await CreateGroupAsync(
+            ocrEnabled: true, OcrStatus.Yes, fields: ["Title", "DocNo", "NoteState", "NoteAuthor"]);
+        var documents = (await _groupService.GetPagesAsync(groupId, ct)).Select(p => p.DocumentId).ToList();
+        await _indexingService.SetFieldValuesAsync(
+            documents[0], new Dictionary<string, string?> { ["DocNo"] = "1", ["NoteState"] = "as-found" }, ct);
+        await _indexingService.SetFieldValuesAsync(
+            documents[1], new Dictionary<string, string?> { ["DocNo"] = "2", ["NoteState"] = "clean" }, ct);
+        await vm.LoadAsync();
+
+        await vm.CommitCommand.ExecuteAsync(null);
+
+        Assert.NotEqual(GroupState.Committed, await StoredStateAsync(groupId));
+        Assert.Contains($"{vm.Rows[0].ImageName}: as-found capture names no NoteAuthor", vm.ValidationSummary);
+        Assert.Contains($"{vm.Rows[0].ImageName}: as-found capture with no clean sheet after it in DocNo 1", vm.ValidationSummary);
     }
 
     [Fact]

@@ -144,6 +144,9 @@ public sealed class OcrQueueService(IDbContextFactory<FgScannerDbContext> dbFact
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         var pages = await db.Pages
             .Where(p => groupId == null || p.Document!.GroupId == groupId)
+            // Across groups, never a committed one: reading it rewrites a folder that may already be
+            // on the transfer drive (SPEC-2026-009 AC-2b). Its own screen can still read it on purpose.
+            .Where(p => groupId != null || p.Document!.Group!.State != GroupState.Committed)
             .Where(p => force || p.OcrStatus == OcrStatus.No || p.OcrStatus == OcrStatus.Failed)
             .Where(p => !p.IsBlank)
             .ToListAsync(cancellationToken).ConfigureAwait(false);

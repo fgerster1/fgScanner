@@ -1018,38 +1018,48 @@ public sealed partial class GroupDetailViewModel : ObservableObject
     /// Asks whether to commit while pages are still unread. Replaceable so the question can be
     /// tested without a window.
     /// </summary>
+    // No is the default: Enter pressed by habit after the commit shortcut must not commit a group
+    // whose folder is about to be rewritten.
     public Func<string, bool> ConfirmCommitWhileReading { get; set; } = message =>
         System.Windows.MessageBox.Show(
             message, "Pages still being read",
             System.Windows.MessageBoxButton.YesNo,
-            System.Windows.MessageBoxImage.Warning) == System.Windows.MessageBoxResult.Yes;
+            System.Windows.MessageBoxImage.Warning,
+            System.Windows.MessageBoxResult.No) == System.Windows.MessageBoxResult.Yes;
 
     // OCR finishing after commit re-exports index.json into the committed folder, so a copy taken
     // to the transfer drive now would be stale and missing its .md files (SPEC-2026-009 AC-1c).
-    // Unread pages only count where the profile reads pages; otherwise they never will be.
-    private async Task<bool> ReadyToCommitAsync()
+    // Every unread page counts, whatever the profile, and waiting reads them — gating on the
+    // profile made the check silent on Jim's station, whose Evidence profile had reading off
+    // (R-D3). A page OCR could not read never will be, so it is named and never waited on.
+    private async Task<(bool Ready, int Unreadable)> ReadyToCommitAsync()
     {
         var pages = (await _groupService.GetPagesAsync(Group.Id)).Where(p => !p.IsBlank).ToList();
         var queued = pages.Count(p => p.OcrStatus == OcrStatus.Pending);
-        var reads = Group.ProfileId is { } profileId
-            && (await _profileService.ListAsync()).Any(p => p.Id == profileId && p.OcrEnabled);
-        var unread = reads ? pages.Count(p => p.OcrStatus is OcrStatus.No or OcrStatus.Failed) : 0;
+        var unread = pages.Count(p => p.OcrStatus == OcrStatus.No);
+        var unreadable = pages.Count(p => p.OcrStatus == OcrStatus.Failed);
         if (queued + unread == 0)
         {
-            return true;
+            return (true, unreadable);
         }
 
         if (ConfirmCommitWhileReading(
                 $"{queued + unread} page(s) in this group have not been read yet ({queued} queued, {unread} not started).\n\n"
                 + "Text read after commit rewrites this group's index files, so a copy of the folder made now "
                 + "would be out of date and missing its .md files.\n\n"
-                + "Commit anyway? Choose No to wait until reading finishes."))
+                + "Commit anyway? Choose No to read them first: the unread pages are queued now, and you "
+                + "commit again when reading finishes."
+                + (unreadable > 0 ? $"\n\n{unreadable} page(s) could not be read; commit does not wait for those." : "")))
         {
-            return true;
+            return (true, unreadable);
         }
 
-        StatusText = $"Not committed: {queued + unread} page(s) still to be read. Commit again when OCR finishes.";
-        return false;
+        ValidationSummary = "";
+        var started = unread > 0 ? await _toolset.OcrQueue.EnqueueGroupAsync(Group.Id) : 0;
+        StatusText = $"Not committed. {started} page(s) queued for reading"
+            + (queued > 0 ? $", {queued} already queued" : "")
+            + ". Commit again when reading finishes.";
+        return (false, unreadable);
     }
 
     [RelayCommand]
@@ -1060,8 +1070,8 @@ public sealed partial class GroupDetailViewModel : ObservableObject
             var queued = await _toolset.OcrQueue.EnqueueAllUnreadAsync();
             await ReloadRowsAsync();
             StatusText = queued == 0
-                ? "Every page in every group is already read or queued."
-                : $"{queued} page(s) across all groups queued for OCR.";
+                ? "Every page in every open group is already read or queued."
+                : $"{queued} page(s) across all open groups queued for OCR.";
         }
         catch (Exception ex)
         {
@@ -1073,8 +1083,28 @@ public sealed partial class GroupDetailViewModel : ObservableObject
     [RelayCommand]
     private async Task CommitAsync()
     {
-        if (!await ReadyToCommitAsync())
+        var (ready, unreadable) = await ReadyToCommitAsync();
+        if (!ready)
         {
+            return;
+        }
+
+        // The portal import refuses a whole group over one of these (SPEC-2026-009 AC-1g, R-D2);
+        // by the time it does, the folder has been copied and the box re-shelved.
+        var refusals = Core.Capture.ImportRefusals.Annotations(
+            [.. Rows.Select(r =>
+            {
+                var values = r.Values.Snapshot();
+                return new Core.Capture.AnnotationRow(
+                    r.ImageName, values.GetValueOrDefault("DocNo"), values.GetValueOrDefault("NoteState"),
+                    values.GetValueOrDefault("NoteAuthor"));
+            })]);
+        if (refusals.Count > 0)
+        {
+            ValidationSummary = $"The portal import would refuse this whole group ({refusals.Count} problem(s)):\n"
+                + string.Join("\n", refusals.Take(12).Select(e => $"  {e}"))
+                + (refusals.Count > 12 ? $"\n  … and {refusals.Count - 12} more" : "");
+            StatusText = "Fix the sticky-note sheets named below, then commit again.";
             return;
         }
 
@@ -1098,9 +1128,10 @@ public sealed partial class GroupDetailViewModel : ObservableObject
         Group.State = GroupState.Committed;
         ProposeDocumentsCommand.NotifyCanExecuteChanged();
         var locked = export?.Results.Where(r => r.Outcome == ExportOutcome.Locked).ToList() ?? [];
-        StatusText = locked.Count == 0
+        StatusText = (locked.Count == 0
             ? $"Committed. Index files written: {string.Join(", ", export!.Results.Select(r => Path.GetFileName(r.Path)))}."
-            : $"Committed. {locked[0].Message}";
+            : $"Committed. {locked[0].Message}")
+            + (unreadable > 0 ? $" {unreadable} page(s) could not be read and have no text." : "");
     }
 
     [RelayCommand]

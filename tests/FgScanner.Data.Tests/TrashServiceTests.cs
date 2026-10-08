@@ -147,4 +147,19 @@ public sealed class TrashServiceTests : IDisposable
         var pages = await _groups.GetPagesAsync(group.Id, Ct);
         Assert.Equal(2, pages.Count); // both coexist; restored one took the next free sequence
     }
+
+    /// <summary>SPEC-2026-009 finding 11: deleting a document takes its OCR job with it, so a page
+    /// trashed while queued came back Pending with nothing left to read it — and commit counted it
+    /// as queued forever, while "OCR pages" and "Read all unread pages" both skipped it.</summary>
+    [Fact]
+    public async Task A_page_trashed_while_queued_is_restored_unread()
+    {
+        var (group, page) = await CreateGroupWithOnePageAsync();
+        await new OcrQueueService(_db.Factory).EnqueueGroupAsync(group.Id, cancellationToken: Ct);
+        var item = await _trash.DeleteDocumentAsync(page.DocumentId, Ct);
+
+        await _trash.RestoreAsync(item.Id, Ct);
+
+        Assert.Equal(OcrStatus.No, Assert.Single(await _groups.GetPagesAsync(group.Id, Ct)).OcrStatus);
+    }
 }

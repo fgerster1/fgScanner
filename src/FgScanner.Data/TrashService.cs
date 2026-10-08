@@ -146,6 +146,14 @@ public sealed class TrashService(
                 payload.Document.Sequence++;
             }
 
+            // Deleting the document took its OCR job with it, so a page trashed while queued has
+            // nothing left to read it; left Pending, every "read unread" skipped it and commit
+            // counted it as queued forever.
+            foreach (var page in payload.Pages.Where(p => p.OcrStatus == OcrStatus.Pending))
+            {
+                page.OcrStatus = OcrStatus.No;
+            }
+
             db.Documents.Add(payload.Document);
             db.Pages.AddRange(payload.Pages);
         }
