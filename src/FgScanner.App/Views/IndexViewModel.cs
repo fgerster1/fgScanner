@@ -67,9 +67,12 @@ public sealed partial class IndexViewModel : ObservableObject
 
     private readonly IndexDraftStore _drafts;
 
+    public string DraftDirectory { get; }
+
     public IndexViewModel(string? draftDirectory = null)
     {
-        _drafts = new IndexDraftStore(draftDirectory ?? IndexDraftStore.DefaultDirectory);
+        DraftDirectory = draftDirectory ?? IndexDraftStore.DefaultDirectory;
+        _drafts = new IndexDraftStore(DraftDirectory);
         Staging.Changed += () =>
         {
             SaveDraft();

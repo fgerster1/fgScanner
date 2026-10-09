@@ -358,3 +358,4 @@ CHECKPOINT 12 — Claude runs and records:
 
 | Date | Prompt | Result |
 |---|---|---|
+| 2026-10-09 | P2 | Green — `StationPaths` + `--data-dir` (app and CLI); suite 1,186 (0 failed), Release 0 warnings, format clean; real window titled "FG Scanner — station fg-p2", workspace holds db/logs/recovery/tessdata, `%APPDATA%\FGScanner` db hash unchanged. Incident: a stale 9/21 exe (old TFM folder) was launched first and opened the rehearsal copy — no schema change, counts equal; reset byte-for-byte from the 9/25 original. P1 still waits on Franz's publish. |

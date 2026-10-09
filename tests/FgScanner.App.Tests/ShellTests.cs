@@ -177,6 +177,35 @@ public sealed class ShellTests : IDisposable
         Assert.Equal("Groups", shell.SelectedSection);
     }
 
+    /// <summary>
+    /// SPEC-SCANNER-2026-010: Franz runs Jim's station on his own machine. The title is how he
+    /// sees whose evidence is open, and the Index section's drafts and extracted batches must
+    /// stay inside that station's folder.
+    /// </summary>
+    [Fact]
+    public void A_second_station_names_itself_and_keeps_its_index_files_inside_its_folder()
+    {
+        var station = FgScanner.Core.Station.StationPaths.Resolve(Path.Combine(_root, "station-jim"));
+        var appSettings = new AppSettingsService(new TestFactory(_dbPath));
+
+        var shell = new ShellViewModel(
+            CreateScanViewModel(),
+            new GroupsViewModel(_groupService, _profileService, _indexingService, _trashService, _activeGroup, CreateToolset(), CreateRetroService()),
+            new SearchViewModel(new SearchService(new TestFactory(_dbPath)), _groupService),
+            new TrashViewModel(_trashService, _activeGroup),
+            new SettingsViewModel(
+                _profileService, _trashService, appSettings,
+                new FgScanner.Ocr.LanguageManager(Path.Combine(_root, "tessdata")),
+                new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false),
+                _groupService),
+            appSettings,
+            station);
+
+        Assert.Equal("FG Scanner — station station-jim", shell.WindowTitle);
+        Assert.Equal(station.IndexPackages, shell.IndexViewModel.ExtractDirectory);
+        Assert.Equal(station.IndexDrafts, shell.IndexViewModel.DraftDirectory);
+    }
+
     [Fact]
     public void Shell_starts_on_scan_section()
     {
@@ -194,6 +223,7 @@ public sealed class ShellTests : IDisposable
             new AppSettingsService(new TestFactory(_dbPath)));
         Assert.Equal(["Scan", "Groups", "Search", "Trash", "Settings"], shell.Sections);
         Assert.Equal("Scan", shell.SelectedSection);
+        Assert.Equal("FG Scanner", shell.WindowTitle);
     }
 
     [Fact]

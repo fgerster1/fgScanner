@@ -12,7 +12,8 @@ public sealed partial class ShellViewModel : ObservableObject
         SearchViewModel searchViewModel,
         TrashViewModel trashViewModel,
         SettingsViewModel settingsViewModel,
-        AppSettingsService appSettings)
+        AppSettingsService appSettings,
+        FgScanner.Core.Station.StationPaths? station = null)
     {
         ScanViewModel = scanViewModel;
         GroupsViewModel = groupsViewModel;
@@ -24,7 +25,15 @@ public sealed partial class ShellViewModel : ObservableObject
 
         // No injected dependencies yet (the reader is static); built here so the
         // window can bind it off the shell without another DI registration.
-        IndexViewModel = new IndexViewModel { Settings = appSettings };
+        IndexViewModel = station is null
+            ? new IndexViewModel { Settings = appSettings }
+            : new IndexViewModel(station.IndexDrafts)
+            {
+                Settings = appSettings,
+                ExtractDirectory = station.IndexPackages,
+            };
+
+        WindowTitle = station?.Name is { } name ? $"FG Scanner — station {name}" : "FG Scanner";
 
         // Feature flags (PLAN prompt 10, SPEC-2026-008): a flagged-off section is hidden
         // entirely. The list is rebuilt whenever a flag moves, so the setting no longer
@@ -237,6 +246,10 @@ public sealed partial class ShellViewModel : ObservableObject
     public SearchViewModel SearchViewModel { get; }
 
     public IndexViewModel IndexViewModel { get; }
+
+    /// <summary>Names a second station's workspace (SPEC-SCANNER-2026-010), so Franz always
+    /// sees whose evidence is open.</summary>
+    public string WindowTitle { get; }
 
     public TrashViewModel TrashViewModel { get; }
 

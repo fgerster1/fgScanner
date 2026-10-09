@@ -45,6 +45,30 @@ public sealed class CliIntegrationTests : IDisposable
 
     private Task<int> RunAsync(params string[] args) => CliRunner.RunAsync(args, _overrides);
 
+    /// <summary>
+    /// SPEC-SCANNER-2026-010 AC-7: a second station's CLI run writes its database inside its own
+    /// folder. The overrides carry no database here on purpose — the station must supply it.
+    /// </summary>
+    [Fact]
+    public async Task A_data_dir_puts_the_database_in_that_station()
+    {
+        var station = Path.Combine(_root, "station-jim");
+        var exit = await CliRunner.RunAsync(
+            ["scan", "--data-dir", station, "--group", GroupDir, "--source", "feeder"],
+            new CliOverrides(ScanService: new FakeScanService(), TessdataDir: Path.Combine(_root, "tessdata")));
+
+        Assert.Equal(0, exit);
+        Assert.True(File.Exists(Path.Combine(station, "fgscanner.db")));
+    }
+
+    [Fact]
+    public async Task A_data_dir_with_no_folder_is_refused()
+    {
+        var exit = await CliRunner.RunAsync(["scan", "--data-dir"], _overrides);
+
+        Assert.NotEqual(0, exit);
+    }
+
     [Fact]
     public async Task Scan_lands_pages_as_files_and_rows()
     {
