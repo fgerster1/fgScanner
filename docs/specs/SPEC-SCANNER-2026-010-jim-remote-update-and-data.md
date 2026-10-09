@@ -377,7 +377,7 @@ P5 code review · P6 update day · P7 first upload and import.
 
 | | |
 |---|---|
-| **Review round answered** | ☐ Round A |
+| **Review round answered** | ☐ Round A published 2026-10-09 — https://claude.ai/artifact/LTKoCtnKXZZTsoEZQVNBpV (doc SPEC-SCANNER-2026-010-rA) |
 | **Franz approved** | ☐ date: |
 | **Built** | ☐ date: |
 | **Verified in production** | ☐ date: |
