@@ -142,6 +142,18 @@ his laptop.
 
 ## 05 · Questions for Franz
 
+**Round A answered 2026-10-09 — verdict: revise.** Q1 = **(b) round trip, as a delta**: Jim
+sends data and images; Franz fixes everything on the fast machine; Jim gets it back as one
+install to run. Images rarely change, so hash both sides first (a separate hash pass before the
+update is fine) and move only new or changed images; unchanged images never travel. Reason:
+Jim is not comfortable with the computer, they talk over Teams, and waiting on Jim's slow
+laptop is the problem — overnight transfers are not. Q2 = **research first**: backups and
+transfers to the Tower (Seafile, Nextcloud or better), also as an archive for older backups and
+rarely used images, shared with Franz's other apps (FGMakerMaster); Google Drive's 5 TB tier
+is a worry. Q3 = (a), Q4 = (b), Q5–Q7 as stated, C1–C3 agreed. General: research deeply,
+check the answers against each other, automate so the many future updates are simple, check
+nothing is missed. Revision B follows the research.
+
 **Blocking**
 
 1. **Q1 — Where does the after-update work happen?** (Reading ~2,000+ pages; Box; Propose
