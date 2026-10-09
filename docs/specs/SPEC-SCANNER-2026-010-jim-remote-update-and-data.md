@@ -2,14 +2,14 @@
 
 | | |
 |---|---|
-| **Status** | Draft |
-| **Revision** | B — 2026-10-09: rebuilt around Franz's Round A (round trip as a delta; research first); in review (Round B) |
+| **Status** | Approved |
+| **Revision** | B — 2026-10-09: rebuilt around Franz's Round A (round trip as a delta; research first); **approved in Round B** 2026-10-09 with the transport changed to a Google Drive shared folder and the storage platform dropped for now |
 | **Tier** | System — it changes the software on Jim's live evidence station and moves evidence between machines |
 | **Author** | Claude, for Franz Gerster |
 | **Date** | 2026-10-09 |
 | **Project** | FG Scanner (station side) with JimsStuff (receiving side) |
 | **Parent** | JimsStuff SPEC-2026-007 P12 step 7; JimsStuff SPEC-2026-009 P10 (Jim's real import) |
-| **Related** | A separate **storage-platform spec** (Seafile on the Tower, Tailscale, offsite) — Q-B2 |
+| **Related** | A storage platform (Seafile/Nextcloud, archive, offsite) — **deferred by Franz** (Q-B2 = c); he researches it himself first |
 
 ---
 
@@ -27,17 +27,18 @@
   are not. And the program will change many more times before this case is done, so every
   cycle must be the same two buttons.
 - **What it costs** — 12 prompts across 3 phases, roughly **three to four days** of build,
-  one new FG Scanner release (0.8.0), plus two calls with Jim (setup, first cycle). The
-  storage platform is its own spec. Transfers: about 15 minutes per 1.6 GB from Jim at his
-  20 Mbps; the return is mostly the database (a few MB) plus the pages that changed.
+  one new FG Scanner release (0.8.0), plus two calls with Jim (setup, first cycle). Files
+  travel through a Google Drive folder shared between Franz and Jim. Transfers: about 15
+  minutes per 1.6 GB from Jim at his 20 Mbps; the return is mostly the database (a few MB)
+  plus the pages that changed.
 - **What could go wrong** — (1) Jim scans while his data is with Franz → the return refuses
   rather than lose anything (§12). (2) The auto-update fails on his laptop → rehearsed first
   on his own data, with a verified backup before he presses Yes. (3) Franz's work changes
   Jim's settings or stamps Franz's name on Jim's evidence → the return keeps Jim's settings
   and a change log records what Franz did (§07).
-- **What we need from you** — the Round B decisions: the transport for the first cycle, the
-  storage platform as its own spec, what the release builds in, where reading happens from
-  now on, and five smaller ones.
+- **Decided (Round B, 2026-10-09)** — Google Drive shared folder; no storage platform for
+  now; the station verbs built into 0.8.0; pages read on the NucBox; Jim straight from 0.5.4
+  to 0.8.0.
 
 ## 02 · Outcomes
 
@@ -68,7 +69,9 @@
 3. **Two shortcuts on Jim's desktop** — "Send my scans to Franz", "Install Franz's update" —
    each ending in one line he can read out on Teams: `OK 1234` or `NOT OK — call Franz`.
 4. **A first-cycle sender** for 0.5.4 (a PowerShell script; 0.5.4 has no station verbs).
-5. **The transport** for cycle 1 (Q-B1) and its setup with Jim.
+5. **The transport** — a Google Drive folder shared between Franz and Jim (Q-B1 = c), and its
+   setup with Jim. The station verbs only read and write a folder, so a later platform
+   replaces the transport without changing them.
 6. **Release 0.8.0** with the above, rehearsed 0.5.4 → 0.8.0 on Jim's own data before Jim.
 7. **A CI test that migrates a database from every shipped schema** (0.5.4 onward) to the
    current one, so a release that would break Jim's upgrade fails to build.
@@ -76,8 +79,9 @@
 
 **Non-goals**
 
-- **The storage platform** (Seafile, archive tier, offsite backup, the other apps' files) —
-  its own spec (Q-B2).
+- **A storage platform** (Seafile, Nextcloud, archive tier, offsite backup, the other apps'
+  files) — deferred: Franz researches it himself and comes back to it (Q-B2 = c). The
+  research in §04 stays on record for that day.
 - **No live sync of Jim's evidence or data folders.** Transfers are packs, verified, applied.
 - **No portal upload page** (Cloudflare caps a request at 100 MB). **No AI** (§08a).
 - **No change to the evidence contract** (`index.json`, `manifest.json`, field names).
@@ -138,9 +142,27 @@ upload cap; 5 TB consumer tier (larger tiers exist in-account). Franz's other ap
 as plain folders (FGMakerEcomFeeder 2.9 GB; FGMakerMaster nearly empty) and need shares, not
 sync.
 
-**Not examined:** Jim's current data; his account type; real reading speed on his laptop.
+**Google Drive as the transport (Round B)** — Drive for Desktop puts the shared folder under
+`G:\My Drive` (a folder *shared with* Jim appears there once he adds a shortcut to it). In its
+default *stream* mode a file Jim receives is a placeholder until opened, so the return folder is
+marked **Available offline** at setup; uploads resume after sleep or a dropped line. Drive keeps
+bytes exactly and never merges, but a re-sent file of the same name becomes `name (1)` — so
+every pack goes in its own new folder and is never written twice. Drive gives no "upload
+finished" signal a script can read, so Jim's `OK` means *packed*, and Franz's `verify` is the
+receipt. Upload cap 750 GB/day (irrelevant here). Franz's NucBox already runs Drive for Desktop.
+
+**Not examined:** Jim's current data; his account type; whether Jim has a Google account
+(he uses Yahoo Mail — a Google account can be made on an existing Yahoo address); real reading
+speed on his laptop.
 
 ## 05 · Questions for Franz
+
+**Round B (2026-10-09, approve):** Q-B1 = **(c) Google Drive**; Q-B2 = **(c) not now** —
+Franz: "I need to do more research on seafile and nextcloud before i continue with either one of
+them. Remove them for now and use a google share I will come back to this at a later date";
+Q-B3 (a); Q-B4 (a); Q-B6–Q-B9 and C-B1–C-B3 as stated. Applied: §01, §03, §04, §08, §12, §13,
+§17, §19, §20. What it means: Google holds copies of privileged evidence in transit — each pack
+is deleted from the folder (and Drive's bin) once it is verified or applied (§13).
 
 **Round A (2026-10-09, revise):** Q1 = (b) round trip as a delta; Q2 = research first; Q3 = (a)
 backup verified before update; Q4 = (b) auto-orient off for the backlog; Q5 Quick Assist; Q6
@@ -223,17 +245,17 @@ No change to FG Scanner's database or the evidence contract. New files only:
 ## 08 · Architecture and approach
 
 ```
-Jim's laptop                         transport (Q-B1)          Franz's NucBox (workspace Jim)
+Jim's laptop                    Google Drive shared folder     Franz's NucBox (workspace Jim)
 "Send my scans to Franz"
   app closed, freeze checks
   hash all → manifest (basedOn)
-  pack: db + files Franz lacks ──────▶ outbox/inbox ─────────▶  station verify (0 mismatches)
+  pack: db + files Franz lacks ──────▶ to-franz\<pack> ──────▶  station verify (0 mismatches)
   keep "sent" manifest + db hash                                 = Jim's backup (Q3 a)
                                                                  open in workspace (0.8.0 migrates)
                                                                  read · Box · Propose · notes · commit
                                                                  import committed groups → portal
                                                                  station pack --return:
-"Install Franz's update"            ◀──────────────────────────   db + changed/new files + deletions
+"Install Franz's update"            ◀──── to-jim\<return> ────   db + changed/new files + deletions
   version + migration check                                      + final-state manifest + changes.jsonl
   freeze check (db hash = sent)                                  + needs-Jim sheet
   stage → verify → swap atomically
@@ -245,6 +267,11 @@ Jim's laptop                         transport (Q-B1)          Franz's NucBox (w
   never drift apart. The first sender (0.5.4) is a PowerShell port of `pack` only.
 - **Content-addressed**: a renamed file is matched by hash and renamed in place, never resent.
 - **Evidence moves only as verified packs**; the transport folder is never inside a live folder.
+- **The shared folder** `FGScanner-Jim` (owned by Franz, shared only with Jim's Google account,
+  no link sharing) holds `to-franz\` and `to-jim\`. Each pack is a new folder named
+  `<station>-<yyyy-MM-dd-HHmm>-<kind>` and is never written to twice; its manifest is written
+  **last**, so a receiver that sees no manifest knows the pack is still arriving, and verify
+  refuses anything short of every file present with its hash.
 - **Alternatives rejected**: work on Jim's laptop (Round A); live sync of the station (a
   deletion could travel back); one Inno package carrying evidence (an elevated installer can
   see the wrong user profile); portal upload (100 MB cap).
@@ -310,7 +337,10 @@ PowerShell sender is checked by a test that packs a fixture and verifies it with
 |---|---|---|
 | Jim scans or edits during the freeze | apply refuses ("NOT OK — call Franz"); his new pages stay; Franz packs again | apply (db hash) |
 | A file differs on arrival | verify names it; that pack is re-sent; never patched by hand | verify |
-| Upload interrupted / laptop sleeps | the sender holds a keep-awake; transport resumes; verify catches partial | sender, transport |
+| Upload interrupted / laptop sleeps | the sender holds a keep-awake while packing; Drive resumes the upload; verify refuses a partial pack (no manifest yet, or a file short) | sender, Drive, verify |
+| Return still downloading on Jim's side | the `to-jim` folder is Available offline; apply hashes every file and refuses a placeholder or short file | apply |
+| Jim's disk too small for the pack copy in Drive's cache | the sender checks free space (pack size + 1 GB) first and says NOT OK | sender |
+| A pack folder name already exists | the sender never reuses a name (minute stamp + counter) | sender |
 | Group needs the paper | left open, not Proposed; on the needs-Jim sheet | Q-B8 |
 | Leftover `fgscanner.db-journal` | apply refuses | apply |
 | Release published mid-cycle | apply refuses on version mismatch | apply, Q-B9 |
@@ -319,11 +349,14 @@ PowerShell sender is checked by a test that packs a fixture and verifies it with
 
 ## 13 · Security and configuration
 
-Privileged evidence leaves Jim's laptop: over Tailscale (encrypted, no third party) to a share
-on the Tower that only Franz's and Jim's accounts reach; packs kept on the Tower until the
-platform spec's archive and offsite rules apply, and the NucBox workspace copy deleted after
-each cycle's import (§17). No credential in any script, repo or chat. Counsel to be told where
-copies of the evidence live (the platform spec records it).
+Privileged evidence leaves Jim's laptop through Google Drive (Franz's decision, Round B):
+encrypted in transit and at rest by Google, but **Google holds a copy while it is in the
+folder**. So: the folder is shared with Jim's account only (restricted, no "anyone with the
+link"); each pack is deleted from the folder **and from Drive's bin** once it is verified on
+Franz's side (`to-franz`) or applied on Jim's (`to-jim`), and the verified copy lives on the
+NucBox and the Tower backup instead. The NucBox workspace copy is kept until the import, then
+the Tower copy is the record. No credential in any script, repo or chat; Jim's Google password
+is his own, entered by him. Counsel to be told that packs pass through Google Drive.
 
 ## 14 · Observability
 
@@ -354,7 +387,10 @@ database plus new pages (~1.15 MB each). Reading on the NucBox ~1.1 s per page.
 data folder. Repeat with 0.8.0 before Jim.
 
 **Phase 3 — the first cycle:**
-1. `[Franz]` Set up Tailscale with Jim on Teams; confirm UAC rights; collect Box values.
+1. `[Franz]` On Teams with Jim: Jim's Google account (made on his Yahoo address if he has
+   none — he types his own password); Drive for Desktop installed and signed in; Franz shares
+   `FGScanner-Jim` with that account; Jim adds it to his Drive; `to-jim` marked Available
+   offline. Confirm his account can approve UAC. Collect Box values.
 2. `[Jim]` FG Scanner closed → run the 0.5.4 sender (placed by Franz) → "OK 1234".
 3. `[Claude]` `station verify` on the NucBox: 0 mismatches = Jim's backup.
 4. `[Franz]` Publish 0.8.0. `[Jim]` start FG Scanner → Yes → UAC → start again.
@@ -387,15 +423,16 @@ Workspace switch; station verbs; first-cycle sender; shortcuts; CI ladder; revie
 drafted and rehearsed 0.5.4 → 0.8.0 on Jim's 9/25 data. **Not here:** Jim's data.
 
 ### Phase 3 — The first cycle
-Transport with Jim, pack, verify, update, process, import, return, apply.
+Google Drive set up with Jim, pack, verify, update, process, import, return, apply.
 
 ## 20 · Prompt pack
 
-Written after approval. Planned (12): P1 finish rehearsal · P2 `StationPaths`/`--data-dir` ·
-P3 manifest + verify · P4 pack (delta, renames, freeze record) · P5 apply (gates, settings kept,
-atomic, rollback) · P6 change log + needs-Jim sheet · P7 first-cycle sender (PowerShell) +
-shortcuts · P8 CI migration ladder · P9 code review · P10 security review · P11 release 0.8.0
-draft + rehearsal · P12 the first cycle with Jim.
+[SPEC-SCANNER-2026-010-jim-remote-update-and-data-PROMPTS.md](./SPEC-SCANNER-2026-010-jim-remote-update-and-data-PROMPTS.md)
+— 12 prompts: P1 finish rehearsal · P2 `StationPaths`/`--data-dir` · P3 manifest + verify ·
+P4 pack (delta, renames, freeze record) · P5 apply (gates, settings kept, atomic, rollback) ·
+P6 change log + needs-Jim sheet · P7 first-cycle sender (PowerShell) + shortcuts · P8 CI
+migration ladder · P9 code review · P10 security review · P11 release 0.8.0 draft + rehearsal ·
+P12 the first cycle with Jim.
 
 ## 21 · Definition of done
 
@@ -412,7 +449,7 @@ draft + rehearsal · P12 the first cycle with Jim.
 
 | | |
 |---|---|
-| **Review round answered** | ☑ Round A 2026-10-09 (revise) — https://claude.ai/artifact/LTKoCtnKXZZTsoEZQVNBpV · ☐ Round B published 2026-10-09 — https://claude.ai/artifact/EjYRfaTz1UDJ1zQHuQzEPi (doc SPEC-SCANNER-2026-010-rB) |
-| **Franz approved** | ☐ date: |
+| **Review round answered** | ☑ Round A 2026-10-09 (revise) — https://claude.ai/artifact/LTKoCtnKXZZTsoEZQVNBpV · ☑ Round B 2026-10-09 (approve) — https://claude.ai/artifact/EjYRfaTz1UDJ1zQHuQzEPi (doc SPEC-SCANNER-2026-010-rB) |
+| **Franz approved** | ☑ date: 2026-10-09 (Round B) |
 | **Built** | ☐ date: |
 | **Verified in production** | ☐ date: |
