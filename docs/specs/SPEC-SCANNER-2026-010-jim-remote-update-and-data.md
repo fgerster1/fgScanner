@@ -3,393 +3,416 @@
 | | |
 |---|---|
 | **Status** | Draft |
-| **Revision** | A |
-| **Tier** | System — it changes the software on Jim's live evidence station and moves evidence between three machines |
+| **Revision** | B — 2026-10-09: rebuilt around Franz's Round A (round trip as a delta; research first); in review (Round B) |
+| **Tier** | System — it changes the software on Jim's live evidence station and moves evidence between machines |
 | **Author** | Claude, for Franz Gerster |
 | **Date** | 2026-10-09 |
 | **Project** | FG Scanner (station side) with JimsStuff (receiving side) |
-| **Parent** | JimsStuff SPEC-2026-007 P12 step 7 (the FG Scanner release); JimsStuff SPEC-2026-009 P10 (Jim's real import) |
-| **Supersedes** | — |
+| **Parent** | JimsStuff SPEC-2026-007 P12 step 7; JimsStuff SPEC-2026-009 P10 (Jim's real import) |
+| **Related** | A separate **storage-platform spec** (Seafile on the Tower, Tailscale, offsite) — Q-B2 |
 
 ---
 
 ## 01 · Management summary
 
-- **What we are building** — a safe way to bring Jim's FG Scanner from 0.5.4 to 0.7.1 from
-  Florida, and to get his scanned evidence onto Franz's machines afterwards. He is in Ohio,
-  so nothing can go by USB any more: the update comes through the app's own auto-update, and
-  the evidence travels over the internet.
-- **Why** — Jim has scanned and partly indexed many pages since our last copy (9/25: 20
-  groups, 1,368 pages, 1.6 GB). None of it has reached the case file: every group is still
-  open. 0.7.1 adds the rules that make his groups importable (document numbers proposed from
-  the titles, sticky-note sheets checked, pages read before commit) — and those rules will
-  refuse most of his groups until they are fixed (233 sticky-note problems in 16 of 20 groups
-  at 9/25).
-- **What it costs** — 7 prompts across 3 phases, roughly **two to three days** of work, most
-  of it scripts and runbooks rather than app code, plus two sessions with Jim on the phone
-  (update day, and the first upload). No new app release is needed for the update itself.
-  Google Drive storage for one copy of his data (a few GB).
-- **What could go wrong** — (1) the auto-update fails half-way and Jim's app does not start —
-  he cannot be reached by USB; mitigated by rehearsing the exact update here first (§17) and a
-  full backup before he presses Yes. (2) A page Jim turned by hand gets turned again when 0.7.1
-  first reads it (§16 R2). (3) Evidence copied badly in transit — every file is checked by its
-  fingerprint on arrival.
-- **What we need from you** — where the heavy work happens (Jim's laptop or Franz's
-  machines), how the files travel, and whether the update waits for the backup.
+- **What we are building** — a repeatable **round trip** for Jim's FG Scanner station. Jim
+  presses one button, "Send my scans to Franz"; his station's data and only his *new or
+  changed* images travel to Franz. Franz does the slow and skilled work on his fast machine —
+  reading every page, fixing document numbers and sticky-note sheets, committing — and
+  sends it back. Jim presses one button, "Install Franz's update", and his laptop ends up
+  exactly as Franz left it, on the new software version. The first round trip also takes Jim
+  from 0.5.4 to the new release, by the app's own auto-update.
+- **Why** — Jim is in Ohio on a slow laptop, not comfortable with the computer, and Franz
+  can only reach him over Teams. Waiting for his laptop is the problem; overnight transfers
+  are not. And the program will change many more times before this case is done, so every
+  cycle must be the same two buttons.
+- **What it costs** — 12 prompts across 3 phases, roughly **three to four days** of build,
+  one new FG Scanner release (0.8.0), plus two calls with Jim (setup, first cycle). The
+  storage platform is its own spec. Transfers: about 15 minutes per 1.6 GB from Jim at his
+  20 Mbps; the return is mostly the database (a few MB) plus the pages that changed.
+- **What could go wrong** — (1) Jim scans while his data is with Franz → the return refuses
+  rather than lose anything (§12). (2) The auto-update fails on his laptop → rehearsed first
+  on his own data, with a verified backup before he presses Yes. (3) Franz's work changes
+  Jim's settings or stamps Franz's name on Jim's evidence → the return keeps Jim's settings
+  and a change log records what Franz did (§07).
+- **What we need from you** — the Round B decisions: the transport for the first cycle, the
+  storage platform as its own spec, what the release builds in, where reading happens from
+  now on, and five smaller ones.
 
 ## 02 · Outcomes
 
-- **Goal** — Jim runs 0.7.1 with every page and every answer he had before; a verified copy of
-  his station exists off his laptop; his groups can be committed and imported into the case
-  file; nothing he scanned is lost or altered on the way.
-- **Who benefits** — Jim (a working, current station; less manual work); Franz (the evidence in
-  the case file, indexing on fast machines); counsel later (a provable chain of custody).
+- **Goal** — Jim's station and Franz's processing copy can be exchanged safely and repeatably,
+  with only changed material moving, nothing lost, every change accounted for.
+- **Who benefits** — Jim (two buttons, no waiting on his laptop); Franz (all heavy work on fast
+  machines; evidence in the case file); counsel (a provable chain of custody: what was
+  captured, by whom, and what Franz changed).
 - **How we will know it worked**
-  1. Before the update: a backup of Jim's station is on Franz's side and **every file's SHA-256
-     matches** the manifest made on Jim's laptop (count = 0 mismatches).
-  2. After the update: 0.7.1 starts on Jim's laptop, shows the same number of groups and pages
-     as before, and the pre-update database copy `fgscanner.db.bak-0.7.1` exists.
-  3. Every committed group that arrives passes the portal's `import_fgscanner.py --dry-run`
-     (the end-to-end fingerprint check) before the real import.
-  4. No page image changes its bytes during the update itself (checked by re-hashing after the
-     first start, before any reading runs).
+  1. A cycle's manifest re-verifies on the receiving side with **0 mismatches** (every file's
+     SHA-256), both directions.
+  2. A second cycle with nothing new moves **only the database** (bytes moved ≤ 10 MB).
+  3. After "Install Franz's update", Jim's station has the same groups/pages as Franz's copy,
+     Jim's own settings unchanged, and `PRAGMA integrity_check` = ok.
+  4. A cycle in which Jim scanned during the freeze **refuses to install** and changes nothing.
+  5. The first cycle leaves Jim on the new release with his pre-update data verified on
+     Franz's side before he pressed Yes.
 
 ## 03 · Scope and non-goals
 
 **In scope**
 
-1. **Rehearsal on the NucBox** — Jim's 9/25 data, 0.5.4 installed, real auto-update to 0.7.1,
-   checks (§17; started 2026-10-09).
-2. **`build/backup-station.ps1`** — a Windows PowerShell 5.1 script (runs on any Windows
-   without installing anything) that copies a closed station's data folder and evidence folder
-   into a dated folder and writes `MANIFEST-SHA256.txt`; and **`build/verify-station.ps1`**,
-   which re-hashes a copy against its manifest. Promotes the 9/23 USB-kit script into the repo.
-3. **The transfer channel** (Q2) — from Jim's laptop to Franz's NucBox and back.
-4. **The update-day runbook** — `docs/jim-remote-update-runbook.md`: numbered, tagged
-   `[Franz]` / `[Jim]` / `[Claude]`, done with Jim on the phone and on screen sharing.
-5. **After the update** — getting his groups committable: read the pages, fill Box, Propose
-   documents, fix the sticky-note sheets, restore or rescan Dental's missing page; where that
-   work happens is Q1.
-6. **Hand-rotated pages** (Q4) — protect them from a second automatic turn.
+1. **A station workspace switch** in FG Scanner (`--data-dir`): Franz runs Jim's station on the
+   NucBox in its own folder, never mixed with his own.
+2. **Station verbs in the CLI** (`fgscanner station pack | verify | apply`), shipped with every
+   release so they never drift from the database schema; a content-addressed manifest
+   (path, size, SHA-256) with renames paired by hash.
+3. **Two shortcuts on Jim's desktop** — "Send my scans to Franz", "Install Franz's update" —
+   each ending in one line he can read out on Teams: `OK 1234` or `NOT OK — call Franz`.
+4. **A first-cycle sender** for 0.5.4 (a PowerShell script; 0.5.4 has no station verbs).
+5. **The transport** for cycle 1 (Q-B1) and its setup with Jim.
+6. **Release 0.8.0** with the above, rehearsed 0.5.4 → 0.8.0 on Jim's own data before Jim.
+7. **A CI test that migrates a database from every shipped schema** (0.5.4 onward) to the
+   current one, so a release that would break Jim's upgrade fails to build.
+8. **Runbooks** for both sides; CLAUDE.md rules.
 
 **Non-goals**
 
-- **No app feature for moving a station** (export/relocate). The database holds absolute
-  paths; a feature would be a large change to the evidence data model. Scripts + identical
-  paths instead.
-- **No upload page on the portal.** Cloudflare caps one request at 100 MB and the portal would
-  need a resumable chunked uploader built from scratch (recon 2026-10-09). Not now.
+- **The storage platform** (Seafile, archive tier, offsite backup, the other apps' files) —
+  its own spec (Q-B2).
+- **No live sync of Jim's evidence or data folders.** Transfers are packs, verified, applied.
+- **No portal upload page** (Cloudflare caps a request at 100 MB). **No AI** (§08a).
 - **No change to the evidence contract** (`index.json`, `manifest.json`, field names).
-- **No live two-way sync of Jim's evidence folder.** A sync tool must only ever carry a copy.
-- **Jim's import itself** (JimsStuff SPEC-2026-009 P10) — this spec only gets the groups there.
+- **Jim's import into the case file** itself (JimsStuff SPEC-2026-009 P10) — this spec
+  delivers committed groups to it.
 
 ## 04 · Current state
 
-Read 2026-10-09: FgmakerScanner `main` 440889b (v0.7.1), tag v0.5.4; JimsStuff `master`
-271ce76; the 9/25 copy of Jim's data (`%APPDATA%\FGScanner.rehearsal-jim-laptop-2026-09-25`,
-images `D:\Evidence-Scans`); two read-only research passes (scripts in the job folder).
+Read 2026-10-09: FgmakerScanner `main` 440889b (v0.7.1; 0.6.0 and 0.7.1 drafts), tag v0.5.4;
+JimsStuff `master` 271ce76; Jim's 9/25 data (`%APPDATA%\FGScanner.rehearsal-jim-laptop-2026-09-25`,
+images copied to `C:\Evidence-Scans`); three research passes (scripts in the job folder).
 
-**Jim's station (as of 9/25 — newer state unknown):** FG Scanner 0.5.4, installed by USB
-2026-09-25. Data at `%APPDATA%\FGScanner` (`fgscanner.db`, journal mode `delete` — not WAL —
-plus `trash\`, `recovery\`, `index-drafts\`, `tessdata\`), evidence at `C:\Evidence-Scans`
-(the 9/24 kit rewrote `Groups.DirectoryPath` / `Profiles.BaseDirectory` from `D:`). 20
-groups, all `State=0` (open, none committed), profile "Evidence" schema v2, `OcrEnabled=0`,
-every page unread (`OcrStatus=0`). DocNo blank on 886 of 1,368 rows; `Box` (required, batch)
-empty on 18 groups; NoteState as-found 93, note-face 138, clean 857. Dental has a row for
-`scan_00001.jpg` with no file (missing since before 9/20). Sizes: DB 1.5 MB; images 1.15 MB
-per page average.
+**Jim's station at 9/25** — 0.5.4; data `%APPDATA%\FGScanner` (`fgscanner.db`, journal mode
+`delete`, `trash\`, `recovery\`, `index-drafts\`, `tessdata\`); evidence `C:\Evidence-Scans`. 20
+groups, all open; every page unread; DocNo blank on 886 of 1,368; Box empty on 18; 233
+sticky-note refusals in 16 groups; Dental missing `scan_00001.jpg`. `CapturedBy` reads "Franz
+Gerster" on his rows (his laptop account was set up under that name).
 
-**The update path** (`src/FgScanner.App/Services/UpdateService.cs`): on every app start,
-NetSparkle reads `releases/latest/download/appcast.xml`, Ed25519 strict, asks "Download and
-install now?"; Yes runs the Inno installer `/VERYSILENT /NORESTART`. `PrivilegesRequired=admin`
-(UAC, or an admin password on a standard account), `CloseApplications=yes`,
-`RelaunchAfterUpdate=false` — Jim restarts the app himself. The installer never touches
-`%APPDATA%`. **Never exercised end to end** — no station has been upgraded by it.
-Verified 2026-10-09: v0.7.1's appcast and installer signatures are valid for the key in
-0.5.4; size and SHA-256 match.
+**Content identity** — `Pages.Checksum` is the file's SHA-256, set at adoption, refreshed only
+by `ReorderService.RefreshChecksumAsync` (edits, auto-rotate, CLI). It is **a claim, not a
+measurement**: on the 9/25 copy against today's images, 1,365 match, 2 differ, 1 missing — the
+two are Defamation pages turned on this NucBox on 10-03/10-05 during development, after the
+snapshot. `OriginalChecksum` is NULL although 3 `originals\` copies exist. `ImageHash` is a
+perceptual hash, not identity. **Re-hashing is cheap**: 1.64 GB in 13 s here.
 
-**First start of 0.7.1 over 0.5.4's database** (`DbBootstrapper.cs:22-36`): one pending
-migration, `20261005135716_AddPageOrientationSettled` (a bool column, default false; marks
-already-read pages settled — none on Jim's). Before migrating it copies the database to
-`fgscanner.db.bak-0.7.1`. Nothing writes into group folders on first start unless reading
-jobs are pending (Jim's queue was empty).
+**What changes a group folder** — adoption adds `scan_NNNNN.jpg` (name fixed then); commit and
+re-export write only `index.*` and `manifest.json` (manifest carries an export time); reading
+writes `.md` sidecars (bytes differ every read); auto-orient and pixel edits rewrite the JPG and
+add `originals\`; moving documents between groups renames files; trash moves files to
+`%APPDATA%\FGScanner\trash`; reorder tools change only the database.
 
-**What 0.7.1 then asks of each open group** — commit refuses: required fields blank (DocNo,
-Box — as in 0.5.4); a malformed sticky-note sequence (`ImportRefusals`, new; 233 refusals in
-16 groups at 9/25); a page whose image is missing (new, Revision F); unread pages are counted
-and "No" queues them for reading. "Build the Evidence profile" (Settings) turns reading on
-capture on. Reading measured ~1.1 s per page here; estimated 3–6 s on Jim's i5 (unmeasured),
-one page at a time.
+**What binds a database to a machine** — `Groups.DirectoryPath`, `Profiles.BaseDirectory`
+(`C:\Evidence-Scans` on both sides — no rewrite); `TrashItems.TrashFolderPath` (user profile
+path); `Settings` rows travel inside the database (`Feature.AutoOrient`, `Feature.IndexMode`,
+`Email.SendWith`, `Index.DeciderName`, theme, update prompt); outside it: the Gemini key
+(Credential Manager), `tessdata`, `recovery`, `index-drafts`, logs. The scanner device is not
+stored. `CapturedBy` and the Operator default `$(user)` take the Windows account name.
 
-**Auto-orient** (`OcrPipeline.cs:38,52-55`): reading can turn a page (confidence ≥ 5.0),
-rewriting the JPG; the original goes to `originals\` (PreserveOriginals is on). Pages Jim
-turned by hand in 0.5.4 are not marked settled, so their first read can turn them again.
+**One station per Windows account** — the app hard-wires `%APPDATA%\FGScanner`; only the CLI
+has a hidden `--db` (`CliRunner.cs:31`). A `StationPaths` record resolved once at startup is
+the minimal change. The single-instance lock stays shared.
 
-**Transfer** (recon): no existing channel carries a group folder or station data except USB.
-`/intake` takes single images ≤ 32 MB; the index-package loop moves zips down and a ≤ 2 MB
-results file up. The importer (`JimsStuff pipeline/fgscanner_group.verify`) already checks a
-received committed group end to end (presence, whole JPEG, SHA-256 against `index.json`, no
-stray images, originals, note pairs). Lines: Jim ~300↓/20↑ Mbps, Franz ~500↓/20↑.
+**The update path** — NetSparkle reads `releases/latest/download/appcast.xml` at every start,
+asks, runs the installer `/VERYSILENT` (admin → UAC), does not relaunch. Never exercised end to
+end; 0.7.1's signatures verified 2026-10-09 against 0.5.4's key. First start of a new version
+copies the database to `fgscanner.db.bak-<version>` before migrating.
 
-| Size | Jim → (20 Mbps) | → Jim (300 Mbps) |
-|---|---|---|
-| 1.6 GB | ~15 min | ~1 min |
-| 4.8 GB | ~45 min | ~3 min |
+**Rehearsal (Phase 1) state** — on the NucBox, Franz's station data set aside as
+`%APPDATA%\FGScanner.station-aside-2026-10-09`, Jim's 9/25 copy in place, 0.5.4 installed and
+started (no update offered); publishing 0.7.1 is Franz's command (the session may not publish).
 
-**Not examined:** Jim's current data (size, new groups, any commits, hand-rotated pages);
-whether his Windows account is an administrator; his Google account; real reading speed on
-his laptop.
+**Transport research** — no existing channel but USB. Cloudflare Tunnel: 100 MB per request,
+CDN terms against bulk pictures. **Tailscale** (built into Unraid 7, free for 6 users) avoids
+both. Seafile's sync is block-based (a renamed or unchanged file never re-uploads) with an
+audit log in Pro (free for 3 users — to confirm); Nextcloud syncs whole files; Syncthing has
+no audit. Offsite: Backblaze B2 $6.95/TB-month with Object Lock. Google Drive: 750 GB/day
+upload cap; 5 TB consumer tier (larger tiers exist in-account). Franz's other apps store files
+as plain folders (FGMakerEcomFeeder 2.9 GB; FGMakerMaster nearly empty) and need shares, not
+sync.
+
+**Not examined:** Jim's current data; his account type; real reading speed on his laptop.
 
 ## 05 · Questions for Franz
 
-**Round A answered 2026-10-09 — verdict: revise.** Q1 = **(b) round trip, as a delta**: Jim
-sends data and images; Franz fixes everything on the fast machine; Jim gets it back as one
-install to run. Images rarely change, so hash both sides first (a separate hash pass before the
-update is fine) and move only new or changed images; unchanged images never travel. Reason:
-Jim is not comfortable with the computer, they talk over Teams, and waiting on Jim's slow
-laptop is the problem — overnight transfers are not. Q2 = **research first**: backups and
-transfers to the Tower (Seafile, Nextcloud or better), also as an archive for older backups and
-rarely used images, shared with Franz's other apps (FGMakerMaster); Google Drive's 5 TB tier
-is a worry. Q3 = (a), Q4 = (b), Q5–Q7 as stated, C1–C3 agreed. General: research deeply,
-check the answers against each other, automate so the many future updates are simple, check
-nothing is missed. Revision B follows the research.
+**Round A (2026-10-09, revise):** Q1 = (b) round trip as a delta; Q2 = research first; Q3 = (a)
+backup verified before update; Q4 = (b) auto-orient off for the backlog; Q5 Quick Assist; Q6
+0.7.1 back to draft; Q7 ask Box on the day; C1–C3 agreed. General: deep research, check for
+contradictions, automate, check nothing is missed.
+
+**What Revision B changed, and why** (a contradiction check of the Round A answers):
+
+| Round A | Conflict found | Revision B |
+|---|---|---|
+| Q1 b vs §01/§03/§08/§17 (written for Q1 a) | the whole plan assumed work on Jim's laptop | rebuilt around the cycle pack → verify → process → package → apply |
+| Q1 b "send back an install" vs auto-update | two update channels; a release published mid-cycle could leave Jim on a different version from the one that migrated his data | apply checks the version and the last migration; releases are published only at a cycle's return (Q-B9) |
+| Q3 a vs Q1 b | the same step twice | merged: the verified pack **is** the backup, taken with the app closed, before the update |
+| Q4 b vs round trip | `Feature.AutoOrient` lives in the database, so "off" would travel back and stop Jim's new scans straightening | auto-orient off only in Franz's workspace; apply keeps Jim's settings (Q-B5) |
+| C1 "scripts, not app features" vs "updated a lot" | scripts drift from each release's schema | scripts for the first cycle only; station verbs ship in the app (Q-B3) |
+| C2 "never sync live folder" vs Q2 sync platforms | a sync client on Jim's evidence folder could carry a deletion back | the shared folder is only an outbox/inbox; pack and apply refuse a path inside the live folders |
+| "images don't change, only the data" | reading writes sidecars, commit writes index files, moves rename, trash removes | the return manifest states the **final** state of every group folder; apply reaches it and re-verifies |
+| Q7 Box asked on the day | Franz needs Box before he processes | collected before processing (Q-B6) |
+| Q5 Quick Assist | Jim already uses Teams; a second tool is a second thing to learn | Teams "give control" (Q-B7) |
 
 **Blocking**
 
-1. **Q1 — Where does the after-update work happen?** (Reading ~2,000+ pages; Box; Propose
-   documents; fixing the sticky-note sheets; Dental.)
-   (a) **On Jim's laptop**, Jim and Franz together on screen sharing: reading runs overnight;
-   Franz drives Propose and the fixes remotely. Nothing moves but backups and committed groups.
-   (b) **Round trip**: Jim stops scanning, uploads his whole station, Franz does everything on
-   the NucBox (same `C:\Evidence-Scans` paths), uploads it back, Jim restores it. Fast work,
-   but Jim is frozen for the whole round trip and two copies of live evidence exist.
-   (c) **Split**: reading runs on Jim's laptop overnight (a)); Franz does the judgement work
-   (Propose, notes, DocNo) on the NucBox on the backup copy to *find* every problem and
-   prepare the fixes, then applies them with Jim on screen sharing.
-   *Recommended:* **(a)** — evidence never leaves the machine that captured it until it is
-   committed; the slow part (reading) needs no one present; the backup still gives Franz a
-   full copy to study. *Cost:* (b) adds two transfers (~1 h each way at today's size), a
-   path-equal restore on Jim's side and a freeze; (c) adds the copy work.
-2. **Q2 — How do the files travel?** (a) **A Google Drive folder** shared from Franz's Drive to
-   a Google account for Jim (Drive for Desktop resumes; the project already keeps backups
-   there); (b) **Tailscale** to the NucBox, copy with Explorer/robocopy (no third party holds
-   the data; one install and sign-in for Jim); (c) **OneDrive "Request files" link** (Jim needs
-   no account; browser upload, less robust for GBs). *Recommended:* (a), with the evidence
-   zipped and encrypted (7-Zip AES) only if counsel asks.
-3. **Q3 — Does the update wait for the backup?** (a) **Yes**: the backup is copied and verified
-   on Franz's side *before* Jim presses Yes; until then the 0.7.1 release stays a draft (so his
-   app offers nothing). (b) Jim updates first (the app copies its own database), backs up
-   after. *Recommended:* (a) — the app's own copy is the database only, not the 1.6+ GB of
-   images.
-4. **Q4 — Pages Jim turned by hand.** (a) Before the first reading, mark every existing page
-   "orientation settled" (a one-time step in the backup script's companion, on Jim's database,
-   after the update) so 0.7.1 never turns them; (b) turn auto-orient off on Jim's station for
-   the backlog, back on for new scans; (c) leave it — originals are kept anyway.
-   *Recommended:* (b) — one Settings switch, no database edit, reversible; new scans still
-   straighten themselves.
+1. **Q-B1 — Transport for the first cycle.** (a) **Tailscale + a plain share on the Tower** —
+   an hour to set up, one install for Jim, no third party holds the data, plain files fit the
+   importer and our manifests; (b) **Seafile now** — wait 2–3 days for the platform spec first;
+   (c) **Google Drive** now. *Recommended:* (a); the platform can replace the share later
+   without changing the station verbs.
+2. **Q-B2 — The storage platform as its own spec.** (a) **Seafile Pro on the Tower (3 free users),
+   Tailscale, offsite to Backblaze B2 with Object Lock**, archive libraries on the array; the
+   other apps keep plain shares, backed up offsite by the same job; (b) Nextcloud instead
+   (plain files, heavier, whole-file sync); (c) not now. *Recommended:* (a), written next.
+3. **Q-B3 — What release 0.8.0 builds in.** (a) the workspace switch, the station verbs, the two
+   shortcuts, the CI migration test — scripts only for cycle 1's sender; (b) scripts only, app
+   later. *Recommended:* (a): every later cycle is then two buttons that match the release.
+4. **Q-B4 — Reading from now on.** (a) **Off on Jim's laptop**: his new scans are read on the
+   NucBox each cycle (his laptop never grinds); (b) read on capture on his laptop.
+   *Recommended:* (a) — it is exactly the waiting Franz wants to avoid; the cost is that
+   search on Jim's own station only covers pages read so far.
 
 **Non-blocking (proceeding as stated unless corrected)**
 
-5. **Q5 — Screen sharing:** Windows **Quick Assist** (built in; Jim reads Franz a code).
-6. **Q6 — After the rehearsal tonight:** put v0.7.1 back to **draft** until update day, so Jim
-   is never offered it early (he will not open the app tonight; this covers tomorrow).
-7. **Q7 — Box values:** Franz asks Jim which box each group came from on update day; the
-   script does not guess.
+5. **Q-B5 — Auto-orient** off only in Franz's workspace for the backlog; apply keeps Jim's own
+   settings rows (his new scans still straighten).
+6. **Q-B6 — Box values** collected before processing: Jim tells Franz on Teams which box each
+   group came from; Franz enters them.
+7. **Q-B7 — Screen sharing** through Teams "give control" (Jim clicks UAC himself in any tool).
+8. **Q-B8 — Commit on the NucBox.** Franz commits each group he has fixed and imports it into
+   the case file from there; the return carries the committed state. A group Franz cannot
+   finish (it needs the paper — an orphaned as-found sheet, Dental) is left open, *not*
+   Proposed, and listed in a "needs Jim" sheet sent back with the package.
+9. **Q-B9 — Jim goes straight from 0.5.4 to 0.8.0.** 0.7.1 and 0.6.0 stay drafts; a release is
+   published only when a cycle's return needs it.
 
 ## 06 · Assumptions
 
 | # | Assumption | If wrong |
 |---|---|---|
-| A1 | Jim's data still lives at `%APPDATA%\FGScanner` and `C:\Evidence-Scans`, as the 9/25 move left it. | The backup script takes both paths as parameters and lists what it found before copying. |
-| A2 | Jim has committed nothing since 9/25. | Committed groups are the easy case: they upload as-is and pass the importer's check. |
-| A3 | Jim's data is under ~5 GB. | The upload takes longer (~45 min per 5 GB); overnight is fine. |
-| A4 | Jim's Windows account can approve UAC. | He needs the admin password on update day; Franz finds out first. |
+| A1 | Jim's data still lives at `%APPDATA%\FGScanner` and `C:\Evidence-Scans`. | The sender takes both as parameters and lists what it found before packing. |
+| A2 | Jim has committed nothing since 9/25. | Committed groups simply pack and verify like the rest. |
+| A3 | Jim's data is under ~5 GB. | Cycle 1 takes longer (~45 min per 5 GB); overnight is fine. |
+| A4 | Jim's account can approve UAC. | He needs the admin password; Franz finds out first. |
+| A5 | Jim can follow two desktop shortcuts with Franz on Teams. | Franz drives through Teams "give control". |
 
 ## 07 · Data model
 
-No change to FG Scanner's database or the evidence contract. If Q4 = (a), a one-time
-`UPDATE Pages SET OrientationSettled = 1` on Jim's migrated database — recorded in the run
-log, with the backup taken first.
+No change to FG Scanner's database or the evidence contract. New files only:
+
+- **`station-manifest.json`** (written atomically, one per pack): header `{format, station,
+  sentAt, appVersion, lastMigration, dbSha256, evidenceRoot, basedOn}`; `files[]` `{rel, size,
+  sha256, kind: image|original|sidecar|index|trash, groupId?, pageId?, dbChecksum?}`.
+  `basedOn` is the previous manifest's hash, so "what Franz already has" is known without a
+  second round trip.
+- **`changes.jsonl`** in each return package — the chain-of-custody record of what Franz
+  changed: a row-level diff of the database before and after processing (table, key, column,
+  old, new), with Franz's name and time. Archived with the package; travels to the portal with
+  the import (it does not alter `capturedBy`, which is never rewritten — ADR-0005).
+- **Kept on apply (never overwritten):** Jim's `Settings` rows, profile scan settings,
+  `index-drafts\`, `recovery\` (apply refuses if it holds anything), Credential Manager.
 
 ## 08 · Architecture and approach
 
 ```
-Jim's laptop (0.5.4)                     Franz's NucBox                  Tower (portal)
-  close app                                                                
-  backup-station.ps1 ──(Q2 channel)──▶   verify-station.ps1 (SHA-256)     
-  [draft → published]                                                     
-  start app → Yes → UAC → 0.7.1                                           
-  reading overnight (Q1)                                                  
-  Propose / notes / Box / commit                                          
-  committed group copy ──(Q2)──────────▶ import --dry-run ──▶ import ──▶ register (push)
+Jim's laptop                         transport (Q-B1)          Franz's NucBox (workspace Jim)
+"Send my scans to Franz"
+  app closed, freeze checks
+  hash all → manifest (basedOn)
+  pack: db + files Franz lacks ──────▶ outbox/inbox ─────────▶  station verify (0 mismatches)
+  keep "sent" manifest + db hash                                 = Jim's backup (Q3 a)
+                                                                 open in workspace (0.8.0 migrates)
+                                                                 read · Box · Propose · notes · commit
+                                                                 import committed groups → portal
+                                                                 station pack --return:
+"Install Franz's update"            ◀──────────────────────────   db + changed/new files + deletions
+  version + migration check                                      + final-state manifest + changes.jsonl
+  freeze check (db hash = sent)                                  + needs-Jim sheet
+  stage → verify → swap atomically
+  keep Jim's settings · re-verify
+  "OK 1234"
 ```
 
-- **Rehearse exactly what Jim will do**, on Jim's own 9/25 data, on the NucBox, before Jim.
-- **Scripts, not app features** — they run on 0.5.4 today and on any Windows.
-- **Evidence moves only as copies**, always with a manifest, always re-hashed on arrival.
-- **Alternatives rejected**: portal upload (100 MB edge cap, new chunked uploader); syncing
-  Jim's live folder (a deletion or edit could travel back); an in-app "move station" feature
-  (absolute paths throughout the evidence model).
+- **Same verbs on both sides**, shipped in the app's `cli\`, so the format and the schema can
+  never drift apart. The first sender (0.5.4) is a PowerShell port of `pack` only.
+- **Content-addressed**: a renamed file is matched by hash and renamed in place, never resent.
+- **Evidence moves only as verified packs**; the transport folder is never inside a live folder.
+- **Alternatives rejected**: work on Jim's laptop (Round A); live sync of the station (a
+  deletion could travel back); one Inno package carrying evidence (an elevated installer can
+  see the wrong user profile); portal upload (100 MB cap).
 
 ## 08a · AI opportunity assessment
 
-| | Sticky-note sheets and document boundaries |
+| | Sticky-note sheets, document boundaries |
 |---|---|
-| **What it would do** | Read the 233 refused note sequences and suggest the fix per sheet. |
-| **Why AI beats code here** | It would not: the rule is mechanical (`ImportRefusals`), and Propose documents already fills DocNo from titles. The work is checking the paper, which only Jim can do. |
-| **Recommendation** | **None.** Poor fit; say so rather than add spend. |
+| **What it would do** | Suggest fixes for the 233 refused note sequences. |
+| **Why not** | The rule is mechanical (`ImportRefusals`); Propose documents fills DocNo; what remains needs the paper. |
+| **Recommendation** | **None.** |
 
 ## 09 · Design system compliance
 
-No UI. Runbook in the repo's plain style.
+No app UI beyond two Start-menu shortcuts and console output in plain words.
 
 ## 10 · Acceptance criteria
 
-> **AC-1** — The rehearsal: 0.5.4 on Jim's 9/25 data is offered 0.7.1, installs it through the
-> real prompt and UAC, starts 0.7.1, and shows 20 groups / 1,368 pages with
-> `fgscanner.db.bak-0.7.1` present; every image hash unchanged by the first start.
-> *Proven by:* manual, Claude + Franz on the NucBox, §22.
+> **AC-1** — Rehearsal: 0.5.4 on Jim's 9/25 data is offered the release, installs it through the
+> real prompt and UAC, starts it; 20 groups / 1,368 pages; `fgscanner.db.bak-<ver>` present;
+> no image changed by the first start. *Manual, §22.*
 
-> **AC-2** — `backup-station.ps1` copies a station and writes a manifest; `verify-station.ps1`
-> reports 0 mismatches on an exact copy and names a changed, missing or extra file.
-> *Proven by:* `build/tests/backup-station.tests.ps1` (Pester-free PowerShell tests, as
-> JimsStuff's `backup-pi.tests.ps1`).
+> **AC-2** — `station pack` → `station verify` on an exact copy: 0 mismatches; a flipped byte, a
+> missing file and an extra file are each named. *`StationManifestTests`.*
 
-> **AC-3** — The backup refuses to run while FG Scanner is open (a database copied mid-write is
-> not a backup). *Proven by:* the same tests (a held lock on the db).
+> **AC-3** — A renamed file is shipped as a rename (0 bytes), an unchanged one not at all.
+> *`StationPackTests.RenamesAreNotResent`, `SecondPackWithNoChangesShipsOnlyTheDatabase`.*
 
-> **AC-4** — Jim's backup arrives on Franz's side and verifies with 0 mismatches before the
-> update. *Proven by:* manual, update day.
+> **AC-4** — `pack` refuses while the app is open, while `recovery\` holds a session, or with
+> reading jobs pending. *`StationPackTests`.*
 
-> **AC-5** — After Jim's update: 0.7.1 starts; group and page counts equal the backup's.
-> *Proven by:* manual, update day.
+> **AC-5** — `apply` refuses on a version or migration mismatch, on a database that differs from
+> the one sent (Jim worked during the freeze), and with the app open; refusing changes nothing.
+> *`StationApplyTests`.*
 
-> **AC-6** — Every committed group received passes `import_fgscanner.py --dry-run`.
-> *Proven by:* manual, per upload.
+> **AC-6** — `apply` keeps the receiving station's `Settings` rows and `index-drafts`, reaches the
+> manifest's final state (adds, changes, renames, deletions moved aside — never erased), passes
+> `integrity_check`, and keeps the replaced database and files for rollback. *`StationApplyTests`.*
+
+> **AC-7** — `--data-dir` puts the database, trash, recovery, drafts and logs in that folder and
+> nothing in `%APPDATA%\FGScanner`. *`StationPathsTests`.*
+
+> **AC-8** — CI migrates a fixture database from every shipped schema (0.5.4 onward) and opens
+> it. *`MigrationLadderTests`.*
+
+> **AC-9** — `changes.jsonl` lists every changed cell between two databases.
+> *`StationChangeLogTests`.*
+
+> **AC-10** — First cycle with Jim: pack verified on the NucBox before the update; Jim on 0.8.0;
+> the return applied; counts match. *Manual, §22.*
 
 ## 11 · Test strategy
 
-| Feature | Test file | The failing assertion |
-|---|---|---|
-| Backup | `build/tests/backup-station.tests.ps1` | backing up a fixture station yields a manifest whose line count equals the file count |
-| Verify | same | a byte flipped in one copied JPG → exactly that file reported |
-| Refuse while open | same | an open handle on `fgscanner.db` → refusal, nothing copied |
-
-Test data: a small fixture station built by the test (a few JPGs, a tiny SQLite file). Real
-data only in the rehearsal and on update day.
+Failing tests first, in `tests/FgScanner.Core.Tests/Station/` (pure manifest/pack/apply logic
+against temp folders and a temp SQLite database) and `tests/FgScanner.Data.Tests/` (migration
+ladder: one fixture `.db` per shipped schema, created from the tagged release). The first-cycle
+PowerShell sender is checked by a test that packs a fixture and verifies it with the C# verb
+(the two must agree byte for byte). Real data only in the rehearsals and with Jim.
 
 ## 12 · Edge cases and failure modes
 
-| Case | Expected behaviour | Where handled |
+| Case | Expected behaviour | Where |
 |---|---|---|
-| Jim clicks No on the update | Nothing happens; it asks again next start | UpdateService |
-| Update download fails mid-way | Nothing installed; retried next start | NetSparkle |
-| Installer aborts mid-copy | App may not start; data untouched (installer has no `%APPDATA%` entries) → re-run the installer from the release page with Franz on screen sharing | runbook |
-| UAC needs a password Jim lacks | Stop; nothing changed | runbook (A4 checked first) |
-| Upload interrupted | Drive resumes; verify catches anything partial | channel + verify |
-| A file differs on arrival | Re-send that group; never "fix" a copy | verify |
-| Jim scans between backup and update | The backup is of the last closed state; the next upload carries the rest | runbook |
+| Jim scans or edits during the freeze | apply refuses ("NOT OK — call Franz"); his new pages stay; Franz packs again | apply (db hash) |
+| A file differs on arrival | verify names it; that pack is re-sent; never patched by hand | verify |
+| Upload interrupted / laptop sleeps | the sender holds a keep-awake; transport resumes; verify catches partial | sender, transport |
+| Group needs the paper | left open, not Proposed; on the needs-Jim sheet | Q-B8 |
+| Leftover `fgscanner.db-journal` | apply refuses | apply |
+| Release published mid-cycle | apply refuses on version mismatch | apply, Q-B9 |
+| Jim clicks No on the update | nothing changes; asks next start | UpdateService |
+| Installer aborts | data untouched; re-run from the release page with Franz on Teams | runbook |
 
 ## 13 · Security and configuration
 
-Privileged legal evidence leaves Jim's laptop. The channel (Q2) is shared with Franz's account
-only; nothing is public; no link without sign-in. No credential or password is written into a
-script, the repo or chat. Quick Assist sessions are started by Jim each time.
+Privileged evidence leaves Jim's laptop: over Tailscale (encrypted, no third party) to a share
+on the Tower that only Franz's and Jim's accounts reach; packs kept on the Tower until the
+platform spec's archive and offsite rules apply, and the NucBox workspace copy deleted after
+each cycle's import (§17). No credential in any script, repo or chat. Counsel to be told where
+copies of the evidence live (the platform spec records it).
 
 ## 14 · Observability
 
-Every backup writes `MANIFEST-SHA256.txt` and a one-line summary (files, bytes, time). Every
-verify writes the mismatch list. The update-day run log records each step with times.
+Every pack/verify/apply writes a one-line result (`OK 1234 · 2,140 files · 3.1 GB`) and a log
+beside the manifest; every return carries `changes.jsonl` and the needs-Jim sheet.
 
 ## 15 · Performance and scale
 
-Today ~1.6 GB / ~1,400 files; hashing on Jim's laptop ~1–3 min; upload ~15 min per 1.6 GB.
-Reading backlog ~1.5–2.5 h per 1,400 pages on the i5 (estimate) — overnight.
+Hashing ~2–3 min on Jim's laptop for ~2 GB; cycle 1 upload ~15 min per 1.6 GB; later cycles the
+database plus new pages (~1.15 MB each). Reading on the NucBox ~1.1 s per page.
 
 ## 16 · Regression risk
 
-| # | What could break | Why | Evidence | Mitigation |
-|---|---|---|---|---|
-| R1 | Jim's app does not start after the update | auto-update never used end to end; installer replaces DLLs | §04 | Rehearsal (AC-1) on his own data; installer re-run path; backup first |
-| R2 | A hand-turned page is turned again | 0.5.4 pages not marked settled | `OcrPipeline.cs:38,52-55` | Q4 |
-| R3 | Jim offered 0.7.1 before the backup | published release is offered at every start | `UpdateService.cs` | Q3/Q6: draft until update day |
-| R4 | Evidence altered in transit | network copy | — | SHA-256 manifest; importer verify |
-| R5 | A sync tool writes into Jim's live folder | two-way sync | recon | copies only, never the live folder |
-| R6 | Pre-migration backup overwritten | `bak-0.7.1` uses overwrite | `DbBootstrapper.cs:22-36` | our own full backup first |
+| # | What could break | Why | Mitigation |
+|---|---|---|---|
+| R1 | Jim's app does not start after the update | auto-update never used end to end | rehearsal on his data; backup verified first; re-run path |
+| R2 | Evidence lost when the database is swapped | new pages on Jim's side not in Franz's copy | freeze check refuses |
+| R3 | Jim's settings overwritten | settings live in the database | apply keeps them; test |
+| R4 | Franz's account name stamped on Jim's evidence | `CapturedBy`/Operator default to the Windows user | no captures in Franz's workspace; Operator set explicitly; change log |
+| R5 | A committed group imported twice | committed on NucBox, later again from Jim | the portal ledger refuses a sealed batch; tested in P12 |
+| R6 | Schema skew | releases between cycles | version/migration gate; CI ladder |
+| R7 | Workspace switch breaks Franz's own station | new path plumbing | default unchanged when no `--data-dir`; test |
 
 ## 17 · Migration and rollback
 
-**Rehearsal (NucBox, 2026-10-09):** Franz's station data set aside as
-`%APPDATA%\FGScanner.station-aside-2026-10-09`; Jim's 9/25 copy in `%APPDATA%\FGScanner`,
-images copied to `C:\Evidence-Scans`; 0.5.4 installed; 0.5.4 started on it, no update offered
-while 0.5.4 is Latest. Then: Franz publishes v0.7.1 (Latest) and v0.6.0 (not latest); 0.5.4
-started → Yes → UAC → 0.7.1; AC-1 checks; Franz's data restored.
+**Phase 1 — rehearsal (NucBox, in progress):** finish 0.5.4 → 0.7.1 on Jim's 9/25 data
+(Franz publishes; the session may not), then put 0.7.1 back to draft and restore Franz's own
+data folder. Repeat with 0.8.0 before Jim.
 
-**Update day (Jim):**
-1. `[Franz]` Confirm Jim's account can approve UAC; arrange the time; Quick Assist.
-2. `[Jim]` Close FG Scanner. `[Franz via Quick Assist]` Run `backup-station.ps1`.
-3. `[Jim]` Upload the backup (Q2). `[Claude]` `verify-station.ps1` on arrival — 0 mismatches.
-4. `[Franz]` Publish v0.7.1 (`gh release edit v0.7.1 --draft=false --latest`).
-5. `[Jim]` Start FG Scanner → Yes → UAC Yes → wait → start it again.
-6. `[Franz]` Check: version 0.7.1, group/page counts, `fgscanner.db.bak-0.7.1` present.
-7. `[Jim + Franz]` Q4 setting; tick Index; set Indexer name; Build the Evidence profile.
-8. `[Jim]` Start "Read all unread pages" and leave it overnight (Q1 = a).
+**Phase 3 — the first cycle:**
+1. `[Franz]` Set up Tailscale with Jim on Teams; confirm UAC rights; collect Box values.
+2. `[Jim]` FG Scanner closed → run the 0.5.4 sender (placed by Franz) → "OK 1234".
+3. `[Claude]` `station verify` on the NucBox: 0 mismatches = Jim's backup.
+4. `[Franz]` Publish 0.8.0. `[Jim]` start FG Scanner → Yes → UAC → start again.
+5. `[Claude/Franz]` Process in workspace Jim; commit what is finishable; import into the portal;
+   `station pack --return`.
+6. `[Jim]` "Install Franz's update" → "OK 5678". `[Franz]` check counts on Teams.
 
-**Rollback:** if 0.7.1 will not start — re-run the 0.7.1 installer from the release page; if
-that fails, install 0.5.4 from its release page and restore `fgscanner.db` from
-`fgscanner.db.bak-0.7.1` (0.5.4 ignores the one extra column, inferred — confirmed in the
-rehearsal). The evidence folder is never touched by either installer.
-**Point of no return:** Jim's first commit under 0.7.1 (it writes `index.json` and renames
-files). Before that, the backup restores him exactly.
+**Rollback:** apply keeps the replaced database and files aside; restoring them is one command.
+Before Jim's first commit the verified pack restores him exactly. **Point of no return:** a
+group's commit (renames and index files) — already the case today.
 
 ## 18 · Documentation updates
 
-- **New `docs/jim-remote-update-runbook.md`** (update day, 2am-clear, tagged steps).
-- **CLAUDE.md** (FG Scanner) — one line under Evidence work: stations update only by
-  auto-update now; backup + verify before; never sync a live evidence folder.
-- **`docs/release.md`** — auto-update rehearsal result; publish 0.6.0 as not-latest.
-- **JimsStuff `docs/fgscanner-import-runbook.md`** — committed groups arrive by the Q2
-  channel, not the transfer drive; run the dry run first.
-- **Memory** — the rehearsal result and the channel.
+- **CLAUDE.md (FG Scanner)** — stations exchange data only by `station pack/verify/apply`;
+  never sync a live folder; releases published only at a cycle's return; `--data-dir` for a
+  second station; no captures in another station's workspace.
+- **New** `docs/station-round-trip.md` (both sides, tagged steps) and an ADR for the manifest.
+- **`docs/release.md`** — every release is rehearsed on Jim's latest pack before publishing.
+- **JimsStuff `docs/fgscanner-import-runbook.md`** — committed groups arrive from the NucBox
+  workspace, with `changes.jsonl`.
+- **Memory** — the cycle and the transport.
 
 ## 19 · Phase plan
 
-### Phase 1 — Prove the update (tonight)
-- **Objective** — the auto-update works on Jim's own data. **Delivers** — AC-1, rehearsal log.
-- **Not in this phase** — anything on Jim's laptop.
+### Phase 1 — Prove the update path (now)
+Finish the 0.7.1 rehearsal; record. **Not here:** anything on Jim's laptop.
 
-### Phase 2 — Tools and runbook
-- **Objective** — backup, verify, channel, runbook ready. **Delivers** — scripts + tests (AC-2,
-  AC-3), channel set up and tested with a dummy folder, runbook, code/security review.
-- **Not in this phase** — Jim's data.
+### Phase 2 — Build 0.8.0
+Workspace switch; station verbs; first-cycle sender; shortcuts; CI ladder; reviews; release
+drafted and rehearsed 0.5.4 → 0.8.0 on Jim's 9/25 data. **Not here:** Jim's data.
 
-### Phase 3 — Update day and first upload
-- **Objective** — Jim on 0.7.1 with a verified backup; first committed groups imported.
-- **Delivers** — AC-4..AC-6.
+### Phase 3 — The first cycle
+Transport with Jim, pack, verify, update, process, import, return, apply.
 
 ## 20 · Prompt pack
 
-Written after approval, in
-[SPEC-SCANNER-2026-010-jim-remote-update-and-data-PROMPTS.md](./SPEC-SCANNER-2026-010-jim-remote-update-and-data-PROMPTS.md).
-Planned: P1 rehearsal (in progress) · P2 backup/verify scripts · P3 channel · P4 runbook ·
-P5 code review · P6 update day · P7 first upload and import.
+Written after approval. Planned (12): P1 finish rehearsal · P2 `StationPaths`/`--data-dir` ·
+P3 manifest + verify · P4 pack (delta, renames, freeze record) · P5 apply (gates, settings kept,
+atomic, rollback) · P6 change log + needs-Jim sheet · P7 first-cycle sender (PowerShell) +
+shortcuts · P8 CI migration ladder · P9 code review · P10 security review · P11 release 0.8.0
+draft + rehearsal · P12 the first cycle with Jim.
 
 ## 21 · Definition of done
 
 - [ ] All acceptance criteria met
 - [ ] Failing tests written first, now passing
-- [ ] Full suite green
+- [ ] Full suite green; Release build 0 warnings; format clean
 - [ ] `/code-review max` run, findings resolved or accepted in writing
-- [ ] Security review passed (scripts that move privileged evidence)
+- [ ] Security review passed
 - [ ] Documentation updated per §18
-- [ ] Jim on 0.7.1, verified
-- [ ] Rollback tested (the rehearsal's 0.5.4 restore) or explicitly waived by Franz
+- [ ] Jim's first cycle complete and verified
+- [ ] Rollback rehearsed
 
 ## 22 · Sign-off
 
 | | |
 |---|---|
-| **Review round answered** | ☐ Round A published 2026-10-09 — https://claude.ai/artifact/LTKoCtnKXZZTsoEZQVNBpV (doc SPEC-SCANNER-2026-010-rA) |
+| **Review round answered** | ☑ Round A 2026-10-09 (revise) — https://claude.ai/artifact/LTKoCtnKXZZTsoEZQVNBpV · ☐ Round B published 2026-10-09 — https://claude.ai/artifact/EjYRfaTz1UDJ1zQHuQzEPi (doc SPEC-SCANNER-2026-010-rB) |
 | **Franz approved** | ☐ date: |
 | **Built** | ☐ date: |
 | **Verified in production** | ☐ date: |
