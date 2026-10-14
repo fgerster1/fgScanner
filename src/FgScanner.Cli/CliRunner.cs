@@ -77,6 +77,7 @@ public static class CliRunner
         root.Subcommands.Add(BuildProcessCommand(verboseOption, dbOption, overrides));
         root.Subcommands.Add(BuildExportCommand(verboseOption, dbOption, overrides));
         root.Subcommands.Add(BuildListDevicesCommand(fakeOption, overrides));
+        root.Subcommands.Add(BuildStationCommand());
 
         return await root.Parse(args).InvokeAsync().ConfigureAwait(false);
     }
@@ -542,6 +543,38 @@ public static class CliRunner
             }
         });
         return command;
+    }
+
+    // ---- station (SPEC-SCANNER-2026-010) ----
+    private static Command BuildStationCommand()
+    {
+        var packArgument = new Argument<string>("pack-folder") { Description = "The pack folder holding station-manifest.json." };
+        var verify = new Command("verify", "Check a station pack against its manifest.") { packArgument };
+        verify.SetAction(parseResult =>
+        {
+            var pack = parseResult.GetValue(packArgument)!;
+            if (!Directory.Exists(pack))
+            {
+                Console.Error.WriteLine($"NOT OK — the folder \"{pack}\" does not exist.");
+                return 1;
+            }
+
+            var result = StationManifestVerifier.Verify(pack);
+            if (result.Status != StationVerifyStatus.StillArriving)
+            {
+                StationManifestVerifier.WriteLog(pack, result, DateTimeOffset.UtcNow);
+            }
+
+            Console.WriteLine(StationManifestVerifier.Summary(result));
+            return result.Status switch
+            {
+                StationVerifyStatus.Ok => 0,
+                StationVerifyStatus.StillArriving => 3,
+                _ => 1,
+            };
+        });
+
+        return new Command("station", "Move a whole station between machines as verified packs.") { verify };
     }
 
     private static ScanDriver ParseDriver(string value) => value.ToUpperInvariant() switch

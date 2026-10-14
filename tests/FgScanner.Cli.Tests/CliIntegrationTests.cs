@@ -122,6 +122,56 @@ public sealed class CliIntegrationTests : IDisposable
         Assert.Equal(1, await RunAsync("list-devices", "--driver", "parallel-port"));
     }
 
+    /// <summary>
+    /// SPEC-SCANNER-2026-010 AC-2: Jim reads the line out on Teams, so it must carry the code and
+    /// name the first problem; the full list goes to a log beside the manifest.
+    /// </summary>
+    [Fact]
+    public async Task Station_verify_prints_the_code_and_names_a_flipped_byte()
+    {
+        var pack = Path.Combine(_root, "pack");
+        var evidence = Path.Combine(pack, "evidence", "Dental");
+        Directory.CreateDirectory(evidence);
+        await File.WriteAllTextAsync(Path.Combine(evidence, "scan_00001.jpg"), "jpeg", TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(Path.Combine(pack, "fgscanner.db"), "db", TestContext.Current.CancellationToken);
+        var manifest = Core.Station.StationManifestBuilder.Build(new Core.Station.StationSource(
+            "jim", Path.Combine(pack, "fgscanner.db"), Path.Combine(pack, "evidence"), Path.Combine(pack, "trash"),
+            "0.8.0", null, null, DateTimeOffset.UnixEpoch));
+        var bytes = manifest.ToJsonBytes();
+        await File.WriteAllBytesAsync(Path.Combine(pack, "station-manifest.json"), bytes, TestContext.Current.CancellationToken);
+        var code = Core.Station.StationManifest.CodeOf(bytes);
+
+        var (okExit, okOut) = await RunCapturedAsync("station", "verify", pack);
+        await File.AppendAllTextAsync(Path.Combine(evidence, "scan_00001.jpg"), "!", TestContext.Current.CancellationToken);
+        var (badExit, badOut) = await RunCapturedAsync("station", "verify", pack);
+        File.Delete(Path.Combine(pack, "station-manifest.json"));
+        var (waitExit, waitOut) = await RunCapturedAsync("station", "verify", pack);
+
+        Assert.Equal(0, okExit);
+        Assert.StartsWith($"OK {code} · 2 files · ", okOut);
+        Assert.Equal(1, badExit);
+        Assert.StartsWith("NOT OK — changed: evidence/Dental/scan_00001.jpg", badOut);
+        Assert.Contains("changed: evidence/Dental/scan_00001.jpg",
+            await File.ReadAllTextAsync(Path.Combine(pack, "station-verify.log"), TestContext.Current.CancellationToken));
+        Assert.Equal(3, waitExit);
+        Assert.StartsWith("NOT YET", waitOut);
+    }
+
+    private async Task<(int Exit, string Output)> RunCapturedAsync(params string[] args)
+    {
+        var original = Console.Out;
+        using var output = new StringWriter();
+        Console.SetOut(output);
+        try
+        {
+            return (await RunAsync(args), output.ToString());
+        }
+        finally
+        {
+            Console.SetOut(original);
+        }
+    }
+
     [Fact]
     public async Task Missing_required_option_is_a_usage_error()
     {
