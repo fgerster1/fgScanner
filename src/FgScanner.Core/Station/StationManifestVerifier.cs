@@ -45,6 +45,11 @@ public static class StationManifestVerifier
                 StationVerifyStatus.NotOk, null, 0, 0, [$"manifest unreadable: {ex.Message}"]);
         }
 
+        if (ShapeProblem(packFolder, manifest) is { } refusal)
+        {
+            return new StationVerifyResult(StationVerifyStatus.NotOk, StationManifest.CodeOf(bytes), 0, 0, [refusal]);
+        }
+
         var problems = new List<string>();
         var database = Path.Combine(packFolder, StationManifest.DatabaseFileName);
         long total = 0;
@@ -90,6 +95,42 @@ public static class StationManifestVerifier
             manifest.Files.Count + 1,
             total,
             problems);
+    }
+
+    /// <summary>
+    /// The manifest comes through a shared folder and apply writes where it points, so a rel that
+    /// could resolve outside <c>evidence/</c> or <c>trash/</c> refuses the pack before any file
+    /// is opened — a refused pack is re-sent, never trimmed.
+    /// </summary>
+    private static string? ShapeProblem(string packFolder, StationManifest manifest)
+    {
+        if (manifest.Format != StationManifest.CurrentFormat)
+        {
+            return $"manifest format {manifest.Format} is not one this version reads ({StationManifest.CurrentFormat})";
+        }
+
+        var root = Path.GetFullPath(packFolder).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var rel in manifest.Files.Select(f => f.Rel))
+        {
+            var segments = rel.Split('/');
+            var wellFormed = segments.Length >= 2
+                && segments[0] is StationManifest.EvidenceFolder or StationManifest.TrashFolder
+                && segments.All(s => s.Length > 0 && s != "." && s != "..")
+                && rel.IndexOfAny(['\\', ':']) < 0
+                && Path.GetFullPath(Path.Combine(root, rel)).StartsWith(root, StringComparison.OrdinalIgnoreCase);
+            if (!wellFormed)
+            {
+                return $"manifest names a file outside the pack: {rel}";
+            }
+
+            if (!seen.Add(rel))
+            {
+                return $"manifest lists a file twice: {rel}";
+            }
+        }
+
+        return null;
     }
 
     /// <summary>The one line Jim or Franz reads out.</summary>

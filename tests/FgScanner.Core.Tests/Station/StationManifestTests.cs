@@ -191,6 +191,52 @@ public sealed class StationManifestTests : IDisposable
         Assert.Equal(StationVerifyStatus.Ok, StationManifestVerifier.Verify(Pack).Status);
     }
 
+    /// <summary>
+    /// The manifest arrives through a shared folder, and apply (P5) will write where it points —
+    /// a rel that leaves the pack must refuse the whole pack before any file is touched.
+    /// </summary>
+    [Theory]
+    [InlineData("evidence/../../outside.jpg")]
+    [InlineData("evidence/./scan.jpg")]
+    [InlineData("evidence//scan.jpg")]
+    [InlineData("evidence\\Dental\\scan.jpg")]
+    [InlineData("C:/Windows/win.ini")]
+    [InlineData("/evidence/scan.jpg")]
+    [InlineData("fgscanner.db")]
+    [InlineData("recovery/session.json")]
+    public void A_rel_outside_the_pack_layout_refuses_the_pack(string rel)
+    {
+        var manifest = CopyToPack();
+        var hostile = manifest with { Files = [.. manifest.Files, new StationManifestFile(rel, 1, new string('0', 64), "image")] };
+        File.WriteAllBytes(Path.Combine(Pack, StationManifest.FileName), hostile.ToJsonBytes());
+
+        var result = StationManifestVerifier.Verify(Pack);
+
+        Assert.Equal(StationVerifyStatus.NotOk, result.Status);
+        Assert.Equal([$"manifest names a file outside the pack: {rel}"], result.Problems);
+    }
+
+    [Fact]
+    public void A_rel_listed_twice_refuses_the_pack()
+    {
+        var manifest = CopyToPack();
+        File.WriteAllBytes(Path.Combine(Pack, StationManifest.FileName),
+            (manifest with { Files = [.. manifest.Files, manifest.Files[0]] }).ToJsonBytes());
+
+        Assert.Equal(
+            [$"manifest lists a file twice: {manifest.Files[0].Rel}"],
+            StationManifestVerifier.Verify(Pack).Problems);
+    }
+
+    [Fact]
+    public void A_manifest_of_an_unknown_format_is_refused()
+    {
+        var manifest = CopyToPack();
+        File.WriteAllBytes(Path.Combine(Pack, StationManifest.FileName), (manifest with { Format = 2 }).ToJsonBytes());
+
+        Assert.Equal(["manifest format 2 is not one this version reads (1)"], StationManifestVerifier.Verify(Pack).Problems);
+    }
+
     [Fact]
     public void The_manifest_round_trips_through_json_byte_for_byte()
     {
