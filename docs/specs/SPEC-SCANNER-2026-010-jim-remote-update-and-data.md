@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved |
-| **Revision** | B — 2026-10-09: rebuilt around Franz's Round A (round trip as a delta; research first); **approved in Round B** 2026-10-09 with the transport changed to a Google Drive shared folder and the storage platform dropped for now |
+| **Status** | Draft — Revision C in review (Round C); Revision B was approved 2026-10-09 and stands where Round C does not change it |
+| **Revision** | C — 2026-10-15: the P1 rehearsal found auto-update broken in 0.5.4 and 0.7.1, so Jim's 0.8.0 arrives as a guided manual install, 0.8.0 fixes the updater (test first, rehearsed without reaching Jim), and processing moves from the NucBox to Franz's PC. B — 2026-10-09: rebuilt around Round A; approved in Round B with the Google Drive transport |
 | **Tier** | System — it changes the software on Jim's live evidence station and moves evidence between machines |
 | **Author** | Claude, for Franz Gerster |
 | **Date** | 2026-10-09 |
@@ -21,24 +21,30 @@
   reading every page, fixing document numbers and sticky-note sheets, committing — and
   sends it back. Jim presses one button, "Install Franz's update", and his laptop ends up
   exactly as Franz left it, on the new software version. The first round trip also takes Jim
-  from 0.5.4 to the new release, by the app's own auto-update.
+  from 0.5.4 to the new release — by a **guided install on Teams**, because the rehearsal
+  (2026-10-15) proved the app's own auto-update cannot install anything on 0.5.4 or 0.7.1.
+  The new release repairs auto-update, so every later version can arrive by itself.
 - **Why** — Jim is in Ohio on a slow laptop, not comfortable with the computer, and Franz
   can only reach him over Teams. Waiting for his laptop is the problem; overnight transfers
   are not. And the program will change many more times before this case is done, so every
   cycle must be the same two buttons.
-- **What it costs** — 12 prompts across 3 phases, roughly **three to four days** of build,
+- **What it costs** — 13 prompts across 3 phases (three already done), roughly **three to four days** of build,
   one new FG Scanner release (0.8.0), plus two calls with Jim (setup, first cycle). Files
   travel through a Google Drive folder shared between Franz and Jim. Transfers: about 15
   minutes per 1.6 GB from Jim at his 20 Mbps; the return is mostly the database (a few MB)
   plus the pages that changed.
 - **What could go wrong** — (1) Jim scans while his data is with Franz → the return refuses
-  rather than lose anything (§12). (2) The auto-update fails on his laptop → rehearsed first
-  on his own data, with a verified backup before he presses Yes. (3) Franz's work changes
+  rather than lose anything (§12). (2) The install fails on his laptop → the same install was
+  rehearsed on a copy of his data (it passed: nothing lost, every image identical), and his
+  data is verified on Franz's side before he installs. (3) Franz's work changes
   Jim's settings or stamps Franz's name on Jim's evidence → the return keeps Jim's settings
   and a change log records what Franz did (§07).
 - **Decided (Round B, 2026-10-09)** — Google Drive shared folder; no storage platform for
-  now; the station verbs built into 0.8.0; pages read on the NucBox; Jim straight from 0.5.4
-  to 0.8.0.
+  now; the station verbs built into 0.8.0; Jim straight from 0.5.4 to 0.8.0.
+- **Proposed in Revision C (2026-10-15, Round C)** — Jim installs 0.8.0 by hand with Franz on
+  Teams; 0.8.0 repairs the updater and that repair is rehearsed without any release reaching
+  Jim; pages are read and processed on Franz's PC (the NucBox no longer runs FG Scanner).
+  Cost: one more prompt (13), about half a day.
 
 ## 02 · Outcomes
 
@@ -55,14 +61,16 @@
      Jim's own settings unchanged, and `PRAGMA integrity_check` = ok.
   4. A cycle in which Jim scanned during the freeze **refuses to install** and changes nothing.
   5. The first cycle leaves Jim on the new release with his pre-update data verified on
-     Franz's side before he pressed Yes.
+     Franz's side before he installed it.
+  6. A station on 0.8.0 that is offered a newer release and answers Yes ends up on that
+     release — rehearsed on the spare under an account whose profile path has a space.
 
 ## 03 · Scope and non-goals
 
 **In scope**
 
-1. **A station workspace switch** in FG Scanner (`--data-dir`): Franz runs Jim's station on the
-   NucBox in its own folder, never mixed with his own.
+1. **A station workspace switch** in FG Scanner (`--data-dir`): Franz runs Jim's station on his
+   PC (FGERSTERPC) in its own folder, never mixed with his own.
 2. **Station verbs in the CLI** (`fgscanner station pack | verify | apply`), shipped with every
    release so they never drift from the database schema; a content-addressed manifest
    (path, size, SHA-256) with renames paired by hash.
@@ -72,10 +80,14 @@
 5. **The transport** — a Google Drive folder shared between Franz and Jim (Q-B1 = c), and its
    setup with Jim. The station verbs only read and write a folder, so a later platform
    replaces the transport without changing them.
-6. **Release 0.8.0** with the above, rehearsed 0.5.4 → 0.8.0 on Jim's own data before Jim.
+6. **Release 0.8.0** with the above, rehearsed 0.5.4 → 0.8.0 on Jim's own data before Jim, on
+   the spare WIN-G31UIM7G129.
 7. **A CI test that migrates a database from every shipped schema** (0.5.4 onward) to the
    current one, so a release that would break Jim's upgrade fails to build.
 8. **Runbooks** for both sides; CLAUDE.md rules.
+9. **A working updater in 0.8.0** (Revision C): after Yes, FG Scanner starts the downloaded
+   installer itself and closes; the install no longer depends on NetSparkle's generated
+   script. Rehearsed end to end without any release reaching Jim (§17).
 
 **Non-goals**
 
@@ -103,7 +115,7 @@ Gerster" on his rows (his laptop account was set up under that name).
 **Content identity** — `Pages.Checksum` is the file's SHA-256, set at adoption, refreshed only
 by `ReorderService.RefreshChecksumAsync` (edits, auto-rotate, CLI). It is **a claim, not a
 measurement**: on the 9/25 copy against today's images, 1,365 match, 2 differ, 1 missing — the
-two are Defamation pages turned on this NucBox on 10-03/10-05 during development, after the
+two are Defamation pages turned on the NucBox on 10-03/10-05 during development, after the
 snapshot. `OriginalChecksum` is NULL although 3 `originals\` copies exist. `ImageHash` is a
 perceptual hash, not identity. **Re-hashing is cheap**: 1.64 GB in 13 s here.
 
@@ -124,14 +136,37 @@ stored. `CapturedBy` and the Operator default `$(user)` take the Windows account
 has a hidden `--db` (`CliRunner.cs:31`). A `StationPaths` record resolved once at startup is
 the minimal change. The single-instance lock stays shared.
 
-**The update path** — NetSparkle reads `releases/latest/download/appcast.xml` at every start,
-asks, runs the installer `/VERYSILENT` (admin → UAC), does not relaunch. Never exercised end to
-end; 0.7.1's signatures verified 2026-10-09 against 0.5.4's key. First start of a new version
-copies the database to `fgscanner.db.bak-<version>` before migrating.
+**The update path** — NetSparkle 3.1.0 (`UpdateService.cs`, identical in 0.5.4 and 0.7.1)
+reads `releases/latest/download/appcast.xml` at every start (Ed25519 strict), asks, downloads,
+then calls `InstallUpdate`, which writes a `.cmd` script that waits for the app to exit and then
+runs the installer `/VERYSILENT /NORESTART` (admin → UAC). `RelaunchAfterUpdate = false`. The
+appcast's download link is `releases/latest/download/fgscanner-<ver>-win-x64.exe`
+(`release.yml:140`), so a release's installer is reachable only while it is the Latest. First
+start of a new version copies the database to `fgscanner.db.bak-<version>` before migrating.
 
-**Rehearsal (Phase 1) state** — on the NucBox, Franz's station data set aside as
-`%APPDATA%\FGScanner.station-aside-2026-10-09`, Jim's 9/25 copy in place, 0.5.4 installed and
-started (no update offered); publishing 0.7.1 is Franz's command (the session may not publish).
+**The rehearsal (P1, 2026-10-15) — the updater does not work.** Run on the spare
+WIN-G31UIM7G129 (the NucBox was busy) over Jim's 9/25 copy: 0.5.4 offered 0.7.1, Yes was
+pressed, and nothing visible happened — no UAC, the app stayed open, still 0.5.4. Three defects,
+all in how the install step is wired, none in the download or the signature check:
+1. **The app never closes.** Nothing handles NetSparkle's close request, so the script's wait
+   for the app's process never ends.
+2. **The script gives up after 90 seconds** (`exit /b 1`) and nothing is logged.
+3. **The installer is run by an unquoted path with no `.exe`** — the download lands in
+   `%LOCALAPPDATA%\Temp\<guid>` with no extension, and under `C:\Users\Franz Gerster\…` the
+   script fails with `'C:\Users\Franz' is not recognized`. Jim's laptop account is also named
+   "Franz Gerster", so his station fails the same way.
+
+So **published releases never reached a 0.5.4 or 0.7.1 station** (they are offered and then
+fail), and Jim's 0.5.4 cannot be updated except by hand. The data half passed: a manual 0.7.1
+install migrated Jim's copy (`fgscanner.db.bak-0.7.1` written, `integrity_check` ok, 20 groups /
+1,368 pages) and all 1,411 evidence files stayed byte-identical. Franz's NucBox data is
+restored; FG Scanner is **uninstalled from the NucBox** (2026-10-15) — it has no scanner and
+Franz now works on FGERSTERPC.
+
+**Franz's PC (FGERSTERPC)** — the development machine; Google Drive for Desktop runs here
+(`G:\My Drive`); `C:\Evidence-Scans` does not exist yet (Jim's 9/20 review copy is on
+`D:\Evidence-Scans` and stays untouched). Jim's workspace evidence goes to
+`C:\Evidence-Scans`, the path his database names, so no path is rewritten.
 
 **Transport research** — no existing channel but USB. Cloudflare Tunnel: 100 MB per request,
 CDN terms against bulk pictures. **Tailscale** (built into Unraid 7, free for 6 users) avoids
@@ -149,13 +184,70 @@ marked **Available offline** at setup; uploads resume after sleep or a dropped l
 bytes exactly and never merges, but a re-sent file of the same name becomes `name (1)` — so
 every pack goes in its own new folder and is never written twice. Drive gives no "upload
 finished" signal a script can read, so Jim's `OK` means *packed*, and Franz's `verify` is the
-receipt. Upload cap 750 GB/day (irrelevant here). Franz's NucBox already runs Drive for Desktop.
+receipt. Upload cap 750 GB/day (irrelevant here). Franz's PC already runs Drive for Desktop.
 
 **Not examined:** Jim's current data; his account type; whether Jim has a Google account
 (he uses Yahoo Mail — a Google account can be made on an existing Yahoo address); real reading
 speed on his laptop.
 
 ## 05 · Questions for Franz
+
+**Round C (2026-10-15, open)** — raised by the P1 rehearsal (§04). Everything Round B decided
+stands unless an item below changes it.
+
+*Blocking*
+
+1. **Q-C1 — How Jim's 0.8.0 reaches his laptop.** (a) **Through the Drive folder:** Franz puts
+   the 0.8.0 installer (from the release, hash checked against `SHA256SUMS`) in `to-jim\`; on
+   Teams with "give control", Jim closes FG Scanner, double-clicks it, clicks UAC, starts it,
+   reads out the version — the same steps as the rehearsal that passed. 0.8.0 does not have to
+   be published for this. (b) Jim downloads it from the GitHub release page in his browser
+   (0.8.0 must be published first, and he navigates GitHub). *Recommended:* (a) — the folder is
+   already set up in step 1, it is one double-click, and no release goes live.
+2. **Q-C2 — How 0.8.0 repairs the updater.** (a) **Keep NetSparkle for the check, the download
+   and the signature; FG Scanner runs the install itself:** after the download is verified it is
+   copied to `%TEMP%\FGScanner\update\fgscanner-<ver>-win-x64.exe`, started directly
+   (no `cmd` script, no path quoting, Windows shows UAC), and the app closes itself; Inno's
+   `CloseApplications` remains the backstop. (b) Wire NetSparkle's own close event and file
+   name and keep its script — still a 90-second wait inside a generated `.cmd` nobody logs. (c)
+   Remove auto-update; every release is a guided install. *Recommended:* (a): the three defects
+   all live in the script, so the script goes; the part that worked (signed check and download)
+   stays. Cost of (a): about half a day, one new class with its test.
+3. **Q-C3 — How the repaired updater is rehearsed without reaching Jim.** (a) **A pre-release:**
+   `release.yml` writes the version's own download link into the appcast
+   (`releases/download/v<ver>/…`, not `latest`); 0.8.0 reads an optional `FGSCANNER_APPCAST_URL`
+   that is honoured only for this repository's release links (signatures stay strict); v0.8.0
+   is first published as a GitHub **pre-release**, which `releases/latest` never serves, so no
+   station is offered it; on the spare, the same 0.8.0 code built locally and stamped 0.7.99
+   points at it and must reach 0.8.0 by pressing Yes. No extra test version exists; v0.8.0
+   becomes the Latest only at Q-C6. (b) No rehearsal: the first real test is Jim's next update, with Franz on
+   Teams. *Recommended:* (a): (b) is exactly how the broken updater went unnoticed for two
+   months. Cost of (a): a pre-release is public on GitHub like every release (the repository is
+   public), and one environment variable that the runbook documents.
+
+*Non-blocking (proceeding as stated unless corrected)*
+
+4. **Q-C4 — Processing on Franz's PC, not the NucBox.** `station verify`, the workspace `Jim`,
+   reading, Propose, commit, import and `station pack --kind return` all run on FGERSTERPC; Jim's
+   evidence there lives at `C:\Evidence-Scans`. The verified pack is copied to the Tower backup
+   as before.
+5. **Q-C5 — Rehearsals on the spare.** P11's 0.5.4 → 0.8.0 rehearsal and the updater rehearsal
+   run on WIN-G31UIM7G129 (`ssh spare`), which already holds Jim's 9/25 copy; Franz's own
+   station is never involved. For P11 the spare is reset: 0.5.4 reinstalled and its data
+   folder re-copied from the 9/25 original (hash checked).
+6. **Q-C6 — 0.8.0 is published only after Jim is on it.** Jim installs from `to-jim\` (Q-C1 a),
+   then 0.8.0 becomes the Latest, so later releases have a working updater to arrive through.
+   0.7.1 and 0.6.0 stay drafts (Q-B9 unchanged).
+7. **Q-C7 — The read-out code stays 4 characters.** It only confirms both sides read the same
+   manifest; every file's SHA-256 does the real checking, and the folder is shared with Jim
+   alone. 8 characters (`96da-41c3`) is a one-line change if you prefer it.
+8. **Q-C8 — The rule "published releases auto-update stations silently" is corrected** in
+   CLAUDE.md and memory: 0.5.4–0.7.1 are offered an update and cannot install it; from 0.8.0
+   they can. Release discipline (publish only at a cycle's return) stays.
+
+**What Revision C changed:** §01, §02 (outcome 6), §03 (items 1, 6, 9), §04 (update path,
+rehearsal, Franz's PC), §08, §10 (AC-1, AC-10, AC-11, AC-12), §12, §13, §15, §16 (R1, R8),
+§17, §18, §19, §20, §22.
 
 **Round B (2026-10-09, approve):** Q-B1 = **(c) Google Drive**; Q-B2 = **(c) not now** —
 Franz: "I need to do more research on seafile and nextcloud before i continue with either one of
@@ -245,7 +337,7 @@ No change to FG Scanner's database or the evidence contract. New files only:
 ## 08 · Architecture and approach
 
 ```
-Jim's laptop                    Google Drive shared folder     Franz's NucBox (workspace Jim)
+Jim's laptop                    Google Drive shared folder     Franz's PC (workspace Jim)
 "Send my scans to Franz"
   app closed, freeze checks
   hash all → manifest (basedOn)
@@ -290,9 +382,10 @@ No app UI beyond two Start-menu shortcuts and console output in plain words.
 
 ## 10 · Acceptance criteria
 
-> **AC-1** — Rehearsal: 0.5.4 on Jim's 9/25 data is offered the release, installs it through the
-> real prompt and UAC, starts it; 20 groups / 1,368 pages; `fgscanner.db.bak-<ver>` present;
-> no image changed by the first start. *Manual, §22.*
+> **AC-1** — Rehearsal: on Jim's 9/25 data, 0.5.4 is replaced by the new release through the
+> install Jim will use (Revision C: a guided manual install), and it starts; 20 groups / 1,368
+> pages; `fgscanner.db.bak-<ver>` present; `integrity_check` ok; no image changed by the first
+> start. *Manual, §22.* **Passed for 0.7.1 on 2026-10-15**; repeated for 0.8.0 in P11.
 
 > **AC-2** — `station pack` → `station verify` on an exact copy: 0 mismatches; a flipped byte, a
 > missing file and an extra file are each named. *`StationManifestTests`.*
@@ -320,8 +413,20 @@ No app UI beyond two Start-menu shortcuts and console output in plain words.
 > **AC-9** — `changes.jsonl` lists every changed cell between two databases.
 > *`StationChangeLogTests`.*
 
-> **AC-10** — First cycle with Jim: pack verified on the NucBox before the update; Jim on 0.8.0;
+> **AC-10** — First cycle with Jim: pack verified on Franz's PC before the update; Jim on 0.8.0;
 > the return applied; counts match. *Manual, §22.*
+
+> **AC-11** — After Yes, the updater copies the verified download to
+> `%TEMP%\FGScanner\update\fgscanner-<ver>-win-x64.exe`, starts it directly with
+> `/VERYSILENT /NORESTART` (no `cmd`, no script), and the app shuts down; a profile path with a
+> space and a download with no extension both work; a start that fails (UAC refused) is logged
+> and the app stays open. Installer only from the release's own link; the appcast override is
+> refused unless it is this repository's release link. *`UpdateInstallerTests`.*
+
+> **AC-12** — Updater rehearsal on the spare: the 0.8.0 code built locally as 0.7.99, pointed
+> at v0.8.0 published as a **pre-release**, is offered it; Yes → UAC → the app closes; 0.8.0
+> starts on the next launch with its data intact; `releases/latest/download/appcast.xml` still
+> names 0.5.4 before and after. *Manual, P11.*
 
 ## 11 · Test strategy
 
@@ -346,6 +451,9 @@ PowerShell sender is checked by a test that packs a fixture and verifies it with
 | Release published mid-cycle | apply refuses on version mismatch | apply, Q-B9 |
 | Jim clicks No on the update | nothing changes; asks next start | UpdateService |
 | Installer aborts | data untouched; re-run from the release page with Franz on Teams | runbook |
+| A release is published while Jim is still on 0.5.4 | he is offered it; Yes downloads ~150 MB and nothing else happens (the P1 defects); no data touched | §04, Q-C6 |
+| UAC refused after Yes on 0.8.0 | the install does not start; the app stays open and logs it; asks again next start | AC-11 |
+| The app cannot close (a sheet in hand, a modal open) | the updater waits for the normal shutdown path; a capture in hand is never abandoned to install | AC-11, P8b |
 
 ## 13 · Security and configuration
 
@@ -353,9 +461,12 @@ Privileged evidence leaves Jim's laptop through Google Drive (Franz's decision, 
 encrypted in transit and at rest by Google, but **Google holds a copy while it is in the
 folder**. So: the folder is shared with Jim's account only (restricted, no "anyone with the
 link"); each pack is deleted from the folder **and from Drive's bin** once it is verified on
-Franz's side (`to-franz`) or applied on Jim's (`to-jim`), and the verified copy lives on the
-NucBox and the Tower backup instead. The NucBox workspace copy is kept until the import, then
-the Tower copy is the record. No credential in any script, repo or chat; Jim's Google password
+Franz's side (`to-franz`) or applied on Jim's (`to-jim`), and the verified copy lives on
+Franz's PC and the Tower backup instead. The workspace copy on Franz's PC is kept until the
+import, then the Tower copy is the record. The installer placed in `to-jim\` (Q-C1) is checked
+against the release's `SHA256SUMS` before and after it travels, and deleted with the folder's
+other contents. The appcast override (Q-C3) accepts only
+`https://github.com/fgerster1/fgScanner/releases/download/…`; the Ed25519 check is unchanged. No credential in any script, repo or chat; Jim's Google password
 is his own, entered by him. Counsel to be told that packs pass through Google Drive.
 
 ## 14 · Observability
@@ -366,25 +477,38 @@ beside the manifest; every return carries `changes.jsonl` and the needs-Jim shee
 ## 15 · Performance and scale
 
 Hashing ~2–3 min on Jim's laptop for ~2 GB; cycle 1 upload ~15 min per 1.6 GB; later cycles the
-database plus new pages (~1.15 MB each). Reading on the NucBox ~1.1 s per page.
+database plus new pages (~1.15 MB each). Reading measured on the NucBox at ~1.1 s per page;
+Franz's PC not yet measured (P11 records it).
 
 ## 16 · Regression risk
 
 | # | What could break | Why | Mitigation |
 |---|---|---|---|
-| R1 | Jim's app does not start after the update | auto-update never used end to end | rehearsal on his data; backup verified first; re-run path |
+| R1 | Jim's app does not start after the update | a new version on his data | the same manual install rehearsed on his data (passed for 0.7.1); backup verified first; re-run path |
 | R2 | Evidence lost when the database is swapped | new pages on Jim's side not in Franz's copy | freeze check refuses |
 | R3 | Jim's settings overwritten | settings live in the database | apply keeps them; test |
 | R4 | Franz's account name stamped on Jim's evidence | `CapturedBy`/Operator default to the Windows user | no captures in Franz's workspace; Operator set explicitly; change log |
-| R5 | A committed group imported twice | committed on NucBox, later again from Jim | the portal ledger refuses a sealed batch; tested in P12 |
+| R5 | A committed group imported twice | committed on Franz's PC, later again from Jim | the portal ledger refuses a sealed batch; tested in P12 |
 | R6 | Schema skew | releases between cycles | version/migration gate; CI ladder |
 | R7 | Workspace switch breaks Franz's own station | new path plumbing | default unchanged when no `--data-dir`; test |
+| R8 | The repaired updater closes the app mid-capture, or installs something unsigned | it now owns the install and the shutdown | the download is used only after NetSparkle's strict check; shutdown goes through the normal close path; AC-11 tests; AC-12 rehearsal |
+| R9 | A rehearsal release reaches Jim | a published release is offered to every station | v0.8.0 is a pre-release until Jim runs it, and `releases/latest` never serves a pre-release; the checkpoint reads the Latest appcast before and after |
 
 ## 17 · Migration and rollback
 
-**Phase 1 — rehearsal (NucBox, in progress):** finish 0.5.4 → 0.7.1 on Jim's 9/25 data
-(Franz publishes; the session may not), then put 0.7.1 back to draft and restore Franz's own
-data folder. Repeat with 0.8.0 before Jim.
+**Phase 1 — rehearsal: done 2026-10-15** on the spare WIN-G31UIM7G129 (§04). Data half passed;
+auto-update failed; both releases back to draft (0.5.4 is the Latest). Franz's NucBox data
+restored and FG Scanner uninstalled there. Repeated with 0.8.0 in P11, on the spare.
+
+**Phase 2 — the updater rehearsal (P11, Revision C):**
+1. `[Franz]` Publish v0.8.0 as a **pre-release** (Claude gives the command:
+   `gh release edit v0.8.0 --draft=false --prerelease`).
+2. `[Claude]` Confirm `releases/latest/download/appcast.xml` still names 0.5.4.
+3. `[Claude]` On the spare: install the local 0.7.99 build of the same code; set
+   `FGSCANNER_APPCAST_URL` to v0.8.0's own appcast for that account only.
+4. `[Franz]` Start FG Scanner on the spare → Yes → UAC. The app closes by itself.
+5. `[Claude]` Start it again: 0.8.0, data intact, log shows the install. Remove the variable.
+6. `[Claude]` Confirm the Latest appcast still names 0.5.4. v0.8.0 stays a pre-release.
 
 **Phase 3 — the first cycle:**
 1. `[Franz]` On Teams with Jim: Jim's Google account (made on his Yahoo address if he has
@@ -392,10 +516,13 @@ data folder. Repeat with 0.8.0 before Jim.
    `FGScanner-Jim` with that account; Jim adds it to his Drive; `to-jim` marked Available
    offline. Confirm his account can approve UAC. Collect Box values.
 2. `[Jim]` FG Scanner closed → run the 0.5.4 sender (placed by Franz) → "OK 1234".
-3. `[Claude]` `station verify` on the NucBox: 0 mismatches = Jim's backup.
-4. `[Franz]` Publish 0.8.0. `[Jim]` start FG Scanner → Yes → UAC → start again.
-5. `[Claude/Franz]` Process in workspace Jim; commit what is finishable; import into the portal;
-   `station pack --return`.
+3. `[Claude]` `station verify` on Franz's PC: 0 mismatches = Jim's backup.
+4. `[Claude]` Download the 0.8.0 installer from the release, check it against `SHA256SUMS`, put
+   it in `to-jim\`. `[Jim]` (Franz on "give control") FG Scanner closed → double-click the
+   installer → **Yes** on UAC → start FG Scanner → read out the version and group count.
+   `[Franz]` Publish 0.8.0 as the Latest (`gh release edit v0.8.0 --prerelease=false --latest`).
+5. `[Claude/Franz]` Process in workspace Jim on Franz's PC; commit what is finishable; import
+   into the portal; `station pack --return`.
 6. `[Jim]` "Install Franz's update" → "OK 5678". `[Franz]` check counts on Teams.
 
 **Rollback:** apply keeps the replaced database and files aside; restoring them is one command.
@@ -406,21 +533,29 @@ group's commit (renames and index files) — already the case today.
 
 - **CLAUDE.md (FG Scanner)** — stations exchange data only by `station pack/verify/apply`;
   never sync a live folder; releases published only at a cycle's return; `--data-dir` for a
-  second station; no captures in another station's workspace.
-- **New** `docs/station-round-trip.md` (both sides, tagged steps) and an ADR for the manifest.
-- **`docs/release.md`** — every release is rehearsed on Jim's latest pack before publishing.
-- **JimsStuff `docs/fgscanner-import-runbook.md`** — committed groups arrive from the NucBox
-  workspace, with `changes.jsonl`.
-- **Memory** — the cycle and the transport.
+  second station; no captures in another station's workspace. **And (Revision C):** 0.5.4–0.7.1
+  stations are offered updates but cannot install them; the updater installs by starting the
+  verified file itself, never through a generated script; a release is rehearsed as a
+  pre-release before it becomes the Latest.
+- **New** `docs/station-round-trip.md` (both sides, tagged steps) and an ADR for the manifest,
+  plus an ADR for the updater repair (why the script went, why pre-releases).
+- **`docs/release.md`** — every release is rehearsed on Jim's latest pack before publishing;
+  the pre-release step and `FGSCANNER_APPCAST_URL`.
+- **JimsStuff `docs/fgscanner-import-runbook.md`** — committed groups arrive from the workspace
+  on Franz's PC, with `changes.jsonl`.
+- **Memory** — the cycle and the transport; auto-update broken before 0.8.0 (done 2026-10-15).
 
 ## 19 · Phase plan
 
-### Phase 1 — Prove the update path (now)
-Finish the 0.7.1 rehearsal; record. **Not here:** anything on Jim's laptop.
+### Phase 1 — Prove the update path (done 2026-10-15)
+The 0.7.1 rehearsal; recorded. It found the updater broken (§04). **Not here:** anything on
+Jim's laptop.
 
 ### Phase 2 — Build 0.8.0
-Workspace switch; station verbs; first-cycle sender; shortcuts; CI ladder; reviews; release
-drafted and rehearsed 0.5.4 → 0.8.0 on Jim's 9/25 data. **Not here:** Jim's data.
+Workspace switch; station verbs; first-cycle sender; shortcuts; CI ladder; the updater repair;
+reviews; release drafted, rehearsed 0.5.4 → 0.8.0 on Jim's 9/25 data (manual install) and
+0.7.99 → 0.8.0 through the repaired updater (pre-release). **Not here:** Jim's data; v0.8.0 as
+the Latest.
 
 ### Phase 3 — The first cycle
 Google Drive set up with Jim, pack, verify, update, process, import, return, apply.
@@ -428,11 +563,14 @@ Google Drive set up with Jim, pack, verify, update, process, import, return, app
 ## 20 · Prompt pack
 
 [SPEC-SCANNER-2026-010-jim-remote-update-and-data-PROMPTS.md](./SPEC-SCANNER-2026-010-jim-remote-update-and-data-PROMPTS.md)
-— 12 prompts: P1 finish rehearsal · P2 `StationPaths`/`--data-dir` · P3 manifest + verify ·
-P4 pack (delta, renames, freeze record) · P5 apply (gates, settings kept, atomic, rollback) ·
-P6 change log + needs-Jim sheet · P7 first-cycle sender (PowerShell) + shortcuts · P8 CI
-migration ladder · P9 code review · P10 security review · P11 release 0.8.0 draft + rehearsal ·
-P12 the first cycle with Jim.
+— 13 prompts: P1 finish rehearsal (done) · P2 `StationPaths`/`--data-dir` (done) · P3 manifest +
+verify (done) · P4 pack (delta, renames, freeze record) · P5 apply (gates, settings kept,
+atomic, rollback) · P6 change log + needs-Jim sheet · P7 first-cycle sender (PowerShell) +
+shortcuts · P8 CI migration ladder · **P8b the updater repair (AC-11; versioned appcast link;
+the override)** · P9 code review · P10 security review · P11 release 0.8.0 draft + both
+rehearsals on the spare · P12 the first cycle with Jim (manual install from `to-jim\`).
+Thirteen prompts is the "too big" line; P1–P3 are already done, so ten remain — roughly three
+days.
 
 ## 21 · Definition of done
 
@@ -449,7 +587,7 @@ P12 the first cycle with Jim.
 
 | | |
 |---|---|
-| **Review round answered** | ☑ Round A 2026-10-09 (revise) — https://claude.ai/artifact/LTKoCtnKXZZTsoEZQVNBpV · ☑ Round B 2026-10-09 (approve) — https://claude.ai/artifact/EjYRfaTz1UDJ1zQHuQzEPi (doc SPEC-SCANNER-2026-010-rB) |
+| **Review round answered** | ☑ Round A 2026-10-09 (revise) — https://claude.ai/artifact/LTKoCtnKXZZTsoEZQVNBpV · ☑ Round B 2026-10-09 (approve) — https://claude.ai/artifact/EjYRfaTz1UDJ1zQHuQzEPi (doc SPEC-SCANNER-2026-010-rB) · ☐ Round C 2026-10-15 (Revision C) — doc SPEC-SCANNER-2026-010-rC |
 | **Franz approved** | ☑ date: 2026-10-09 (Round B) |
 | **Built** | ☐ date: |
 | **Verified in production** | ☐ date: |
