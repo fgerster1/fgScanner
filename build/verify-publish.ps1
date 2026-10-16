@@ -23,9 +23,13 @@ Check ((Test-Path $config) -and ((Get-Content $config -Raw) -match '"includedFra
 $cli = Join-Path $Dir 'cli/fgscanner.exe'
 Check (Test-Path $cli) 'the CLI is in cli\'
 
-# Beside the app's bundled hostfxr, the CLI's host takes the app folder for a .NET install and
-# finds no framework there. In its own folder it finds the machine's.
-Check (-not (Test-Path (Join-Path $Dir 'cli/hostfxr.dll'))) 'no bundled .NET beside the CLI'
+# Jim's station shortcuts run the CLI on a laptop with no .NET installed (SPEC-SCANNER-2026-010,
+# found on the spare rehearsing 0.8.0): a framework-dependent CLI stops there with "You must
+# install .NET", and every check on a developer PC passes because .NET is installed on it.
+$cliConfig = Join-Path $Dir 'cli/fgscanner.runtimeconfig.json'
+Check ((Test-Path (Join-Path $Dir 'cli/hostfxr.dll')) -and (Test-Path $cliConfig) -and
+    ((Get-Content $cliConfig -Raw) -match '"includedFrameworks"')) `
+    'the CLI carries its own .NET (a self-contained runtimeconfig in cli\)'
 
 $naps2 = @(Get-ChildItem $Dir -File -Filter 'NAPS2.*.dll')
 Check ($naps2.Count -ge 6) "NAPS2 assemblies separate (LGPL): $($naps2.Count) found"

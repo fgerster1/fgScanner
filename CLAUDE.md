@@ -46,6 +46,7 @@ FgScanner.Cli  (headless fgscanner.exe; Core/Scanning/Data/Ocr/Ai — never App/
 - Never reference: `NAPS2.Images.ImageSharp`, `FluentAssertions` ≥8, `iText*`, `EPPlus` ≥5, `Emgu.CV`, `System.Data.SQLite`.
 - Never merge/bundle NAPS2.* DLLs into a single file (LGPL separation); publish profile stays non-single-file, non-trimmed.
 - **The CLI publishes to `cli\`, never beside the app.** `fgscanner.exe` and `FgScanner.exe` differ only in case, so one folder means the CLI overwrites the app — release 0.5.2 shipped that way, unnoticed because local builds never publish the CLI. `build/verify-publish.ps1` guards it in `release.yml`; install and start a draft release before publishing it.
+- **The CLI is self-contained.** Jim's station shortcuts run it on a laptop with no .NET installed; 0.8.0 shipped it framework-dependent and it stopped there with "You must install .NET" — invisible on any PC with the SDK. `verify-publish.ps1` checks it, and a draft is rehearsed on the spare, which has no .NET.
 
 **Code:**
 - Comments explain *why*, never what. Validate at boundaries (user input, files, external APIs) only. No features beyond the task.
@@ -188,7 +189,7 @@ the JimsStuff portal (`JimsStuff/pipeline/import_fgscanner.py`) parses committed
   empty value cannot name its target, removal is phase 5's web UI; delete-after-
   confirm arms only while an export covers every current answer. The flag stays OFF
   in every published release until the portal's phase 5 can import the results
-  (once Jim is on 0.8.0 his station auto-updates — the flag, not release discipline, is the fence).
+  (once Jim is on 0.8.1 his station auto-updates — the flag, not release discipline, is the fence).
   ADR-0014.
   **A batch arrives as one zip (ADR-0015):** "Open batch…" extracts it to
   `%LOCALAPPDATA%\FGScanner\index-packages\<id>` and opens that folder through the
@@ -212,8 +213,8 @@ the JimsStuff portal (`JimsStuff/pipeline/import_fgscanner.py`) parses committed
   empty station, rebuilds triggers and views, and refuses any folder path outside the evidence
   root. Jim confirms an 8-character code before apply changes anything.
 - **Updates (ADR-0018):** 0.5.4–0.7.1 are offered updates but cannot install them (NetSparkle's
-  generated script never ran the installer); from 0.8.0 `UpdateInstaller` starts the
-  signature-checked file itself. A release is published as a **pre-release** first and rehearsed
+  generated script never ran the installer); from 0.8.1 (0.8.0 was never published)
+  `UpdateInstaller` starts the signature-checked file itself. A release is published as a **pre-release** first and rehearsed
   on the spare with `FGSCANNER_APPCAST_URL` (only this repo's `releases/download/…` links) — it
   becomes the Latest, and so reaches Jim, only at a cycle's return. Every release adds a rung to
   `tests/FgScanner.Data.Tests/fixtures/ladder/` (`docs/release.md`).

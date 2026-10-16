@@ -127,7 +127,8 @@ Scan; the work is split into three specs.
   `CommitHook` off (`src/FgScanner.Data/FeatureFlags.cs`). — S
 - **Batch/row field rule reimplemented** in validation and search instead of the shared helper
   (`docs/adr/0004-field-scope.md:51`). — S
-- **CLI needs the .NET 10 runtime** (framework-dependent publish, `release.yml:35`). — S
+- ~~**CLI needs the .NET 10 runtime**~~ — fixed in 0.8.1: the CLI is published self-contained,
+  because Jim's station shortcuts run it on a laptop with no .NET.
 - **Clutter**: `ss1.html` in the repo root; stale 0.1.0 publish folder (`manual-tests.md:240-244`). — S
 - **Bookkeeping**: the Phase 19 plan shows 74 unticked boxes though merged. — S
 

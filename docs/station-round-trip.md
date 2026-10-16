@@ -39,11 +39,11 @@ is never edited — a refused one is made again.
 2. **[Claude]** When Drive has finished: `fgscanner station verify <pack>` on Franz's PC → `OK`
    with **the same code**. That pack is Jim's backup: copy it to the Tower backup, then delete
    it from Drive **and from Drive's bin**.
-3. **[Claude]** Download the 0.8.0 installer from the release, check it against `SHA256SUMS`,
+3. **[Claude]** Download the 0.8.1 installer from the release, check it against `SHA256SUMS`,
    put it in `to-jim`. **[Jim]** close FG Scanner → double-click it → **Yes** on UAC → start FG
    Scanner once (this updates his database) → close it → read out the version. During setup tick
    "This is Jim's station" and confirm the Drive folder. **[Franz]**
-   `gh release edit v0.8.0 --prerelease=false --latest`. Delete the installer from `to-jim`.
+   `gh release edit v0.8.1 --prerelease=false --latest`. Delete the installer from `to-jim`.
 4. **[Claude/Franz]** Open the send into an empty workspace:
    `fgscanner station apply <pack> --data-dir <workspace> --evidence C:\Evidence-Scans`
    (the evidence folder is always typed — a pack never chooses where files land). Process
@@ -58,7 +58,7 @@ is never edited — a refused one is made again.
    Then `OK xxxx-xxxx`. **[Franz]** checks Jim's group count on Teams. Delete the return from
    Drive and its bin.
 
-## Later cycles (Jim on 0.8.0 or newer)
+## Later cycles (Jim on 0.8.1 or newer)
 
 The same, with the shortcuts only: Jim's "Send my scans to Franz" ships only what Franz lacks
 (a second send with nothing new is the database alone); Franz applies the send into the

@@ -27,7 +27,7 @@ cmd split at the space. Jim's laptop account has the same name.
 
 ## Consequences
 
-- Jim's first move to 0.8.0 is a guided manual install; every later release can arrive by
+- Jim's first move to 0.8.1 is a guided manual install; every later release can arrive by
   itself.
 - A stuck FG Scanner in another Windows session still blocks an install (Inno's
   `CloseApplications` cannot reach it) — seen on the spare 2026-10-16.

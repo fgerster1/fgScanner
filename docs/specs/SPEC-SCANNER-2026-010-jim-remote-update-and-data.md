@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Approved — Revision D approved in Round D 2026-10-16 (every recommendation taken) |
-| **Revision** | D — 2026-10-16: the Prompt 9 and 10 reviews' 23 findings (15 decided by the spec, 8 decided in Round D — no open items). C — 2026-10-15: the P1 rehearsal found auto-update broken in 0.5.4 and 0.7.1, so Jim's 0.8.0 arrives as a guided manual install, 0.8.0 fixes the updater (test first, rehearsed without reaching Jim), and processing moves from the NucBox to Franz's PC. B — 2026-10-09: rebuilt around Round A; approved in Round B with the Google Drive transport |
+| **Revision** | E — 2026-10-16: the 0.8.0 draft's CLI needed .NET installed; Jim gets 0.8.1 (a bug against §08 — no open items). D — 2026-10-16: the Prompt 9 and 10 reviews' 23 findings (15 decided by the spec, 8 decided in Round D — no open items). C — 2026-10-15: the P1 rehearsal found auto-update broken in 0.5.4 and 0.7.1, so Jim's 0.8.0 arrives as a guided manual install, 0.8.0 fixes the updater (test first, rehearsed without reaching Jim), and processing moves from the NucBox to Franz's PC. B — 2026-10-09: rebuilt around Round A; approved in Round B with the Google Drive transport |
 | **Tier** | System — it changes the software on Jim's live evidence station and moves evidence between machines |
 | **Author** | Claude, for Franz Gerster |
 | **Date** | 2026-10-09 |
@@ -234,6 +234,14 @@ station and evidence are on different drives (P10-6); R-6 a crash in apply is no
 R-7 test gaps (the 0.5.4 sender's real lock path, D6's full re-send); R-8 the 150 MB copy may block
 the window → off the UI thread; R-9 an app started during an apply exits silently — that is D5 (a)
 as decided, kept.
+
+**Revision E — the 0.8.0 draft on the spare** (P11, 2026-10-16). One finding, a bug against what
+the spec already decided (§08: Jim's shortcuts run the station verbs on his laptop) — no decision
+needed, no round.
+
+| # | Finding (file:line) | Kind | Fix | Prompt |
+|---|---|---|---|---|
+| E-1 | `release.yml:39` publishes the CLI `--self-contained false`; the spare (no .NET, like Jim's laptop) stops "Install Franz's update" with "You must install .NET". Every earlier rehearsal copied a self-contained CLI by hand, and FGERSTERPC has the SDK, so nothing saw it | bug against §08 | CLI published self-contained into `cli\`; `verify-publish.ps1` requires `cli\hostfxr.dll` and an `includedFrameworks` runtimeconfig (red on the 0.8.0 payload, green on the fix); the release is **0.8.1** and the 0.8.0 draft is never published | P11 |
 
 **Decided in Round D (2026-10-16, approve — every recommendation (a), no notes):**
 - **D1 — Settings an empty station takes from a pack.** (a) **None:** delete every Settings row from
