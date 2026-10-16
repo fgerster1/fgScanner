@@ -6,6 +6,10 @@ checkpoint is run and logged by Claude, which goes straight on unless the prompt
 
 Approved 2026-10-09 in Round B (https://claude.ai/artifact/EjYRfaTz1UDJ1zQHuQzEPi), with the
 transport changed to a **Google Drive shared folder** and the storage platform deferred.
+**Revision C approved 2026-10-16 in Round C** (https://claude.ai/artifact/GwvbCJH8cwXBG9KcVAb5yt):
+P1 proved auto-update broken in 0.5.4 and 0.7.1, so Jim installs 0.8.0 by hand from `to-jim\`,
+P8b repairs the updater, P11 rehearses both paths on the spare WIN-G31UIM7G129 (`ssh spare`),
+and verify/processing run on Franz's PC (FG Scanner is uninstalled from the NucBox).
 Not tracked in Linear (FG Scanner work stays out of it).
 
 **Rules for every prompt** (CLAUDE.md, and what earlier specs learned):
@@ -29,14 +33,15 @@ Not tracked in Linear (FG Scanner work stays out of it).
 - Continuous: run each checkpoint; when green, commit (`SPEC-SCANNER-2026-010 P<n>: …`), add a
   line to the Run log at the bottom, and go on. Stop only at a prompt's `Franz stop`.
 
-**Run order — Franz stops:** P1 (publish 0.7.1, click UAC, put it back to draft — outward,
-physical) · P11 (push the branch, merge, tag 0.8.0; click UAC in the rehearsal — outward,
-physical) · P12 (the cycle with Jim on Teams — physical; publish 0.8.0 — outward). P9/P10
-stop only if a finding needs a decision the spec didn't make. P2–P8 run straight through.
+**Run order — Franz stops:** P1 (done 2026-10-15) · P11 (push the branch, merge, tag 0.8.0;
+publish v0.8.0 as a **pre-release**; click UAC on the spare in both rehearsals — outward,
+physical) · P12 (the cycle with Jim on Teams — physical; make v0.8.0 the Latest after Jim runs
+it — outward). P9/P10 stop only if a finding needs a decision the spec didn't make. P2–P8b run
+straight through.
 
 ---
 
-PROMPT 1 of 12 — Finish the 0.5.4 → 0.7.1 update rehearsal
+PROMPT 1 of 13 — Finish the 0.5.4 → 0.7.1 update rehearsal  [DONE 2026-10-15 on the spare — see the Run log; kept as written for the record]
 Spec: §04 (Rehearsal state), §10 AC-1, §17 Phase 1    Phase: 1    Depends on: —
 Franz stop: Outward action + Physical — Franz publishes v0.7.1, clicks UAC, then sets it back to draft
 
@@ -69,7 +74,7 @@ CHECKPOINT 1 — Claude runs and records:
 
 ---
 
-PROMPT 2 of 12 — A second station on one machine: `StationPaths` and `--data-dir`
+PROMPT 2 of 13 — A second station on one machine: `StationPaths` and `--data-dir`
 Spec: §03 item 1, §04 (One station per Windows account), §10 AC-7, §16 R7    Phase: 2    Depends on: P1
 Franz stop: none
 
@@ -100,7 +105,7 @@ CHECKPOINT 2 — Claude runs and records:
 
 ---
 
-PROMPT 3 of 12 — The station manifest and `station verify`
+PROMPT 3 of 13 — The station manifest and `station verify`
 Spec: §07 (`station-manifest.json`), §08, §10 AC-2    Phase: 2    Depends on: P2
 Franz stop: none
 
@@ -126,7 +131,7 @@ CHECKPOINT 3 — Claude runs and records:
 
 ---
 
-PROMPT 4 of 12 — `station pack`: delta, renames, freeze record
+PROMPT 4 of 13 — `station pack`: delta, renames, freeze record
 Spec: §07, §08, §10 AC-3, AC-4, §12    Phase: 2    Depends on: P3
 Franz stop: none
 
@@ -156,7 +161,7 @@ CHECKPOINT 4 — Claude runs and records:
 
 ---
 
-PROMPT 5 of 12 — `station apply`: the gates, Jim's settings kept, atomic swap, rollback
+PROMPT 5 of 13 — `station apply`: the gates, Jim's settings kept, atomic swap, rollback
 Spec: §07 (kept on apply), §10 AC-5, AC-6, §12, §16 R2/R3, §17 Rollback    Phase: 2    Depends on: P4
 Franz stop: none
 
@@ -184,7 +189,7 @@ CHECKPOINT 5 — Claude runs and records:
 
 ---
 
-PROMPT 6 of 12 — The change log and the needs-Jim sheet
+PROMPT 6 of 13 — The change log and the needs-Jim sheet
 Spec: §07 (`changes.jsonl`), §10 AC-9, Q-B8, C-B3    Phase: 2    Depends on: P5
 Franz stop: none
 
@@ -208,7 +213,7 @@ CHECKPOINT 6 — Claude runs and records:
 
 ---
 
-PROMPT 7 of 12 — The first-cycle sender for 0.5.4, and Jim's two shortcuts
+PROMPT 7 of 13 — The first-cycle sender for 0.5.4, and Jim's two shortcuts
 Spec: §03 items 3–4, §08, §11 (sender agrees with the C# verb), §12    Phase: 2    Depends on: P6
 Franz stop: none
 
@@ -237,7 +242,7 @@ CHECKPOINT 7 — Claude runs and records:
 
 ---
 
-PROMPT 8 of 12 — CI migration ladder
+PROMPT 8 of 13 — CI migration ladder
 Spec: §03 item 7, §10 AC-8, §16 R6    Phase: 2    Depends on: P7
 Franz stop: none
 
@@ -258,12 +263,55 @@ CHECKPOINT 8 — Claude runs and records:
 
 ---
 
-PROMPT 9 of 12 — Code review  [COLD READER: run it in a subagent]
+PROMPT 8b of 13 — The updater repair
+Spec: §03 item 9, §04 (update path), §10 AC-11, §12, §13, §16 R8/R9, §05 Q-C2/Q-C3    Phase: 2    Depends on: P8
+Franz stop: none
+
+Already done if: `UpdateInstallerTests` pass, `UpdateService` never calls NetSparkle's
+`InstallUpdate`, and `release.yml` writes a `releases/download/v<ver>/` link into the appcast.
+
+Do only this:
+1. Tests first, in `tests/FgScanner.App.Tests/UpdateInstallerTests.cs` (the project keeps tests flat), against a new
+   `UpdateInstaller` that takes the process starter and the shutdown as seams (no real installer
+   runs in a test):
+   - a downloaded file with no extension under a profile path with a space is copied to
+     `%TEMP%\FGScanner\update\fgscanner-<ver>-win-x64.exe` (atomically) and started with
+     `FileName` = that path, `Arguments` = `/VERYSILENT /NORESTART`, `UseShellExecute = true`
+     (so Windows raises UAC) — no `cmd`, no script;
+   - after a successful start the app's normal shutdown is requested; a start that throws
+     (UAC refused: `Win32Exception` 1223) is logged, nothing shuts down, and the copy is removed;
+   - the appcast override `FGSCANNER_APPCAST_URL` is used only when it starts with
+     `https://github.com/fgerster1/fgScanner/releases/download/`; anything else is ignored
+     and logged, and the built-in Latest URL is used.
+2. Make them pass: `UpdateInstaller`; in `UpdateService` replace
+   `DownloadFinished += … InstallUpdate(…)` with `UpdateInstaller`, and read the override where
+   the URL is used. The shutdown goes through the app's existing close path, so a capture in
+   hand or a duplex/annotated sequence is never abandoned (CLAUDE.md) — if the close is
+   cancelled, the installer has already started and Inno's `CloseApplications` asks; record
+   which happens in the Run log.
+3. `release.yml:140`: `-u https://github.com/fgerster1/fgScanner/releases/download/v${{ steps.ver.outputs.version }}/`
+   so a pre-release's appcast points
+   at its own installer.
+4. A real-exe check on this PC: build Release, run `UpdateInstaller` against a dummy signed-off
+   `.exe` that writes a marker file, under a temp folder with a space — marker written, app
+   process gone.
+
+Do NOT in this prompt: change the signature check or the public key; change the installer
+script; publish anything.
+
+CHECKPOINT 8b — Claude runs and records:
+  · `UpdateInstallerTests` → red first (type missing), then green
+  · `grep InstallUpdate src/` → nothing; `release.yml` appcast link is versioned
+  · full suite green; Release 0 warnings; format clean
+
+---
+
+PROMPT 9 of 13 — Code review  [COLD READER: run it in a subagent]
 Spec: SPEC-SCANNER-2026-010    Depends on: P8
 Franz stop: only if a finding needs a decision the spec didn't make (Spec revision)
 
 Launch a subagent with the spec path and the range `61f367b..HEAD`. It runs `/code-review max`
-over P2–P8, then checks compliance with §10: does the code do what the spec says, and only
+over P2–P8b, then checks compliance with §10: does the code do what the spec says, and only
 that? Drift is a bug or a spec revision — say which.
 
 Findings the approved spec already decides: fix them as P9a, P9b… and continue. Findings
@@ -275,7 +323,7 @@ CHECKPOINT 9 — Claude runs and records:
 
 ---
 
-PROMPT 10 of 12 — Security review  [COLD READER: run it in a subagent]
+PROMPT 10 of 13 — Security review  [COLD READER: run it in a subagent]
 Spec: §13, §12    Depends on: P9
 Franz stop: only if a finding needs a decision (Spec revision)
 
@@ -290,7 +338,7 @@ CHECKPOINT 10 — Claude runs and records:
 
 ---
 
-PROMPT 11 of 12 — Release 0.8.0: docs, draft, and the 0.5.4 → 0.8.0 rehearsal
+PROMPT 11 of 13 — Release 0.8.0: docs, draft, and the 0.5.4 → 0.8.0 rehearsal
 Spec: §18, §19 Phase 2, §17 Phase 1 ("repeat with 0.8.0"), §10 AC-1    Depends on: P10
 Franz stop: Outward action + Physical — Franz pushes the branch, merges after CI is green, pushes the tag; clicks UAC in the rehearsal
 
@@ -303,23 +351,35 @@ Do only this:
    `docs/station-round-trip.md` (both sides, tagged `[Jim]`/`[Franz]`/`[Claude]` steps, the
    Google Drive setup and clean-up from §13 and §17); an ADR for the station manifest;
    `docs/release.md`; JimsStuff `docs/fgscanner-import-runbook.md` (committed groups arrive
-   from the NucBox workspace with `changes.jsonl`); `docs/FEATURE-PARITY.md`.
+   from the workspace on Franz's PC with `changes.jsonl`); `docs/FEATURE-PARITY.md`. Revision C
+   (Q-C8): CLAUDE.md says 0.5.4–0.7.1 are offered updates but cannot install them, the updater
+   starts the verified file itself, and a release is a pre-release until rehearsed; an ADR for
+   the updater repair; `docs/release.md` gains the pre-release step and `FGSCANNER_APPCAST_URL`.
 2. Bump `<Version>` to 0.8.0; give Franz the push and merge commands; after CI, the tag.
 3. When the draft is built: run `build/verify-publish.ps1` on it; download, install and start
-   it on the NucBox (CLAUDE.md: install and start a draft before publishing).
-4. Rehearse on Jim's 9/25 copy in a `--data-dir` workspace: the 0.5.4 sender → verify →
-   0.8.0 opens it (migrates) → set one Box, commit nothing → return pack → apply into a second
-   copy standing in for Jim's laptop → counts and settings match. Franz's own station is not touched.
-5. Do **not** publish 0.8.0 — that happens in P12 after Jim's pack is verified (Q3, Q-B9).
+   it on the spare (CLAUDE.md: install and start a draft before publishing).
+4. Rehearse on the spare (Q-C5), reset first: reinstall 0.5.4 and re-copy its data from the 9/25
+   original (hash checked). Then: the 0.5.4 sender → verify on Franz's PC → **manual** install of
+   0.8.0 as Jim will do it (AC-1) → 0.8.0 opens it (migrates) → in a `--data-dir` workspace on
+   Franz's PC set one Box, commit nothing → return pack → apply on the spare → counts and
+   settings match. Franz's own station is not touched. Record reading speed on Franz's PC (§15).
+5. The updater rehearsal (AC-12, §17 Phase 2): give Franz
+   `! gh release edit v0.8.0 --draft=false --prerelease`; confirm
+   `releases/latest/download/appcast.xml` still names 0.5.4; on the spare install a local build
+   of the same code stamped 0.7.99, set `FGSCANNER_APPCAST_URL` (user scope) to v0.8.0's own
+   appcast; Franz starts it → Yes → UAC; the app closes itself; start again → 0.8.0, data
+   intact; remove the variable; confirm the Latest appcast still names 0.5.4.
+6. Do **not** make 0.8.0 the Latest — that happens in P12 after Jim is running it (Q-C6).
 
 CHECKPOINT 11 — Claude runs and records:
   · CI on the branch green (Franz reports or `gh run list`)
   · `gh release view v0.8.0 --json isDraft,assets` → draft, installer + appcast present; signature verified against 0.5.4's key
   · the rehearsal: sender `OK`, verify `OK` same code, apply `OK`, 0 hash mismatches, Jim's Settings rows unchanged
+  · the updater rehearsal: 0.7.99 → 0.8.0 by Yes alone; Latest appcast names 0.5.4 before and after; v0.8.0 `isPrerelease: true`
 
 ---
 
-PROMPT 12 of 12 — The first cycle with Jim
+PROMPT 12 of 13 — The first cycle with Jim
 Spec: §17 Phase 3, §10 AC-10, §13    Depends on: P11
 Franz stop: Physical (Teams calls with Jim) and Outward action (publish 0.8.0; share the Drive folder)
 
@@ -334,11 +394,14 @@ Do only this (each step tagged as in §17):
    Available offline. Confirm UAC rights. Collect Box values (Q-B6).
 2. `[Franz]` copies `Send-ToFranz-0.5.4.ps1` into place and runs it with Jim on "give control"
    (Q-B7) → `OK nnnn`. Wait for Drive's upload to finish.
-3. `[Claude]` `station verify` on the NucBox → `OK nnnn` (same code) = Jim's backup. Copy the
+3. `[Claude]` `station verify` on Franz's PC → `OK nnnn` (same code) = Jim's backup. Copy the
    verified pack to the Tower backup; delete it from Drive and Drive's bin (§13).
-4. `[Franz]` publish 0.8.0 (Claude gives the command). `[Jim]` start FG Scanner → Yes → UAC →
-   start again. Confirm 0.8.0 and his group count on Teams.
-5. `[Claude/Franz]` Process in workspace `Jim` (`--data-dir`): auto-orient off there only,
+4. `[Claude]` download the 0.8.0 installer from the release, check it against `SHA256SUMS`, put
+   it in `to-jim\` (Q-C1). `[Jim]` with Franz on "give control": FG Scanner closed →
+   double-click the installer → **Yes** on UAC → start FG Scanner → read out the version and
+   group count. `[Franz]` then `! gh release edit v0.8.0 --prerelease=false --latest` (Q-C6).
+   Delete the installer from `to-jim\` and Drive's bin.
+5. `[Claude/Franz]` Process in workspace `Jim` (`--data-dir`) on Franz's PC: auto-orient off there only,
    Box values, read all pages, Propose, note fixes, commit what is finishable, import
    committed groups into the portal; `station pack --kind return` into `to-jim`.
 6. `[Jim]` "Install Franz's update" → `OK nnnn`. `[Franz]` checks counts on Teams. Delete the

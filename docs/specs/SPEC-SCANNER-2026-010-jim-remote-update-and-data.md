@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft — Revision C in review (Round C); Revision B was approved 2026-10-09 and stands where Round C does not change it |
+| **Status** | Approved — Revision C approved in Round C 2026-10-16 (every recommendation taken) |
 | **Revision** | C — 2026-10-15: the P1 rehearsal found auto-update broken in 0.5.4 and 0.7.1, so Jim's 0.8.0 arrives as a guided manual install, 0.8.0 fixes the updater (test first, rehearsed without reaching Jim), and processing moves from the NucBox to Franz's PC. B — 2026-10-09: rebuilt around Round A; approved in Round B with the Google Drive transport |
 | **Tier** | System — it changes the software on Jim's live evidence station and moves evidence between machines |
 | **Author** | Claude, for Franz Gerster |
@@ -41,7 +41,7 @@
   and a change log records what Franz did (§07).
 - **Decided (Round B, 2026-10-09)** — Google Drive shared folder; no storage platform for
   now; the station verbs built into 0.8.0; Jim straight from 0.5.4 to 0.8.0.
-- **Proposed in Revision C (2026-10-15, Round C)** — Jim installs 0.8.0 by hand with Franz on
+- **Decided in Revision C (approved Round C, 2026-10-16)** — Jim installs 0.8.0 by hand with Franz on
   Teams; 0.8.0 repairs the updater and that repair is rehearsed without any release reaching
   Jim; pages are read and processed on Franz's PC (the NucBox no longer runs FG Scanner).
   Cost: one more prompt (13), about half a day.
@@ -192,8 +192,9 @@ speed on his laptop.
 
 ## 05 · Questions for Franz
 
-**Round C (2026-10-15, open)** — raised by the P1 rehearsal (§04). Everything Round B decided
-stands unless an item below changes it.
+**Round C (2026-10-16, approve):** Q-C1 (a), Q-C2 (a), Q-C3 (a), Q-C4–Q-C8 as stated — every
+recommendation, no notes. Raised by the P1 rehearsal (§04); everything Round B decided stands
+unless an item below changes it.
 
 *Blocking*
 
@@ -587,7 +588,7 @@ days.
 
 | | |
 |---|---|
-| **Review round answered** | ☑ Round A 2026-10-09 (revise) — https://claude.ai/artifact/LTKoCtnKXZZTsoEZQVNBpV · ☑ Round B 2026-10-09 (approve) — https://claude.ai/artifact/EjYRfaTz1UDJ1zQHuQzEPi (doc SPEC-SCANNER-2026-010-rB) · ☐ Round C 2026-10-15 (Revision C) — doc SPEC-SCANNER-2026-010-rC |
-| **Franz approved** | ☑ date: 2026-10-09 (Round B) |
+| **Review round answered** | ☑ Round A 2026-10-09 (revise) — https://claude.ai/artifact/LTKoCtnKXZZTsoEZQVNBpV · ☑ Round B 2026-10-09 (approve) — https://claude.ai/artifact/EjYRfaTz1UDJ1zQHuQzEPi (doc SPEC-SCANNER-2026-010-rB) · ☑ Round C 2026-10-16 (approve) — https://claude.ai/artifact/GwvbCJH8cwXBG9KcVAb5yt (doc SPEC-SCANNER-2026-010-rC) |
+| **Franz approved** | ☑ date: 2026-10-09 (Round B) · 2026-10-16 (Revision C, Round C) |
 | **Built** | ☐ date: |
 | **Verified in production** | ☐ date: |
