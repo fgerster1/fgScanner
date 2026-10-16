@@ -6,6 +6,7 @@ using FgScanner.Ocr;
 using FgScanner.Scanning;
 using FgScanner.Scanning.Export;
 using FgScanner.Scanning.Import;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace FgScanner.Cli;
@@ -77,7 +78,7 @@ public static class CliRunner
         root.Subcommands.Add(BuildProcessCommand(verboseOption, dbOption, overrides));
         root.Subcommands.Add(BuildExportCommand(verboseOption, dbOption, overrides));
         root.Subcommands.Add(BuildListDevicesCommand(fakeOption, overrides));
-        root.Subcommands.Add(BuildStationCommand());
+        root.Subcommands.Add(BuildStationCommand(overrides));
 
         return await root.Parse(args).InvokeAsync().ConfigureAwait(false);
     }
@@ -546,7 +547,7 @@ public static class CliRunner
     }
 
     // ---- station (SPEC-SCANNER-2026-010) ----
-    private static Command BuildStationCommand()
+    private static Command BuildStationCommand(CliOverrides? overrides)
     {
         var packArgument = new Argument<string>("pack-folder") { Description = "The pack folder holding station-manifest.json." };
         var verify = new Command("verify", "Check a station pack against its manifest.") { packArgument };
@@ -574,7 +575,187 @@ public static class CliRunner
             };
         });
 
-        return new Command("station", "Move a whole station between machines as verified packs.") { verify };
+        var toOption = new Option<string>("--to") { Description = "The transport folder; the pack becomes a new folder inside it.", Required = true };
+        var basedOnOption = new Option<string?>("--based-on") { Description = "The manifest of the last pack the receiver holds; only what it lacks is shipped." };
+        var kindOption = new Option<string>("--kind") { Description = "send | return.", DefaultValueFactory = _ => "send" };
+        var stationOption = new Option<string?>("--station") { Description = "Name on the pack folder (default: the workspace's, else this computer's)." };
+        var evidenceOption = new Option<string?>("--evidence") { Description = "The evidence folder (default: the one the profiles name)." };
+        var pack = new Command("pack", "Pack this station for the other side; prints OK and the code to read out.")
+        {
+            toOption, basedOnOption, kindOption, stationOption, evidenceOption,
+        };
+        pack.SetAction(parseResult => PackStation(
+            parseResult.GetValue(toOption)!, parseResult.GetValue(basedOnOption), parseResult.GetValue(kindOption)!,
+            parseResult.GetValue(stationOption), parseResult.GetValue(evidenceOption), overrides));
+
+        return new Command("station", "Move a whole station between machines as verified packs.") { verify, pack };
+    }
+
+    private static int PackStation(
+        string to, string? basedOn, string kind, string? stationName, string? evidence, CliOverrides? overrides)
+    {
+        if (kind is not ("send" or "return"))
+        {
+            Console.Error.WriteLine($"--kind is send or return, not \"{kind}\".");
+            return 2;
+        }
+
+        var paths = overrides?.StationRoot is { } root ? StationPaths.Resolve(root) : StationPaths.Default;
+        var database = overrides?.DbPath ?? paths.Database;
+        if (!File.Exists(database))
+        {
+            Console.WriteLine($"NOT OK — this station has no database at {database}");
+            return 1;
+        }
+
+        StationFacts facts;
+        try
+        {
+            facts = StationFacts.Read(database);
+        }
+        catch (SqliteException ex)
+        {
+            Console.WriteLine($"NOT OK — the database could not be read: {ex.Message}");
+            return 1;
+        }
+
+        evidence ??= facts.BaseDirectories.Count == 1 ? facts.BaseDirectories[0] : null;
+        if (evidence is null)
+        {
+            Console.WriteLine("NOT OK — say which folder holds the evidence: --evidence <folder>");
+            return 1;
+        }
+
+        // A group outside the evidence folder would not travel, and the other side's database
+        // would point at a folder that is not there.
+        var evidenceRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(evidence)) + Path.DirectorySeparatorChar;
+        var outside = facts.GroupDirectories.FirstOrDefault(d =>
+            !(Path.TrimEndingDirectorySeparator(Path.GetFullPath(d)) + Path.DirectorySeparatorChar)
+                .StartsWith(evidenceRoot, StringComparison.OrdinalIgnoreCase));
+        if (outside is not null)
+        {
+            Console.WriteLine($"NOT OK — a group lives outside the evidence folder {evidence}: {outside}");
+            return 1;
+        }
+
+        var packer = new StationPacker(
+            isAppOpen: () => Mutex.TryOpenExisting("FGScanner.SingleInstance", out var mutex) && Dispose(mutex),
+            copyDatabase: BackUpDatabase,
+            freeBytes: folder => new DriveInfo(Path.GetPathRoot(Path.GetFullPath(folder))!).AvailableFreeSpace);
+        var request = new StationPackRequest(
+            new StationSource(
+                stationName ?? paths.Name ?? Environment.MachineName.ToLowerInvariant(),
+                database,
+                evidence,
+                Path.Combine(Path.GetDirectoryName(Path.GetFullPath(database))!, "trash"),
+                typeof(CliRunner).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
+                facts.LastMigration,
+                null,
+                DateTimeOffset.Now),
+            Path.GetDirectoryName(Path.GetFullPath(database))!,
+            to,
+            basedOn,
+            kind,
+            facts.PendingReadingJobs);
+
+        StationPackResult result;
+        KeepAwake(true);
+        try
+        {
+            result = packer.Pack(request);
+        }
+        finally
+        {
+            KeepAwake(false);
+        }
+
+        if (result.Problem is not null)
+        {
+            Console.WriteLine($"NOT OK — {result.Problem}");
+            return 1;
+        }
+
+        var packedBytes = new FileInfo(Path.Combine(result.PackFolder!, StationManifest.DatabaseFileName)).Length
+            + result.ShippedBytes;
+        Console.WriteLine(StationManifestVerifier.Summary(new StationVerifyResult(
+            StationVerifyStatus.Ok, result.Code, result.ShippedFiles + 1, packedBytes, [])));
+        Console.WriteLine(result.PackFolder);
+        return 0;
+    }
+
+    private static bool Dispose(Mutex mutex)
+    {
+        mutex.Dispose();
+        return true;
+    }
+
+    /// <summary>SQLite's backup API: a consistent copy even of a database another reader has open.</summary>
+    private static void BackUpDatabase(string from, string to)
+    {
+        using (var source = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = from,
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false,
+        }.ToString()))
+        using (var target = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = to,
+            Pooling = false,
+        }.ToString()))
+        {
+            source.Open();
+            target.Open();
+            source.BackupDatabase(target);
+        }
+    }
+
+    /// <summary>Jim's laptop sleeps on its own; a pack interrupted by sleep is a pack to redo.</summary>
+    private static void KeepAwake(bool on) =>
+        _ = NativeMethods.SetThreadExecutionState(on
+            ? NativeMethods.EsContinuous | NativeMethods.EsSystemRequired
+            : NativeMethods.EsContinuous);
+
+    /// <summary>What packing needs from the database, read without migrating it: pack must never
+    /// change the station it is backing up.</summary>
+    private sealed record StationFacts(
+        string? LastMigration,
+        int PendingReadingJobs,
+        IReadOnlyList<string> BaseDirectories,
+        IReadOnlyList<string> GroupDirectories)
+    {
+        public static StationFacts Read(string database)
+        {
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = database,
+                Mode = SqliteOpenMode.ReadOnly,
+                Pooling = false,
+            }.ToString());
+            connection.Open();
+            return new StationFacts(
+                Strings(connection, "SELECT MigrationId FROM __EFMigrationsHistory ORDER BY MigrationId DESC LIMIT 1")
+                    .FirstOrDefault(),
+                // JobType.Ocr = 0; JobState Pending = 0, InFlight = 1 (stored as integers).
+                int.Parse(Strings(connection, "SELECT count(*) FROM Jobs WHERE Type = 0 AND State IN (0, 1)")[0],
+                    CultureInfo.InvariantCulture),
+                Strings(connection, "SELECT DISTINCT BaseDirectory FROM Profiles WHERE BaseDirectory <> ''"),
+                Strings(connection, "SELECT DirectoryPath FROM Groups"));
+        }
+
+        private static List<string> Strings(SqliteConnection connection, string sql)
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            using var reader = command.ExecuteReader();
+            var values = new List<string>();
+            while (reader.Read())
+            {
+                values.Add(Convert.ToString(reader.GetValue(0), CultureInfo.InvariantCulture)!);
+            }
+
+            return values;
+        }
     }
 
     private static ScanDriver ParseDriver(string value) => value.ToUpperInvariant() switch

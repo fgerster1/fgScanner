@@ -157,14 +157,74 @@ public sealed class CliIntegrationTests : IDisposable
         Assert.StartsWith("NOT YET", waitOut);
     }
 
-    private async Task<(int Exit, string Output)> RunCapturedAsync(params string[] args)
+    /// <summary>
+    /// SPEC-SCANNER-2026-010 AC-3: the CLI packs a real station (a database the app wrote, a
+    /// scanned group), the pack verifies with the same code, and a second pack based on the first
+    /// carries only the database.
+    /// </summary>
+    [Fact]
+    public async Task Station_pack_makes_a_pack_that_verifies_and_a_second_that_ships_only_the_database()
+    {
+        var station = Path.Combine(_root, "station-jim");
+        var evidence = Path.Combine(_root, "Evidence-Scans");
+        var transport = Directory.CreateDirectory(Path.Combine(_root, "to-franz")).FullName;
+        Assert.Equal(0, await CliRunner.RunAsync(
+            ["scan", "--data-dir", station, "--group", Path.Combine(evidence, "Dental"), "--source", "feeder"],
+            new CliOverrides(ScanService: new FakeScanService(), TessdataDir: Path.Combine(_root, "tessdata"))));
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        string[] pack = ["station", "pack", "--data-dir", station, "--to", transport, "--evidence", evidence, "--station", "jim"];
+
+        var (firstExit, firstOut) = await RunStationCapturedAsync(pack);
+        var firstPack = Directory.GetDirectories(transport).Single();
+        var (verifyExit, verifyOut) = await RunCapturedAsync("station", "verify", firstPack);
+        var (secondExit, secondOut) = await RunStationCapturedAsync(
+            [.. pack, "--based-on", Path.Combine(firstPack, "station-manifest.json")]);
+
+        Assert.Equal(0, firstExit);
+        Assert.StartsWith("OK ", firstOut);
+        Assert.Matches("^jim-\\d{4}-\\d{2}-\\d{2}-\\d{4}-send$", Path.GetFileName(firstPack));
+        Assert.Equal(0, verifyExit);
+        Assert.Equal(firstOut.Split(" · ")[0], verifyOut.Split(" · ")[0]);
+        Assert.Equal(0, secondExit);
+        Assert.StartsWith("OK ", secondOut);
+        Assert.Contains(" · 1 files · ", secondOut);
+        Assert.True(File.Exists(Path.Combine(station, "station-freeze.json")));
+    }
+
+    [Fact]
+    public async Task Station_pack_refuses_a_group_outside_the_evidence_folder()
+    {
+        var station = Path.Combine(_root, "station-jim");
+        var transport = Directory.CreateDirectory(Path.Combine(_root, "to-franz")).FullName;
+        Assert.Equal(0, await CliRunner.RunAsync(
+            ["scan", "--data-dir", station, "--group", GroupDir, "--source", "feeder"],
+            new CliOverrides(ScanService: new FakeScanService(), TessdataDir: Path.Combine(_root, "tessdata"))));
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+
+        var (exit, output) = await RunStationCapturedAsync(
+            "station", "pack", "--data-dir", station, "--to", transport,
+            "--evidence", Directory.CreateDirectory(Path.Combine(_root, "Evidence-Scans")).FullName, "--station", "jim");
+
+        Assert.Equal(1, exit);
+        Assert.StartsWith("NOT OK — a group lives outside the evidence folder", output);
+        Assert.Empty(Directory.EnumerateFileSystemEntries(transport));
+    }
+
+    private Task<(int Exit, string Output)> RunCapturedAsync(params string[] args) =>
+        RunCapturedAsync(_overrides, args);
+
+    /// <summary>A station's own database: the shared test database would win over <c>--data-dir</c>.</summary>
+    private Task<(int Exit, string Output)> RunStationCapturedAsync(params string[] args) =>
+        RunCapturedAsync(new CliOverrides(TessdataDir: Path.Combine(_root, "tessdata")), args);
+
+    private static async Task<(int Exit, string Output)> RunCapturedAsync(CliOverrides overrides, string[] args)
     {
         var original = Console.Out;
         using var output = new StringWriter();
         Console.SetOut(output);
         try
         {
-            return (await RunAsync(args), output.ToString());
+            return (await CliRunner.RunAsync(args, overrides), output.ToString());
         }
         finally
         {

@@ -35,7 +35,7 @@ public sealed record StationManifest(
     public const string TrashFolder = "trash";
 
     // Fixed newline and escaping: the code Jim reads out is a hash of these bytes, so the same
-    // manifest must serialize identically on his laptop and on Franz's NucBox.
+    // manifest must serialize identically on his laptop and on Franz's PC.
     private static readonly JsonSerializerOptions Json = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -55,12 +55,18 @@ public sealed record StationManifest(
             ?? throw new JsonException("The manifest is empty.");
 
     /// <summary>The first four hex digits of the manifest's SHA-256 — short enough to read aloud.</summary>
-    public static string CodeOf(byte[] manifestBytes) =>
-        Convert.ToHexStringLower(SHA256.HashData(manifestBytes))[..4];
+    public static string CodeOf(byte[] manifestBytes) => HashOf(manifestBytes)[..4];
+
+    /// <summary>The manifest's full SHA-256 — what a later pack names as its <c>basedOn</c>.</summary>
+    public static string HashOf(byte[] manifestBytes) =>
+        Convert.ToHexStringLower(SHA256.HashData(manifestBytes));
 }
 
-/// <summary>One file in a pack. <see cref="Rel"/> uses forward slashes and starts with
-/// <c>evidence/</c> or <c>trash/</c>, so the same manifest reads the same on any machine.</summary>
+/// <summary>One file of the station's final state. <see cref="Rel"/> uses forward slashes and
+/// starts with <c>evidence/</c> or <c>trash/</c>, so the same manifest reads the same on any
+/// machine. <see cref="From"/> is null when the file travels in this pack; otherwise the receiver
+/// already holds these bytes at <see cref="From"/> (the same rel when unchanged, another when
+/// renamed), which is how a pack ships only what the other side lacks.</summary>
 public sealed record StationManifestFile(
     string Rel,
     long Size,
@@ -68,4 +74,5 @@ public sealed record StationManifestFile(
     string Kind,
     Guid? GroupId = null,
     Guid? PageId = null,
-    string? DbChecksum = null);
+    string? DbChecksum = null,
+    string? From = null);

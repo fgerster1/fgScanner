@@ -92,7 +92,7 @@ public static class StationManifestBuilder
             : "sidecar";
     }
 
-    internal static string Sha256Of(string path)
+    public static string Sha256Of(string path)
     {
         using var stream = new FileStream(
             path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20, FileOptions.SequentialScan);

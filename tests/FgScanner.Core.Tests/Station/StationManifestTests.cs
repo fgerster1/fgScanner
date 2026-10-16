@@ -216,6 +216,39 @@ public sealed class StationManifestTests : IDisposable
         Assert.Equal([$"manifest names a file outside the pack: {rel}"], result.Problems);
     }
 
+    /// <summary>A file the receiver already holds names where it holds it; apply will read from
+    /// there, so that path is as untrusted as a rel.</summary>
+    [Fact]
+    public void A_held_file_whose_source_leaves_the_pack_refuses_the_pack()
+    {
+        var manifest = CopyToPack();
+        var hostile = manifest with
+        {
+            Files = [.. manifest.Files, new StationManifestFile("evidence/Dental/moved.jpg", 1, new string('0', 64), "image",
+                From: "evidence/../../outside.jpg")],
+        };
+        File.WriteAllBytes(Path.Combine(Pack, StationManifest.FileName), hostile.ToJsonBytes());
+
+        Assert.Equal(["manifest names a file outside the pack: evidence/../../outside.jpg"],
+            StationManifestVerifier.Verify(Pack).Problems);
+    }
+
+    [Fact]
+    public void A_held_file_need_not_be_in_the_pack()
+    {
+        var manifest = CopyToPack();
+        File.WriteAllBytes(Path.Combine(Pack, StationManifest.FileName), (manifest with
+        {
+            Files = [.. manifest.Files, new StationManifestFile("evidence/Dental/old.jpg", 5, new string('a', 64), "image",
+                From: "evidence/Dental/old.jpg")],
+        }).ToJsonBytes());
+
+        var result = StationManifestVerifier.Verify(Pack);
+
+        Assert.Equal(StationVerifyStatus.Ok, result.Status);
+        Assert.Equal(manifest.Files.Count + 1, result.FileCount);
+    }
+
     [Fact]
     public void A_rel_listed_twice_refuses_the_pack()
     {

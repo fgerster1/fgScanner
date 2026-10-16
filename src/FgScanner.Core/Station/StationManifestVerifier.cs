@@ -19,8 +19,10 @@ public sealed record StationVerifyResult(
     IReadOnlyList<string> Problems);
 
 /// <summary>
-/// Checks a pack against its manifest: every file present with its hash, nothing extra. A pack
-/// is either exactly what was sent or it is refused whole — never patched by hand (§12).
+/// Checks a pack against its manifest: every file that travels present with its hash, nothing
+/// extra. A pack is either exactly what was sent or it is refused whole — never patched by hand
+/// (§12). Files the receiver already holds (<see cref="StationManifestFile.From"/>) are not in the
+/// pack; apply checks them against the receiver's own copies.
 /// </summary>
 public static class StationManifestVerifier
 {
@@ -50,6 +52,7 @@ public static class StationManifestVerifier
             return new StationVerifyResult(StationVerifyStatus.NotOk, StationManifest.CodeOf(bytes), 0, 0, [refusal]);
         }
 
+        var shipped = manifest.Files.Where(f => f.From is null).ToList();
         var problems = new List<string>();
         var database = Path.Combine(packFolder, StationManifest.DatabaseFileName);
         long total = 0;
@@ -66,7 +69,7 @@ public static class StationManifestVerifier
             }
         }
 
-        foreach (var file in manifest.Files)
+        foreach (var file in shipped)
         {
             total += file.Size;
             var path = Path.Combine(packFolder, file.Rel);
@@ -80,7 +83,7 @@ public static class StationManifestVerifier
             }
         }
 
-        var expected = manifest.Files.Select(f => f.Rel)
+        var expected = shipped.Select(f => f.Rel)
             .Concat([StationManifest.FileName, StationManifest.DatabaseFileName, StationManifest.VerifyLogFileName])
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         problems.AddRange(Directory.EnumerateFiles(packFolder, "*", StationManifestBuilder.AllFiles)
@@ -92,7 +95,7 @@ public static class StationManifestVerifier
         return new StationVerifyResult(
             problems.Count == 0 ? StationVerifyStatus.Ok : StationVerifyStatus.NotOk,
             StationManifest.CodeOf(bytes),
-            manifest.Files.Count + 1,
+            shipped.Count + 1,
             total,
             problems);
     }
@@ -111,26 +114,33 @@ public static class StationManifestVerifier
 
         var root = Path.GetFullPath(packFolder).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var rel in manifest.Files.Select(f => f.Rel))
+        foreach (var file in manifest.Files)
         {
-            var segments = rel.Split('/');
-            var wellFormed = segments.Length >= 2
-                && segments[0] is StationManifest.EvidenceFolder or StationManifest.TrashFolder
-                && segments.All(s => s.Length > 0 && s != "." && s != "..")
-                && rel.IndexOfAny(['\\', ':']) < 0
-                && Path.GetFullPath(Path.Combine(root, rel)).StartsWith(root, StringComparison.OrdinalIgnoreCase);
-            if (!wellFormed)
+            foreach (var rel in file.From is null ? [file.Rel] : new[] { file.Rel, file.From })
             {
-                return $"manifest names a file outside the pack: {rel}";
+                if (!WellFormed(root, rel))
+                {
+                    return $"manifest names a file outside the pack: {rel}";
+                }
             }
 
-            if (!seen.Add(rel))
+            if (!seen.Add(file.Rel))
             {
-                return $"manifest lists a file twice: {rel}";
+                return $"manifest lists a file twice: {file.Rel}";
             }
         }
 
         return null;
+    }
+
+    private static bool WellFormed(string root, string rel)
+    {
+        var segments = rel.Split('/');
+        return segments.Length >= 2
+            && segments[0] is StationManifest.EvidenceFolder or StationManifest.TrashFolder
+            && segments.All(s => s.Length > 0 && s != "." && s != "..")
+            && rel.IndexOfAny(['\\', ':']) < 0
+            && Path.GetFullPath(Path.Combine(root, rel)).StartsWith(root, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>The one line Jim or Franz reads out.</summary>
