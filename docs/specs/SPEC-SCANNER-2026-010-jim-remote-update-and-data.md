@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved — Revision C approved in Round C 2026-10-16 (every recommendation taken) |
-| **Revision** | C — 2026-10-15: the P1 rehearsal found auto-update broken in 0.5.4 and 0.7.1, so Jim's 0.8.0 arrives as a guided manual install, 0.8.0 fixes the updater (test first, rehearsed without reaching Jim), and processing moves from the NucBox to Franz's PC. B — 2026-10-09: rebuilt around Round A; approved in Round B with the Google Drive transport |
+| **Status** | Approved (Revision C) — Revision D in review (Round D: the P9/P10 reviews, 8 open items) |
+| **Revision** | D — 2026-10-16: the Prompt 9 and 10 reviews' 23 findings (15 decided by the spec, 8 open — in review). C — 2026-10-15: the P1 rehearsal found auto-update broken in 0.5.4 and 0.7.1, so Jim's 0.8.0 arrives as a guided manual install, 0.8.0 fixes the updater (test first, rehearsed without reaching Jim), and processing moves from the NucBox to Franz's PC. B — 2026-10-09: rebuilt around Round A; approved in Round B with the Google Drive transport |
 | **Tier** | System — it changes the software on Jim's live evidence station and moves evidence between machines |
 | **Author** | Claude, for Franz Gerster |
 | **Date** | 2026-10-09 |
@@ -191,6 +191,71 @@ receipt. Upload cap 750 GB/day (irrelevant here). Franz's PC already runs Drive 
 speed on his laptop.
 
 ## 05 · Questions for Franz
+
+**Revision D — the Prompt 9 and Prompt 10 reviews** (2026-10-16). Cold-reader subagents over
+`61f367b..ac8d26b` (P2–P8b): P9 code review (12 findings), P10 security review against §13's threat
+model — a pack, a return and the database inside them are untrusted input (11 findings). Every
+finding was checked at the cited lines; all 23 are true.
+
+| # | Finding (file:line) | Kind | Fix | Prompt |
+|---|---|---|---|---|
+| P9-1 | Undo deletes a placed file whose original was never moved aside if Commit stopped mid-way (`StationApplier.cs:120`) | bug against AC-6 ("never erased") | delete a placed rel only when its kept copy is in the backup or it was never in the old state | 10a |
+| P9-2 | An exception in Commit is unhandled: no auto-undo, no NOT OK, `undo.json` can be missing (`StationApplier.cs:84,271`) | bug against AC-5 | plan first; Commit + re-verify wrapped → auto-undo → NOT OK; undo skips a backup without a plan | 10a |
+| P9-3 | Undo overwrites the live DB non-atomically, keeps nothing of it, ignores journal/recovery and work done since the apply (`StationApplier.cs:141`) | bug against AC-6 | same rest gates as apply; refuse when content/files differ from the freeze record apply wrote; current DB moved into `apply-undone-…`; temp + move | 10a |
+| P10-6 | No free-space check on apply; Commit across volumes can fill a disk part-way (`StationApplier.cs:84,263`) | bug against §12 | free-space check (pack size + 1 GB) on the evidence and station volumes before staging | 10a |
+| P10-2 + P9-10 | Apply never checks path columns in the incoming DB (`Profiles.BaseDirectory`, `Groups.DirectoryPath`, `TrashItems.GroupDirectoryPath`) — a return can point future scans at a share or Startup | bug against §13 | refuse unless every non-empty path is under the evidence root and local | 10b |
+| P10-3 | The freeze check uses the tables/columns/hash the untrusted pack names, not the receiver's own freeze record (`StationApplier.cs:192`) | bug against §07 amendment | compare against `StationFreezeRecord.Content` and require the pack's `basedOnContent` to equal it | 10b |
+| P9-6 | The migration gate compares the build's newest migration, not the receiver DB's; `INSERT … SELECT *` copies Settings positionally (`CliRunner.cs:682`, `SqliteStationDatabase.cs`) | bug against AC-5 | pass the receiver DB's last migration ("start FG Scanner once, close it, then try again"); name the columns | 10b |
+| P10-7 | Column/table names interpolated into SQL unescaped (`SqliteStationDatabase.cs:167`, `StationChangeLog.cs:94`) | bug against §13 | only `^[A-Za-z_][A-Za-z0-9_]*$` names; refuse otherwise | 10b |
+| P10-8 | Recursive enumeration follows junctions/symlinks (`StationManifestBuilder.cs:23`) | bug against §13 (P10 prompt names junctions) | skip reparse points and refuse the pack/apply when one is found | 10b |
+| P10-10 | Malformed manifest (`files: null`, null `rel`) or a table without `Id` throws instead of NOT OK | bug against §12 | validate non-null fields; catch `SqliteException` → NOT OK | 10b |
+| P10-11 | `NotLocal` misses a mapped/SUBST drive pointing at a share (`CliRunner.cs:706`) | bug against §13 | also refuse `DriveType.Network` | 10b |
+| P9-9 | `changes.jsonl` skips columns a migration added — the cycle-1 values Franz sets in `Pages.OrientationSettled` are never logged (`StationChangeLog.cs:35`) | bug against AC-9 | diff against a *migrated copy* of the received DB, so every column is compared and the migration's own changes are not Franz's | 10c |
+| P9-8 | The updater checks `CaptureInHand` before the 150 MB copy, not right before starting (`UpdateInstaller.cs:39`) | bug against §12 | copy, then wait, then start | 10c |
+| P9-12 | Stray `v2-exports-trash.db-shm/-wal` committed in 26d0486 (a read-only SQLite read created them) | bug (mine) | remove them from git | 10c |
+| — | Test gaps: no test makes Commit fail; the update folder in `UpdateInstallerTests` has no space | bug in the tests | tests in 10a and 10c | 10a, 10c |
+| P10-1 | On a first apply (Franz's workspace) the pack's own Settings go live — incl. `Hook.CommandLine`, which commit runs | spec silent | **Open D1** | 10b |
+| P10-4 | The incoming DB's schema (triggers, views, extra tables) becomes the live schema | spec silent | **Open D2** | 10b |
+| P10-5 | Packs carry no authenticity; the code is read out after apply | spec silent | **Open D3** | 10b |
+| P10-9 | The installer copy in `%TEMP%` could be swapped between check and start | spec silent | **Open D4** | 10c |
+| P9-4 | The app-open check runs once; pack/apply then work for minutes | spec silent | **Open D5** | 10a |
+| P9-5 | After a refused cycle-1 return, Jim's next send cannot be based on anything (0.5.4 freeze record has no content) | spec silent | **Open D6** | 10c |
+| P9-7 | `…-1405-2-return` sorts before `…-1405-return`; the shortcut installs the older one | spec silent | **Open D7** | 10c |
+| P9-11 | §14 promises a log beside the manifest for pack and apply; apply logs in the station folder (the pack folder is deleted after use) | spec wrong | **Open D8** | 10c |
+
+**Open (Round D):**
+- **D1 — Settings an empty station takes from a pack.** (a) **None:** delete every Settings row from
+  the incoming DB when the receiver has none — Franz's workspace starts on defaults (auto-orient off
+  is set there by hand anyway; Jim's own settings never leave his laptop); (b) keep them but delete
+  the hook rows. *Recommended:* (a) — nothing in a pack should configure the machine that opens it.
+- **D2 — The incoming database's schema.** (a) **Schema must match:** `sqlite_master` (type, name,
+  sql) of the incoming DB must equal the receiver's own (or, for an empty station, a fresh DB
+  migrated to the pack's `lastMigration`); `PRAGMA trusted_schema=OFF`; `integrity_check` before
+  binding; receiver attached read-only; (b) rebuild: create a fresh DB from migrations and copy rows
+  in. *Recommended:* (a) — a few dozen lines, refuses anything extra; (b) is a larger change.
+- **D3 — Knowing a return came from Franz.** (a) **Jim confirms the code before anything changes:**
+  the shortcut verifies, shows an 8-character code (`96da-41c3`) and asks "Is this the code Franz
+  read you? Y/N"; apply refuses when more than one return waits; (b) Ed25519-sign packs with keys
+  on both machines. *Recommended:* (a) — the folder is already shared with Jim alone, so the attacker
+  needs a Google account; (b) adds key management to a non-technical laptop. This reverses Q-C7
+  (4 characters): a pre-apply code needs 32 bits.
+- **D4 — Re-checking the installer right before it starts.** (a) **Verify the Ed25519 signature
+  again on the exact copy about to start** (NetSparkle's checker, same public key); (b) Authenticode
+  publisher check (works only once SignPath signing is on). *Recommended:* (a).
+- **D5 — The app opened during a pack or apply.** (a) **Hold FG Scanner's single-instance lock for
+  the whole verb:** an app started meanwhile does not open (it exits as a second instance would);
+  the shortcut says "Do not open FG Scanner until this says OK"; (b) re-check just before the swap
+  (a race remains). *Recommended:* (a).
+- **D6 — Re-sending after a refused cycle-1 return.** (a) **Send everything again** when the
+  baseline has no content (1.5 GB, ~15 min upload); Franz rebuilds his workspace from that pack;
+  (b) Franz derives the content from his verified copy of the first send. *Recommended:* (a) — rare,
+  simple, nothing to reason about.
+- **D7 — More than one return waiting.** (a) **Refuse** ("more than one update is waiting — call
+  Franz"); Franz deletes the superseded one; (b) pick the newest by the manifest's `sentAt`.
+  *Recommended:* (a) — it also stops a dropped-in extra return (D3).
+- **D8 — §14's log location.** (a) **Amend §14:** pack prints its line (the manifest is its record);
+  apply and undo append to `station-apply.log` in the station folder, because the pack folder is
+  deleted after use; (b) also write a log into the pack. *Recommended:* (a).
 
 **Round C (2026-10-16, approve):** Q-C1 (a), Q-C2 (a), Q-C3 (a), Q-C4–Q-C8 as stated — every
 recommendation, no notes. Raised by the P1 rehearsal (§04); everything Round B decided stands
