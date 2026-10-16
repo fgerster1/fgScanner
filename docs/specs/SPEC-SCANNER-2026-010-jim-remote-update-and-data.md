@@ -325,9 +325,25 @@ No change to FG Scanner's database or the evidence contract. New files only:
 
 - **`station-manifest.json`** (written atomically, one per pack): header `{format, station,
   sentAt, appVersion, lastMigration, dbSha256, evidenceRoot, basedOn}`; `files[]` `{rel, size,
-  sha256, kind: image|original|sidecar|index|trash, groupId?, pageId?, dbChecksum?}`.
+  sha256, kind: image|original|sidecar|index|trash, groupId?, pageId?, dbChecksum?, from?}`.
   `basedOn` is the previous manifest's hash, so "what Franz already has" is known without a
-  second round trip.
+  second round trip. A file with `from` is not in the pack: the receiver already holds those
+  bytes at `from` (P4). `basedOnContent` `{tables[{name, columns}], sha256}` is the content
+  fingerprint of the database the receiver last held (amendment 2026-10-16, below).
+- **Freeze check by content, not file hash (amendment 2026-10-16, Franz):** apply refuses when the
+  receiver's evidence rows differ from `basedOnContent` — a SHA-256 over every row of Groups,
+  Documents, Pages, TrashItems, Profiles, IndexSchemas and FieldDefinitions, in the columns the
+  sending station had, ordered by `Id` (not Settings, `Profiles.ScanSettingsJson` or
+  `TrashItems.TrashFolderPath`, which apply keeps or rebinds per station) — or when its evidence
+  and trash files differ from the manifest it last sent. *Why:* opening the app and every
+  migration rewrite the database file without changing a row (measured: 9/25 copy vs the same
+  data after 2.5 h of 0.5.4 and 0.7.1's migration — 0 rows changed, file hash different), so a
+  file hash would refuse cycle 1, where Jim starts 0.8.0 after sending. The station folder keeps
+  `station-freeze.json` (pack, code, live DB hash, manifest hash, content) and
+  `station-sent-manifest.json` — the last manifest both sides share, rewritten by pack and by
+  apply.
+- **Rebound on apply:** `TrashItems.TrashFolderPath` re-rooted to the receiving station's trash
+  folder (the path is per machine; Jim's 9/25 row still points at `C:\Users\fgers\…`).
 - **`changes.jsonl`** in each return package — the chain-of-custody record of what Franz
   changed: a row-level diff of the database before and after processing (table, key, column,
   old, new), with Franz's name and time. Archived with the package; travels to the portal with
@@ -350,7 +366,7 @@ Jim's laptop                    Google Drive shared folder     Franz's PC (works
                                                                  station pack --return:
 "Install Franz's update"            ◀──── to-jim\<return> ────   db + changed/new files + deletions
   version + migration check                                      + final-state manifest + changes.jsonl
-  freeze check (db hash = sent)                                  + needs-Jim sheet
+  freeze check (content = sent)                                  + needs-Jim sheet
   stage → verify → swap atomically
   keep Jim's settings · re-verify
   "OK 1234"
@@ -397,8 +413,10 @@ No app UI beyond two Start-menu shortcuts and console output in plain words.
 > **AC-4** — `pack` refuses while the app is open, while `recovery\` holds a session, or with
 > reading jobs pending. *`StationPackTests`.*
 
-> **AC-5** — `apply` refuses on a version or migration mismatch, on a database that differs from
-> the one sent (Jim worked during the freeze), and with the app open; refusing changes nothing.
+> **AC-5** — `apply` refuses on a version or migration mismatch (when the receiver already has a
+> database), on evidence rows or files that differ from the ones sent (Jim worked during the
+> freeze — compared by content, so a migration or an app start alone passes), and with the app
+> open; refusing changes nothing.
 > *`StationApplyTests`.*
 
 > **AC-6** — `apply` keeps the receiving station's `Settings` rows and `index-drafts`, reaches the
@@ -441,7 +459,7 @@ PowerShell sender is checked by a test that packs a fixture and verifies it with
 
 | Case | Expected behaviour | Where |
 |---|---|---|
-| Jim scans or edits during the freeze | apply refuses ("NOT OK — call Franz"); his new pages stay; Franz packs again | apply (db hash) |
+| Jim scans or edits during the freeze | apply refuses ("NOT OK — call Franz"); his new pages stay; Franz packs again | apply (content fingerprint + file hashes) |
 | A file differs on arrival | verify names it; that pack is re-sent; never patched by hand | verify |
 | Upload interrupted / laptop sleeps | the sender holds a keep-awake while packing; Drive resumes the upload; verify refuses a partial pack (no manifest yet, or a file short) | sender, Drive, verify |
 | Return still downloading on Jim's side | the `to-jim` folder is Available offline; apply hashes every file and refuses a placeholder or short file | apply |
