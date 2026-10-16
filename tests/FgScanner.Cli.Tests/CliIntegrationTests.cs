@@ -245,6 +245,28 @@ public sealed class CliIntegrationTests : IDisposable
         Assert.Empty(Directory.GetFiles(evidence, "*", SearchOption.AllDirectories));
     }
 
+    /// <summary>Revision D, D5: the verbs hold FG Scanner's own single-instance lock, so a running
+    /// app (here: this test holding the lock) refuses them, and an app launched mid-way cannot open.</summary>
+    [Fact]
+    public async Task Station_pack_refuses_while_the_app_holds_its_lock()
+    {
+        var transport = Directory.CreateDirectory(Path.Combine(_root, "to-franz")).FullName;
+        using var app = new Mutex(initiallyOwned: true, "FGScanner.SingleInstance", out var ours);
+        Assert.True(ours, "another FG Scanner is running on this machine; close it to run this test");
+        try
+        {
+            var (exit, output) = await RunStationCapturedAsync(
+                "station", "pack", "--data-dir", Path.Combine(_root, "station-jim"), "--to", transport);
+
+            Assert.Equal(1, exit);
+            Assert.StartsWith("NOT OK — FG Scanner is open", output);
+        }
+        finally
+        {
+            app.ReleaseMutex();
+        }
+    }
+
     [Fact]
     public async Task Station_pack_refuses_a_group_outside_the_evidence_folder()
     {

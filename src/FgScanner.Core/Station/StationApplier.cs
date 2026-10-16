@@ -30,13 +30,24 @@ public sealed record StationApplyResult(
 /// beside the station first; replaced and deleted files are moved into <c>apply-backup-…</c>,
 /// never erased, so <see cref="Undo"/> can put the station back byte for byte.
 /// </summary>
-public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase database)
+public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase database, Func<string, long>? freeBytes = null)
 {
     private const string BackupPrefix = "apply-backup-";
 
     private const string UndonePrefix = "apply-undone-";
 
     private const string UndoPlanFileName = "undo.json";
+
+    /// <summary>The database an undo replaced, kept in the <c>apply-undone-</c> folder.</summary>
+    private const string ReplacedDatabaseFileName = "fgscanner.replaced.db";
+
+    private const long Headroom = 1L << 30;
+
+    private static readonly string[] StationFiles =
+    [
+        StationManifest.DatabaseFileName, StationManifest.DatabaseFileName + "-wal", StationManifest.DatabaseFileName + "-shm",
+        StationFreezeRecord.FileName, StationFreezeRecord.SentManifestFileName,
+    ];
 
     public StationApplyResult Apply(StationApplyRequest request)
     {
@@ -64,6 +75,11 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
             return StationApplyResult.Refused(refusal);
         }
 
+        if (SpaceProblem(request, manifest) is { } noRoom)
+        {
+            return StationApplyResult.Refused(noRoom);
+        }
+
         var stamp = request.At.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
         var staging = UniqueFolder(request.StationRoot, "apply-staging-" + stamp);
         try
@@ -81,32 +97,52 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
         }
 
         var backup = UniqueFolder(request.StationRoot, BackupPrefix + stamp);
-        Commit(request, manifest, db, trash, staging, backup);
-
-        var final = Hashes(request.EvidenceRoot, trash);
-        var expected = manifest.Files.ToDictionary(f => f.Rel, f => f.Sha256, StringComparer.Ordinal);
-        if (!final.OrderBy(p => p.Key, StringComparer.Ordinal).SequenceEqual(expected.OrderBy(p => p.Key, StringComparer.Ordinal)))
+        try
         {
-            Undo(request.StationRoot);
-            return StationApplyResult.Refused("this station did not match the update after installing it, so it has been put back — call Franz");
+            Commit(request, manifest, db, trash, staging, backup);
+            if (!SameFiles(Hashes(request.EvidenceRoot, trash), manifest.Files))
+            {
+                throw new InvalidDataException("the station did not match the update after installing it");
+            }
+
+            StationFreezeRecord.Write(request.StationRoot, new StationFreezeRecord(
+                Path.GetFileName(Path.TrimEndingDirectorySeparator(request.PackFolder)), verified.Code!, manifest.SentAt,
+                StationManifestBuilder.Sha256Of(db), StationManifest.HashOf(manifestBytes!), database.Content(db)), manifestBytes!);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            // Whatever stopped it - a file another program holds, a full disk - Jim is left with
+            // the station he had, never half of each.
+            Restore(request.StationRoot, backup);
+            Directory.Move(backup, Path.Combine(request.StationRoot, UndonePrefix + Path.GetFileName(backup)[BackupPrefix.Length..]));
+            if (Directory.Exists(staging))
+            {
+                Directory.Delete(staging, recursive: true);
+            }
+
+            return StationApplyResult.Refused($"the update could not be installed ({ex.Message}), so the station has been put back — call Franz");
         }
 
-        StationFreezeRecord.Write(request.StationRoot, new StationFreezeRecord(
-            Path.GetFileName(Path.TrimEndingDirectorySeparator(request.PackFolder)), verified.Code!, manifest.SentAt,
-            StationManifestBuilder.Sha256Of(db), StationManifest.HashOf(manifestBytes!), database.Content(db)), manifestBytes!);
         return new StationApplyResult(verified.Code, null, BackupFolder: backup);
     }
 
-    /// <summary>Puts the station back as it was before the last apply.</summary>
+    /// <summary>
+    /// Puts the station back as it was before the last apply - only while it is still exactly as
+    /// that apply left it: undoing over work Jim has done since would destroy that work.
+    /// </summary>
     public StationApplyResult Undo(string stationRoot)
     {
-        if (isAppOpen())
+        var db = Path.Combine(stationRoot, StationManifest.DatabaseFileName);
+        if (StationRest.Problem(isAppOpen, db, stationRoot, "undo") is { } notAtRest)
         {
-            return StationApplyResult.Refused("FG Scanner is open — close it, then undo again");
+            return StationApplyResult.Refused(notAtRest);
         }
 
+        // A backup with no plan is one an interrupted apply never finished starting; the last
+        // one with a plan is the apply to undo.
         var backup = Directory.Exists(stationRoot)
             ? Directory.EnumerateDirectories(stationRoot, BackupPrefix + "*")
+                .Where(d => File.Exists(Path.Combine(d, UndoPlanFileName)))
                 .Order(StringComparer.Ordinal).LastOrDefault()
             : null;
         if (backup is null)
@@ -114,12 +150,66 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
             return StationApplyResult.Refused("there is nothing to undo");
         }
 
-        var plan = JsonSerializer.Deserialize<UndoPlan>(File.ReadAllBytes(Path.Combine(backup, UndoPlanFileName)))!;
-        var evidenceRoot = plan.EvidenceRoot;
+        var plan = ReadPlan(backup);
+        if (ChangedSinceApply(stationRoot, plan.EvidenceRoot, db) is { } changed)
+        {
+            return StationApplyResult.Refused(changed);
+        }
+
+        if (File.Exists(db))
+        {
+            File.Copy(db, Path.Combine(backup, ReplacedDatabaseFileName));
+        }
+
+        Restore(stationRoot, backup);
+        Directory.Move(backup, Path.Combine(stationRoot, UndonePrefix + Path.GetFileName(backup)[BackupPrefix.Length..]));
+        return new StationApplyResult(null, null, BackupFolder: backup);
+    }
+
+    private string? ChangedSinceApply(string stationRoot, string evidenceRoot, string db)
+    {
+        const string Changed = "this station has changed since the update was installed — call Franz";
+        var freeze = StationFreezeRecord.Read(stationRoot);
+        var sentPath = Path.Combine(stationRoot, StationFreezeRecord.SentManifestFileName);
+        if (freeze?.Content is null || !File.Exists(sentPath) || !File.Exists(db))
+        {
+            return Changed;
+        }
+
+        try
+        {
+            if (database.ContentSha256(db, freeze.Content.Tables) != freeze.Content.Sha256)
+            {
+                return Changed;
+            }
+        }
+        catch (InvalidDataException)
+        {
+            return Changed;
+        }
+
+        var applied = StationManifest.Parse(File.ReadAllBytes(sentPath)).Files;
+        return SameFiles(Hashes(evidenceRoot, Path.Combine(stationRoot, StationManifest.TrashFolder)), applied) ? null : Changed;
+    }
+
+    /// <summary>
+    /// Undoes one apply from its backup. A placed file is removed only when the original it
+    /// replaced is safely in the backup, or when it replaced nothing: an apply stopped part-way
+    /// may not have moved the original yet, and that original is then still the live file.
+    /// </summary>
+    private static void Restore(string stationRoot, string backup)
+    {
+        var plan = ReadPlan(backup);
         var trash = Path.Combine(stationRoot, StationManifest.TrashFolder);
+        var movedAside = plan.MovedAside.ToHashSet(StringComparer.Ordinal);
         foreach (var rel in plan.Placed)
         {
-            var placed = TargetOf(rel, evidenceRoot, trash);
+            if (movedAside.Contains(rel) && !File.Exists(Path.Combine(backup, ToPath(rel))))
+            {
+                continue;
+            }
+
+            var placed = TargetOf(rel, plan.EvidenceRoot, trash);
             if (File.Exists(placed))
             {
                 File.Delete(placed);
@@ -131,30 +221,58 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
             var kept = Path.Combine(backup, ToPath(rel));
             if (File.Exists(kept))
             {
-                var target = TargetOf(rel, evidenceRoot, trash);
+                var target = TargetOf(rel, plan.EvidenceRoot, trash);
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 File.Move(kept, target);
             }
         }
 
-        var db = Path.Combine(stationRoot, StationManifest.DatabaseFileName);
-        foreach (var name in new[] { StationManifest.DatabaseFileName, StationFreezeRecord.FileName, StationFreezeRecord.SentManifestFileName })
+        foreach (var name in StationFiles)
         {
             var kept = Path.Combine(backup, name);
             var live = Path.Combine(stationRoot, name);
             if (File.Exists(kept))
             {
-                File.Copy(kept, live, overwrite: true);
+                File.Copy(kept, live + ".tmp", overwrite: true);
+                File.Move(live + ".tmp", live, overwrite: true);
             }
-            else if (File.Exists(live))
+            else if (!plan.Existed.Contains(name, StringComparer.Ordinal) && File.Exists(live))
             {
+                // Not there before the apply, so the apply made it. A file that was there but has
+                // no copy in the backup was never touched - the apply stopped before reaching it.
                 File.Delete(live);
             }
         }
-
-        Directory.Move(backup, Path.Combine(stationRoot, UndonePrefix + Path.GetFileName(backup)[BackupPrefix.Length..]));
-        return new StationApplyResult(null, null, BackupFolder: backup);
     }
+
+    private static UndoPlan ReadPlan(string backup) =>
+        JsonSerializer.Deserialize<UndoPlan>(File.ReadAllBytes(Path.Combine(backup, UndoPlanFileName)))!;
+
+    private static bool SameFiles(Dictionary<string, string> station, IReadOnlyList<StationManifestFile> manifest) =>
+        station.Count == manifest.Count
+        && manifest.All(f => station.TryGetValue(f.Rel, out var sha) && sha == f.Sha256);
+
+    private string? SpaceProblem(StationApplyRequest request, StationManifest manifest)
+    {
+        // Staging sits in the station folder; moving into an evidence folder on another drive
+        // copies, so each drive must hold the whole update with room to spare.
+        var needed = new FileInfo(Path.Combine(request.PackFolder, StationManifest.DatabaseFileName)).Length
+            + manifest.Files.Where(f => f.From != f.Rel).Sum(f => f.Size) + Headroom;
+        foreach (var drive in new[] { request.StationRoot, request.EvidenceRoot }
+                     .Select(p => Path.GetPathRoot(Path.GetFullPath(p))!).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var free = (freeBytes ?? (root => new DriveInfo(root).AvailableFreeSpace))(drive);
+            if (free < needed)
+            {
+                return $"not enough free space on {drive} (the update needs {Megabytes(needed)}, there is {Megabytes(free)}) — call Franz";
+            }
+        }
+
+        return null;
+    }
+
+    private static string Megabytes(long bytes) =>
+        (bytes / (double)(1L << 20)).ToString("N0", CultureInfo.InvariantCulture) + " MB";
 
     private string? GateProblem(StationApplyRequest request, StationManifest manifest, string db, string trash)
     {
@@ -267,7 +385,12 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
         var movedAside = Hashes(request.EvidenceRoot, trash).Keys.Where(rel => !keptInPlace.Contains(rel))
             .Order(StringComparer.Ordinal).ToList();
 
-        // The plan is written before anything moves, so an undo after a crash knows what to put back.
+        // The plan is written before anything is copied or moved, so a restore after any failure
+        // knows what to put back - and which station files existed, so it never deletes one that
+        // the apply simply had not reached yet.
+        var existed = StationFiles.Where(name => File.Exists(Path.Combine(request.StationRoot, name))).ToList();
+        StationPacker.WriteAtomically(Path.Combine(backup, UndoPlanFileName),
+            JsonSerializer.SerializeToUtf8Bytes(new UndoPlan(request.EvidenceRoot, placed, movedAside, existed)));
         foreach (var name in new[] { StationManifest.DatabaseFileName, StationFreezeRecord.FileName, StationFreezeRecord.SentManifestFileName })
         {
             var live = Path.Combine(request.StationRoot, name);
@@ -276,9 +399,6 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
                 File.Copy(live, Path.Combine(backup, name));
             }
         }
-
-        StationPacker.WriteAtomically(Path.Combine(backup, UndoPlanFileName),
-            JsonSerializer.SerializeToUtf8Bytes(new UndoPlan(request.EvidenceRoot, placed, movedAside)));
 
         foreach (var rel in movedAside)
         {
@@ -350,5 +470,6 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
         }
     }
 
-    private sealed record UndoPlan(string EvidenceRoot, IReadOnlyList<string> Placed, IReadOnlyList<string> MovedAside);
+    private sealed record UndoPlan(
+        string EvidenceRoot, IReadOnlyList<string> Placed, IReadOnlyList<string> MovedAside, IReadOnlyList<string> Existed);
 }

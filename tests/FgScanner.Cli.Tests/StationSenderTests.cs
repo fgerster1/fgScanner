@@ -145,6 +145,30 @@ public sealed class StationSenderTests : IDisposable
         Assert.Empty(Directory.EnumerateFileSystemEntries(to));
     }
 
+    /// <summary>Revision D, D5: the sender takes FG Scanner's own lock; while the app holds it the
+    /// send is refused and nothing is written.</summary>
+    [Fact]
+    public void The_054_sender_refuses_while_the_app_holds_its_lock()
+    {
+        var to = Directory.CreateDirectory(Path.Combine(_root, "to-franz")).FullName;
+        using var app = new Mutex(initiallyOwned: true, "FGScanner.SingleInstance", out var ours);
+        Assert.True(ours, "another FG Scanner is running on this machine; close it to run this test");
+        try
+        {
+            var (exit, output) = PowerShell(
+                "-File", RepoFile("build", "station", "Send-ToFranz-0.5.4.ps1"),
+                "-StationRoot", Station, "-EvidenceRoot", Evidence, "-To", to, "-AppVersion", "0.5.4");
+
+            Assert.Equal(1, exit);
+            Assert.Contains("FG Scanner is open", output);
+            Assert.Empty(Directory.EnumerateFileSystemEntries(to));
+        }
+        finally
+        {
+            app.ReleaseMutex();
+        }
+    }
+
     [Fact]
     public void The_054_sender_refuses_another_version()
     {

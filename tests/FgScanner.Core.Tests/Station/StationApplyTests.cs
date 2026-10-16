@@ -197,6 +197,98 @@ public sealed class StationApplyTests : IDisposable
         Assert.Equal(_database.Content(Path.Combine(Jim, "fgscanner.db")), StationFreezeRecord.Read(Jim)!.Content);
     }
 
+    /// <summary>Revision D, P9-2: a file another program holds (antivirus, a viewer) stops the
+    /// commit part-way; the station is put back and Jim reads NOT OK, never a stack trace.</summary>
+    [Fact]
+    public void A_file_held_open_mid_commit_puts_the_station_back()
+    {
+        var pack = RoundTrip();
+        var before = Snapshot();
+
+        StationApplyResult result;
+        using (new FileStream(Path.Combine(Evidence, "Dental", "scan_00003.jpg"), FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            result = Applier().Apply(ApplyRequest(pack));
+        }
+
+        Assert.Contains("put back", result.Problem);
+        Assert.Equal(before, Snapshot());
+    }
+
+    /// <summary>Revision D, P9-1: the changed file's original was never moved aside, so undo must
+    /// not delete it as if it were the update's copy.</summary>
+    [Fact]
+    public void A_changed_file_whose_original_never_moved_is_kept()
+    {
+        var pack = RoundTrip();
+        var before = Snapshot();
+
+        using (new FileStream(Path.Combine(Evidence, "Dental", "scan_00001.jpg"), FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            Applier().Apply(ApplyRequest(pack));
+        }
+
+        Assert.Equal("jpeg one", File.ReadAllText(Path.Combine(Evidence, "Dental", "scan_00001.jpg")));
+        Assert.Equal(before, Snapshot());
+    }
+
+    [Fact]
+    public void Undo_refuses_once_Jim_has_worked_since_the_update()
+    {
+        Assert.Null(Applier().Apply(ApplyRequest(RoundTrip())).Problem);
+        File.AppendAllText(Path.Combine(Jim, "fgscanner.db"), "\nrow:page 77");
+        Write(Path.Combine(Evidence, "Dental", "scan_00077.jpg"), "scanned after the update");
+        var before = Snapshot();
+
+        var result = Applier().Undo(Jim);
+
+        Assert.Contains("changed since the update", result.Problem);
+        Assert.Equal(before, Snapshot());
+    }
+
+    [Fact]
+    public void Undo_refuses_a_station_not_at_rest()
+    {
+        Assert.Null(Applier().Apply(ApplyRequest(RoundTrip())).Problem);
+        Write(Path.Combine(Jim, "fgscanner.db-journal"), "half");
+
+        Assert.Contains("not closed cleanly", Applier().Undo(Jim).Problem);
+    }
+
+    [Fact]
+    public void Undo_keeps_the_database_it_replaces()
+    {
+        Assert.Null(Applier().Apply(ApplyRequest(RoundTrip())).Problem);
+
+        Assert.Null(Applier().Undo(Jim).Problem);
+
+        var undone = Directory.GetDirectories(Jim, "apply-undone-*").Single();
+        Assert.Contains("row:page 4", File.ReadAllText(Path.Combine(undone, "fgscanner.replaced.db")));
+    }
+
+    [Fact]
+    public void A_backup_without_a_plan_is_not_undone()
+    {
+        Assert.Null(Applier().Apply(ApplyRequest(RoundTrip())).Problem);
+        Directory.CreateDirectory(Path.Combine(Jim, "apply-backup-29991231-000000"));
+
+        Assert.Null(Applier().Undo(Jim).Problem);
+        Assert.Contains("setting:theme=dark", File.ReadAllText(Path.Combine(Jim, "fgscanner.db")));
+        Assert.DoesNotContain("row:page 4", File.ReadAllText(Path.Combine(Jim, "fgscanner.db")));
+    }
+
+    [Fact]
+    public void Apply_refuses_without_room_and_changes_nothing()
+    {
+        var pack = RoundTrip();
+        var before = Snapshot();
+
+        var result = new StationApplier(() => false, _database, _ => 1024).Apply(ApplyRequest(pack));
+
+        Assert.Contains("not enough free space", result.Problem);
+        Assert.Equal(before, Snapshot());
+    }
+
     [Fact]
     public void Jim_scanning_during_the_freeze_refuses_and_changes_nothing()
     {

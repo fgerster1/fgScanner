@@ -100,12 +100,15 @@ if ($AppVersion -ne '0.5.4') { Refuse "this sender is for FG Scanner 0.5.4, and 
 
 $database = Join-Path $StationRoot 'fgscanner.db'
 if (-not (Test-Path -LiteralPath $database)) { Refuse "there is no FG Scanner database at $database" }
+# FG Scanner's own single-instance lock is held for the whole send, so the app cannot open and
+# scan into a station that is half copied (Revision D, D5).
+$hold = $null
 if (-not $NoAppCheck) {
-  $mutex = $null
-  if (@(Get-Process -Name FgScanner -ErrorAction SilentlyContinue).Count -gt 0 -or
-      [System.Threading.Mutex]::TryOpenExisting('FGScanner.SingleInstance', [ref] $mutex)) {
-    Refuse 'FG Scanner is open - close it, then send again'
+  $ours = $false
+  if (@(Get-Process -Name FgScanner -ErrorAction SilentlyContinue).Count -eq 0) {
+    $hold = New-Object System.Threading.Mutex($true, 'FGScanner.SingleInstance', [ref] $ours)
   }
+  if (-not $ours) { Refuse 'FG Scanner is open - close it, then send again' }
 }
 $wal = "$database-wal"
 if ((Test-Path -LiteralPath "$database-journal") -or ((Test-Path -LiteralPath $wal) -and (Get-Item -LiteralPath $wal).Length -gt 0)) {
@@ -216,4 +219,5 @@ try {
 }
 finally {
   [void] [FgScanner.Power]::SetThreadExecutionState([uint32] 2147483648)
+  if ($hold) { $hold.ReleaseMutex(); $hold.Dispose() }
 }

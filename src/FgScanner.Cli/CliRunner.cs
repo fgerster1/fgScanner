@@ -585,10 +585,10 @@ public static class CliRunner
         {
             toOption, basedOnOption, kindOption, stationOption, evidenceOption, byOption,
         };
-        pack.SetAction(parseResult => PackStation(
+        pack.SetAction(parseResult => HoldingTheStation(() => PackStation(
             parseResult.GetValue(toOption)!, parseResult.GetValue(basedOnOption), parseResult.GetValue(kindOption)!,
             parseResult.GetValue(stationOption), parseResult.GetValue(evidenceOption),
-            parseResult.GetValue(byOption) ?? Environment.UserName, overrides));
+            parseResult.GetValue(byOption) ?? Environment.UserName, overrides)));
 
         var applyArgument = new Argument<string?>("pack-folder")
         {
@@ -601,9 +601,9 @@ public static class CliRunner
         {
             applyArgument, undoOption, applyEvidenceOption,
         };
-        apply.SetAction(parseResult => ApplyStation(
+        apply.SetAction(parseResult => HoldingTheStation(() => ApplyStation(
             parseResult.GetValue(applyArgument), parseResult.GetValue(undoOption),
-            parseResult.GetValue(applyEvidenceOption), overrides));
+            parseResult.GetValue(applyEvidenceOption), overrides)));
 
         return new Command("station", "Move a whole station between machines as verified packs.") { verify, pack, apply };
     }
@@ -643,7 +643,7 @@ public static class CliRunner
         var paths = overrides?.StationRoot is { } root ? StationPaths.Resolve(root) : StationPaths.Default;
         var stationRoot = paths.Root;
         var database = Path.Combine(stationRoot, StationManifest.DatabaseFileName);
-        var applier = new StationApplier(IsAppOpen, StationDatabase);
+        var applier = new StationApplier(() => false, StationDatabase);
         // An empty station's evidence folder is typed by the operator, never taken from the pack:
         // the pack arrives through a shared folder and would otherwise choose where files land.
         if (!undo && File.Exists(database))
@@ -706,7 +706,29 @@ public static class CliRunner
     private static bool NotLocal(string folder) =>
         Path.GetFullPath(folder).StartsWith(@"\\", StringComparison.Ordinal);
 
-    private static bool IsAppOpen() => Mutex.TryOpenExisting("FGScanner.SingleInstance", out var mutex) && Dispose(mutex);
+    /// <summary>
+    /// Runs a verb holding FG Scanner's own single-instance lock (Revision D, D5): packing and
+    /// installing take minutes, and an app opened meanwhile would scan into a station being
+    /// copied or swapped. While the lock is held a launched app exits as a second instance does.
+    /// </summary>
+    private static int HoldingTheStation(Func<int> verb)
+    {
+        using var hold = new Mutex(initiallyOwned: true, "FGScanner.SingleInstance", out var ours);
+        if (!ours)
+        {
+            Console.WriteLine("NOT OK — FG Scanner is open — close it, then try again");
+            return 1;
+        }
+
+        try
+        {
+            return verb();
+        }
+        finally
+        {
+            hold.ReleaseMutex();
+        }
+    }
 
     private static int PackStation(
         string to, string? basedOn, string kind, string? stationName, string? evidence, string by, CliOverrides? overrides)
@@ -782,7 +804,7 @@ public static class CliRunner
         }
 
         var packer = new StationPacker(
-            isAppOpen: IsAppOpen,
+            isAppOpen: () => false,
             copyDatabase: BackUpDatabase,
             freeBytes: folder => new DriveInfo(Path.GetPathRoot(Path.GetFullPath(folder))!).AvailableFreeSpace);
         var request = new StationPackRequest(
@@ -833,12 +855,6 @@ public static class CliRunner
             StationVerifyStatus.Ok, result.Code, result.ShippedFiles + 1, packedBytes, [])));
         Console.WriteLine(result.PackFolder);
         return 0;
-    }
-
-    private static bool Dispose(Mutex mutex)
-    {
-        mutex.Dispose();
-        return true;
     }
 
     /// <summary>SQLite's backup API: a consistent copy even of a database another reader has open.</summary>

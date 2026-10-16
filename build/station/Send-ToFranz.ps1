@@ -38,7 +38,7 @@ if (Test-Path -LiteralPath $baseline) {
   $arguments += @('--based-on', $baseline)
 }
 
-Write-Host 'Packing your scans for Franz. This can take a few minutes - leave the laptop on.'
+Write-Host 'Packing your scans for Franz. This can take a few minutes - leave the laptop on, and do not open FG Scanner until this says OK.'
 Write-Host ''
 & $cli @arguments
 $exit = $LASTEXITCODE
