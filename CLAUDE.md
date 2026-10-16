@@ -188,7 +188,7 @@ the JimsStuff portal (`JimsStuff/pipeline/import_fgscanner.py`) parses committed
   empty value cannot name its target, removal is phase 5's web UI; delete-after-
   confirm arms only while an export covers every current answer. The flag stays OFF
   in every published release until the portal's phase 5 can import the results
-  (Jim's station auto-updates — the flag, not release discipline, is the fence).
+  (once Jim is on 0.8.0 his station auto-updates — the flag, not release discipline, is the fence).
   ADR-0014.
   **A batch arrives as one zip (ADR-0015):** "Open batch…" extracts it to
   `%LOCALAPPDATA%\FGScanner\index-packages\<id>` and opens that folder through the
@@ -202,6 +202,21 @@ the JimsStuff portal (`JimsStuff/pipeline/import_fgscanner.py`) parses committed
   Undated is qualifier `undated` AND value `undated` (an empty value is a withdrawal).
   **The people search never selects on typing, Tab or Enter** (SPEC-2026-009): a grid row
   is the only way to pick, and no row picked means "send as typed" (ADR-0016).
+- **Stations exchange data only as verified packs** (SPEC-SCANNER-2026-010, ADR-0017,
+  `docs/station-round-trip.md`): `fgscanner station pack | verify | apply` through the shared
+  Google Drive folder `FGScanner-Jim` (`to-franz`, `to-jim`). Never sync or copy a live station or
+  evidence folder by hand; a pack is never patched — a refused one is re-sent. Jim's station is
+  processed on Franz's PC in its own `--data-dir` workspace, where nothing is ever captured (the
+  account name would be stamped on Jim's evidence). Everything arriving in a pack is untrusted:
+  apply checks the receiver's own freeze record, keeps the receiver's Settings, takes none into an
+  empty station, rebuilds triggers and views, and refuses any folder path outside the evidence
+  root. Jim confirms an 8-character code before apply changes anything.
+- **Updates (ADR-0018):** 0.5.4–0.7.1 are offered updates but cannot install them (NetSparkle's
+  generated script never ran the installer); from 0.8.0 `UpdateInstaller` starts the
+  signature-checked file itself. A release is published as a **pre-release** first and rehearsed
+  on the spare with `FGSCANNER_APPCAST_URL` (only this repo's `releases/download/…` links) — it
+  becomes the Latest, and so reaches Jim, only at a cycle's return. Every release adds a rung to
+  `tests/FgScanner.Data.Tests/fixtures/ladder/` (`docs/release.md`).
 - FG Scanner deliberately has **no Bates support** and none should be added to the capture
   path — identifiers live in the portal's register and display layer; stamped pixels can never
   be reorganized, and re-stamping is evidence alteration.

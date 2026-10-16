@@ -10,7 +10,17 @@
    Release. **Before publishing, install the draft's installer and start it** —
    the local check below never publishes the CLI, so it cannot catch what only the
    pipeline does. 0.5.2 passed every local check and shipped with the CLI written over
-   the app. Publishing is what puts it in front of every station's auto-update.
+   the app. Publishing is what puts it in front of every station's auto-update
+   (from 0.8.0 on; 0.5.4–0.7.1 are offered updates but cannot install them, ADR-0018).
+3a. **Publish as a pre-release first, and rehearse the update on the spare** (ADR-0018):
+   `gh release edit vX --draft=false --prerelease`. `releases/latest` never serves a
+   pre-release, so no station is offered it. On the spare, install the previous version (or
+   the same code built locally with a lower `<Version>`), set
+   `FGSCANNER_APPCAST_URL=https://github.com/fgerster1/fgScanner/releases/download/vX/appcast.xml`
+   for that account, start FG Scanner, press Yes, click UAC, start it again and check the
+   version; then remove the variable. Confirm `releases/latest/download/appcast.xml` still names
+   the previous Latest. Make it the Latest only at a station cycle's return:
+   `gh release edit vX --prerelease=false --latest`.
 4. Publishing the release triggers `winget.yml`, which is skipped unless
    `WINGET_ENABLED=true` (see winget below).
 
