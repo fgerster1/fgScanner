@@ -37,6 +37,7 @@ public sealed class StationManifestTests : IDisposable
     {
         try
         {
+            StationManifestTests.RemoveLinks(_root);
             Directory.Delete(_root, recursive: true);
         }
         catch (IOException)
@@ -117,7 +118,7 @@ public sealed class StationManifestTests : IDisposable
         Assert.Empty(result.Problems);
         Assert.Equal(manifest.Files.Count + 1, result.FileCount);
         Assert.Equal(StationManifest.CodeOf(manifest.ToJsonBytes()), result.Code);
-        Assert.Matches("^[0-9a-f]{4}$", result.Code);
+        Assert.Matches("^[0-9a-f]{4}-[0-9a-f]{4}$", result.Code);
     }
 
     [Fact]
@@ -260,6 +261,67 @@ public sealed class StationManifestTests : IDisposable
 
         Assert.Equal(["manifest names a file outside the pack: ../../outside.txt"],
             StationManifestVerifier.Verify(Pack).Problems);
+    }
+
+    /// <summary>Revision D, P10-10: a manifest with holes is NOT OK, never a crash.</summary>
+    [Theory]
+    [InlineData("{\"format\":1,\"files\":null}")]
+    [InlineData("{\"format\":1,\"dbSha256\":\"x\",\"files\":[{\"rel\":null,\"size\":1,\"sha256\":\"0\",\"kind\":\"image\"}]}")]
+    public void A_manifest_with_missing_fields_is_unreadable_not_a_crash(string json)
+    {
+        CopyToPack();
+        File.WriteAllText(Path.Combine(Pack, StationManifest.FileName), json);
+
+        var result = StationManifestVerifier.Verify(Pack);
+
+        Assert.Equal(StationVerifyStatus.NotOk, result.Status);
+        Assert.StartsWith("manifest unreadable", result.Problems[0]);
+    }
+
+    /// <summary>Revision D, P10-8: a junction inside a pack would make verify (and apply) reach
+    /// files outside it; any link refuses the pack.</summary>
+    [Fact]
+    public void A_junction_inside_the_pack_refuses_it()
+    {
+        CopyToPack();
+        var outside = Directory.CreateDirectory(Path.Combine(_root, "outside")).FullName;
+        File.WriteAllText(Path.Combine(outside, "secret.txt"), "not in the pack");
+        Junction(Path.Combine(Pack, "evidence", "Linked"), outside);
+
+        var result = StationManifestVerifier.Verify(Pack);
+
+        Assert.Equal(StationVerifyStatus.NotOk, result.Status);
+        Assert.Contains("link", result.Problems[0]);
+    }
+
+    [Fact]
+    public void A_junction_in_the_evidence_folder_refuses_the_pack()
+    {
+        var outside = Directory.CreateDirectory(Path.Combine(_root, "outside")).FullName;
+        Junction(Path.Combine(Evidence, "Linked"), outside);
+
+        var ex = Assert.Throws<InvalidDataException>(() => Build());
+
+        Assert.Contains("link", ex.Message);
+    }
+
+    /// <summary>A junction is removed as a link, never followed: recursive deletion trips on it.</summary>
+    internal static void RemoveLinks(string root)
+    {
+        foreach (var dir in new DirectoryInfo(root).EnumerateDirectories("*", new EnumerationOptions
+        { RecurseSubdirectories = true, AttributesToSkip = 0 }).Where(d => d.LinkTarget is not null).ToList())
+        {
+            dir.Delete();
+        }
+    }
+
+    internal static void Junction(string link, string target)
+    {
+        using var mklink = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+            "cmd.exe", $"/c mklink /J \"{link}\" \"{target}\"")
+        { UseShellExecute = false, RedirectStandardOutput = true, CreateNoWindow = true })!;
+        mklink.WaitForExit();
+        Assert.True(Directory.Exists(link), "mklink /J failed");
     }
 
     [Fact]

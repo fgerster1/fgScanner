@@ -269,7 +269,9 @@ public sealed class SqliteStationDatabase : IStationDatabase
     {
         using var connection = Open(database, SqliteOpenMode.ReadOnly);
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT type, name, sql FROM sqlite_master WHERE type IN ('table', 'index') AND name NOT LIKE 'sqlite_%'";
+        // The literal prefix, not LIKE: there '_' is a wildcard, so "sqliteX…" would be skipped.
+        // SQLite reserves "sqlite_" in any case for its own objects, so nothing else can carry it.
+        command.CommandText = "SELECT type, name, sql FROM sqlite_master WHERE type IN ('table', 'index') AND lower(substr(name, 1, 7)) <> 'sqlite_'";
         using var reader = command.ExecuteReader();
         var objects = new Dictionary<(string, string), string>();
         while (reader.Read())

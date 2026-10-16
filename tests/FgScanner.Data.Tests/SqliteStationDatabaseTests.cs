@@ -214,7 +214,12 @@ public sealed class SqliteStationDatabaseTests : IDisposable
         Execute(incoming, "CREATE TABLE Smuggled (Id TEXT)");
         Assert.Contains("Smuggled", _database.SchemaProblem(incoming, receiver, null));
 
+        // LIKE's '_' is a wildcard: a table named like an internal one must not slip past.
         Execute(incoming, "DROP TABLE Smuggled");
+        Execute(incoming, "CREATE TABLE sqliteXsmuggled (Id TEXT)");
+        Assert.Contains("sqliteXsmuggled", _database.SchemaProblem(incoming, receiver, null));
+
+        Execute(incoming, "DROP TABLE sqliteXsmuggled");
         var index = Scalar(incoming, "SELECT name FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL LIMIT 1");
         Execute(incoming, $"DROP INDEX \"{index}\"");
         Assert.Contains(index, _database.SchemaProblem(incoming, receiver, null));

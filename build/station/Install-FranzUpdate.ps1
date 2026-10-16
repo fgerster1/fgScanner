@@ -33,16 +33,45 @@ if (-not (Test-Path -LiteralPath $setting)) {
 }
 
 $toJim = Join-Path (Get-Content -LiteralPath $setting -Raw).Trim() 'to-jim'
-$newest = @(Get-ChildItem -LiteralPath $toJim -Directory -Filter '*-return' -ErrorAction SilentlyContinue |
-  Sort-Object Name | Select-Object -Last 1)
-if ($newest.Count -eq 0) {
+$returns = @(Get-ChildItem -LiteralPath $toJim -Directory -Filter '*-return' -ErrorAction SilentlyContinue)
+if ($returns.Count -eq 0) {
   Write-Host 'NOT YET - nothing from Franz has arrived yet. Try again later, or call Franz.'
   Done 3
 }
 
-Write-Host "Installing Franz's update ($($newest[0].Name)). Do not open FG Scanner until this says OK."
+# Two returns are either a superseded one or one that should not be there; install neither
+# (Revision D, D7).
+if ($returns.Count -gt 1) {
+  Write-Host 'NOT OK - more than one update is waiting - call Franz'
+  Done 1
+}
+
+$pack = $returns[0].FullName
+Write-Host "Checking Franz's update ($($returns[0].Name)). Do not open FG Scanner until this says OK."
 Write-Host ''
-& $cli station apply $newest[0].FullName
+$check = @(& $cli station verify $pack)
+$exit = $LASTEXITCODE
+$check | ForEach-Object { Write-Host $_ }
+if ($exit -ne 0) { Done $exit }
+
+# Nothing changes until Jim has heard Franz read the same code (Revision D, D3): the shared
+# folder proves a pack is intact, not who put it there.
+$code = ($check | Select-String -Pattern '^OK ([0-9a-f]{4}-[0-9a-f]{4})' | Select-Object -First 1).Matches[0].Groups[1].Value
+if ([Console]::IsInputRedirected) {
+  Write-Host 'NOT OK - use the "Install Franz''s update" shortcut, so you can check the code with Franz. Nothing was changed.'
+  Done 1
+}
+
+Write-Host ''
+Write-Host "Franz will read you a code on Teams. Is it  $code  ?"
+$answer = Read-Host 'Type Y and press Enter if it is the same (anything else if not)'
+if ($answer.Trim() -ine 'Y') {
+  Write-Host 'Nothing was changed. Call Franz.'
+  Done 1
+}
+
+Write-Host ''
+& $cli station apply $pack
 $exit = $LASTEXITCODE
 if ($exit -eq 0) {
   Write-Host ''

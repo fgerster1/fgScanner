@@ -184,6 +184,24 @@ public sealed class StationSenderTests : IDisposable
         Assert.Contains("this sender is for FG Scanner 0.5.4", output);
     }
 
+    /// <summary>Revision D, D7: with two returns waiting the shortcut installs neither — a second
+    /// one is either a superseded pack or one that should not be there.</summary>
+    [Fact]
+    public void Install_Franzs_update_refuses_when_more_than_one_return_waits()
+    {
+        var app = Directory.CreateDirectory(Path.Combine(_root, "app", "station")).FullName;
+        File.Copy(RepoFile("build", "station", "Install-FranzUpdate.ps1"), Path.Combine(app, "Install-FranzUpdate.ps1"));
+        var drive = Path.Combine(_root, "drive");
+        Directory.CreateDirectory(Path.Combine(drive, "to-jim", "franz-2026-10-16-1405-return"));
+        Directory.CreateDirectory(Path.Combine(drive, "to-jim", "franz-2026-10-16-1405-2-return"));
+        File.WriteAllText(Path.Combine(app, "drive-folder.txt"), drive);
+
+        var (exit, output) = PowerShell("-File", Path.Combine(app, "Install-FranzUpdate.ps1"));
+
+        Assert.Equal(1, exit);
+        Assert.Contains("more than one update is waiting", output);
+    }
+
     /// <summary>The desktop shortcuts' scripts run under Jim's Windows PowerShell 5.1; a parse
     /// error there would only show on his screen.</summary>
     [Theory]

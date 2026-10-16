@@ -560,7 +560,17 @@ public static class CliRunner
                 return 1;
             }
 
-            var result = StationManifestVerifier.Verify(pack);
+            StationVerifyResult result;
+            try
+            {
+                result = StationManifestVerifier.Verify(pack);
+            }
+            catch (Exception ex) when (NotOkRather(ex))
+            {
+                Console.WriteLine($"NOT OK — {ex.Message}");
+                return 1;
+            }
+
             if (result.Status != StationVerifyStatus.StillArriving)
             {
                 StationManifestVerifier.WriteLog(pack, result, DateTimeOffset.UtcNow);
@@ -702,10 +712,16 @@ public static class CliRunner
         return result.Problem is null ? 0 : result.StillArriving ? 3 : 1;
     }
 
-    /// <summary>A share or a device path (UNC, <c>\\?\</c>, <c>\\.\</c>), judged after
+    /// <summary>A share, a network drive or a device path (UNC, <c>\\?\</c>, <c>\\.\</c>), judged after
     /// normalising: evidence is only ever written to a folder on this computer.</summary>
-    private static bool NotLocal(string folder) =>
-        Path.GetFullPath(folder).StartsWith(@"\\", StringComparison.Ordinal);
+    private static bool NotLocal(string folder)
+    {
+        var full = Path.GetFullPath(folder);
+
+        // A drive letter mapped (or SUBSTed) to a share is a network drive too (Revision D, P10-11).
+        return full.StartsWith(@"\\", StringComparison.Ordinal)
+            || new DriveInfo(Path.GetPathRoot(full)!).DriveType == DriveType.Network;
+    }
 
     /// <summary>
     /// Runs a verb holding FG Scanner's own single-instance lock (Revision D, D5): packing and
@@ -725,11 +741,22 @@ public static class CliRunner
         {
             return verb();
         }
+        catch (Exception ex) when (NotOkRather(ex))
+        {
+            Console.WriteLine($"NOT OK — {ex.Message}");
+            return 1;
+        }
         finally
         {
             hold.ReleaseMutex();
         }
     }
+
+    /// <summary>A pack arrives from a shared folder and may be damaged or crafted: what it can
+    /// cause is a NOT OK line Jim can read out, never a stack trace (Revision D, P10-10).</summary>
+    private static bool NotOkRather(Exception ex) =>
+        ex is IOException or UnauthorizedAccessException or InvalidDataException or SqliteException
+            or System.Text.Json.JsonException or InvalidOperationException;
 
     private static int PackStation(
         string to, string? basedOn, string kind, string? stationName, string? evidence, string by, CliOverrides? overrides)

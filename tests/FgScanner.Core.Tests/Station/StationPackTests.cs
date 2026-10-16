@@ -37,6 +37,7 @@ public sealed class StationPackTests : IDisposable
     {
         try
         {
+            StationManifestTests.RemoveLinks(_root);
             Directory.Delete(_root, recursive: true);
         }
         catch (IOException)
@@ -263,6 +264,18 @@ public sealed class StationPackTests : IDisposable
         });
 
         Assert.Contains("not a report a pack carries", result.Problem);
+        Assert.Empty(Directory.EnumerateFileSystemEntries(Transport));
+    }
+
+    [Fact]
+    public void A_junction_in_the_station_refuses_the_pack_and_leaves_nothing()
+    {
+        var outside = Directory.CreateDirectory(Path.Combine(_root, "outside")).FullName;
+        StationManifestTests.Junction(Path.Combine(Evidence, "Linked"), outside);
+
+        var result = Packer().Pack(Request());
+
+        Assert.Contains("link", result.Problem);
         Assert.Empty(Directory.EnumerateFileSystemEntries(Transport));
     }
 

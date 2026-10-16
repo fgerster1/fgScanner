@@ -73,7 +73,17 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
         }
 
         var manifest = StationManifest.Parse(manifestBytes!);
-        if (GateProblem(request, manifest, db, trash) is { } refusal)
+        string? refusal;
+        try
+        {
+            refusal = GateProblem(request, manifest, db, trash);
+        }
+        catch (InvalidDataException ex)
+        {
+            refusal = $"{ex.Message} — call Franz";
+        }
+
+        if (refusal is not null)
         {
             return StationApplyResult.Refused(refusal);
         }
@@ -489,7 +499,7 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
                 continue;
             }
 
-            foreach (var path in Directory.EnumerateFiles(root, "*", StationManifestBuilder.AllFiles))
+            foreach (var path in StationManifestBuilder.FilesUnder(root))
             {
                 all[prefix + "/" + StationManifestBuilder.RelativeOf(root, path)] = StationManifestBuilder.Sha256Of(path);
             }

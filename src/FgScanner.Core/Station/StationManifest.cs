@@ -59,8 +59,15 @@ public sealed record StationManifest(
         JsonSerializer.Deserialize<StationManifest>(json, Json)
             ?? throw new JsonException("The manifest is empty.");
 
-    /// <summary>The first four hex digits of the manifest's SHA-256 — short enough to read aloud.</summary>
-    public static string CodeOf(byte[] manifestBytes) => HashOf(manifestBytes)[..4];
+    /// <summary>The first eight hex digits of the manifest's SHA-256, as <c>xxxx-xxxx</c> — short
+    /// enough to read aloud.</summary>
+    public static string CodeOf(byte[] manifestBytes)
+    {
+        // Eight hex characters, read out before anything changes (Revision D, D3): four were
+        // guessable in about 65,000 tries.
+        var hash = HashOf(manifestBytes);
+        return $"{hash[..4]}-{hash[4..8]}";
+    }
 
     /// <summary>The manifest's full SHA-256 — what a later pack names as its <c>basedOn</c>.</summary>
     public static string HashOf(byte[] manifestBytes) =>

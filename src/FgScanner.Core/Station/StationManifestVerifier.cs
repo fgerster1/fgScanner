@@ -53,6 +53,15 @@ public static class StationManifestVerifier
                 StationVerifyStatus.NotOk, null, 0, 0, [$"manifest unreadable: {ex.Message}"]);
         }
 
+        // JSON with holes parses; a null where every later step expects a value would be a crash
+        // on Jim's screen instead of NOT OK (Revision D, P10-10).
+        if (manifest.Files is null || manifest.DbSha256 is null || manifest.EvidenceRoot is null
+            || manifest.Files.Any(f => f is null || f.Rel is null || f.Sha256 is null || f.Kind is null)
+            || (manifest.Reports ?? []).Any(r => r is null || r.Name is null || r.Sha256 is null))
+        {
+            return new StationVerifyResult(StationVerifyStatus.NotOk, null, 0, 0, ["manifest unreadable: a required field is missing"]);
+        }
+
         if (ShapeProblem(packFolder, manifest) is { } refusal)
         {
             return new StationVerifyResult(StationVerifyStatus.NotOk, StationManifest.CodeOf(bytes), 0, 0, [refusal]);
@@ -107,7 +116,17 @@ public static class StationManifestVerifier
             .Concat((manifest.Reports ?? []).Select(r => r.Name))
             .Concat([StationManifest.FileName, StationManifest.DatabaseFileName, StationManifest.VerifyLogFileName])
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        problems.AddRange(Directory.EnumerateFiles(packFolder, "*", StationManifestBuilder.AllFiles)
+        List<string> present;
+        try
+        {
+            present = [.. StationManifestBuilder.FilesUnder(packFolder)];
+        }
+        catch (InvalidDataException ex)
+        {
+            return new StationVerifyResult(StationVerifyStatus.NotOk, StationManifest.CodeOf(bytes), 0, 0, [ex.Message]);
+        }
+
+        problems.AddRange(present
             .Select(p => StationManifestBuilder.RelativeOf(packFolder, p))
             .Where(rel => !expected.Contains(rel))
             .Order(StringComparer.Ordinal)

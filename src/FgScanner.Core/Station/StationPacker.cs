@@ -72,7 +72,16 @@ public sealed class StationPacker(
         }
 
         var liveDbSha256 = StationManifestBuilder.Sha256Of(source.Database);
-        var full = StationManifestBuilder.Build(source with { BasedOn = basedOnHash });
+        StationManifest full;
+        try
+        {
+            full = StationManifestBuilder.Build(source with { BasedOn = basedOnHash });
+        }
+        catch (InvalidDataException ex)
+        {
+            return StationPackResult.Refused(ex.Message);
+        }
+
         var manifest = full with { Files = Plan(full.Files, basedOn), BasedOnContent = request.BasedOnContent };
         var shipped = manifest.Files.Where(f => f.From is null).ToList();
         var bytesNeeded = new FileInfo(source.Database).Length + shipped.Sum(f => f.Size);

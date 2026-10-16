@@ -205,7 +205,8 @@ try {
 
   $sha = New-Object System.Security.Cryptography.SHA256Managed
   $manifestSha = (($sha.ComputeHash($manifestBytes) | ForEach-Object { $_.ToString('x2') }) -join '')
-  $code = $manifestSha.Substring(0, 4)
+  # Eight characters, as the station verb prints them (Revision D, D3).
+  $code = $manifestSha.Substring(0, 4) + '-' + $manifestSha.Substring(4, 4)
 
   # The freeze record: the next update from Franz is checked against what left here. This
   # sender cannot read SQLite, so it keeps the database it sent; apply fingerprints that copy.

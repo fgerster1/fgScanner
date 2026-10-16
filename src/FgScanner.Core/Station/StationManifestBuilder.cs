@@ -58,10 +58,32 @@ public static class StationManifestBuilder
 
     private static IEnumerable<StationManifestFile> Hash(string root, string prefix)
     {
-        foreach (var path in Directory.EnumerateFiles(root, "*", AllFiles))
+        foreach (var path in FilesUnder(root))
         {
             var rel = prefix + "/" + RelativeOf(root, path);
             yield return new StationManifestFile(rel, new FileInfo(path).Length, Sha256Of(path), KindOf(prefix, rel));
+        }
+    }
+
+    /// <summary>
+    /// Every file under <paramref name="root"/>, refusing any link on the way (Revision D, P10-8):
+    /// a junction or symlink inside a station or a pack would make pack ship, verify read and
+    /// apply move files that live somewhere else entirely.
+    /// </summary>
+    /// <exception cref="InvalidDataException">A junction or symbolic link was found.</exception>
+    internal static IEnumerable<string> FilesUnder(string root)
+    {
+        foreach (var entry in new DirectoryInfo(root).EnumerateFileSystemInfos("*", AllFiles))
+        {
+            if (entry.LinkTarget is not null)
+            {
+                throw new InvalidDataException($"{entry.FullName} is a link to {entry.LinkTarget}; links are not allowed");
+            }
+
+            if (entry is FileInfo)
+            {
+                yield return entry.FullName;
+            }
         }
     }
 
