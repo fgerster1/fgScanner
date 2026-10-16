@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  The "Install Franz's update" desktop shortcut (SPEC-SCANNER-2026-010 §03 item 3).
+  The "Install Franz's update" desktop shortcut (SPEC-SCANNER-2026-010 section 03, item 3).
 
 .DESCRIPTION
   Installs the newest return in the to-jim folder of the shared Google Drive folder. Folder names

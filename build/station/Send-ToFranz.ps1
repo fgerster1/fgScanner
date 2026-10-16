@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  The "Send my scans to Franz" desktop shortcut (SPEC-SCANNER-2026-010 §03 item 3).
+  The "Send my scans to Franz" desktop shortcut (SPEC-SCANNER-2026-010 section 03, item 3).
 
 .DESCRIPTION
   Packs this station into the to-franz folder of the shared Google Drive folder, based on the
