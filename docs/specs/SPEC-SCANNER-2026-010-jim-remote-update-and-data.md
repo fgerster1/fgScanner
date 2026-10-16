@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Approved (Revision C) — Revision D in review (Round D: the P9/P10 reviews, 8 open items) |
-| **Revision** | D — 2026-10-16: the Prompt 9 and 10 reviews' 23 findings (15 decided by the spec, 8 open — in review). C — 2026-10-15: the P1 rehearsal found auto-update broken in 0.5.4 and 0.7.1, so Jim's 0.8.0 arrives as a guided manual install, 0.8.0 fixes the updater (test first, rehearsed without reaching Jim), and processing moves from the NucBox to Franz's PC. B — 2026-10-09: rebuilt around Round A; approved in Round B with the Google Drive transport |
+| **Status** | Approved — Revision D approved in Round D 2026-10-16 (every recommendation taken) |
+| **Revision** | D — 2026-10-16: the Prompt 9 and 10 reviews' 23 findings (15 decided by the spec, 8 decided in Round D — no open items). C — 2026-10-15: the P1 rehearsal found auto-update broken in 0.5.4 and 0.7.1, so Jim's 0.8.0 arrives as a guided manual install, 0.8.0 fixes the updater (test first, rehearsed without reaching Jim), and processing moves from the NucBox to Franz's PC. B — 2026-10-09: rebuilt around Round A; approved in Round B with the Google Drive transport |
 | **Tier** | System — it changes the software on Jim's live evidence station and moves evidence between machines |
 | **Author** | Claude, for Franz Gerster |
 | **Date** | 2026-10-09 |
@@ -223,7 +223,7 @@ finding was checked at the cited lines; all 23 are true.
 | P9-7 | `…-1405-2-return` sorts before `…-1405-return`; the shortcut installs the older one | spec silent | **Open D7** | 10c |
 | P9-11 | §14 promises a log beside the manifest for pack and apply; apply logs in the station folder (the pack folder is deleted after use) | spec wrong | **Open D8** | 10c |
 
-**Open (Round D):**
+**Decided in Round D (2026-10-16, approve — every recommendation (a), no notes):**
 - **D1 — Settings an empty station takes from a pack.** (a) **None:** delete every Settings row from
   the incoming DB when the receiver has none — Franz's workspace starts on defaults (auto-orient off
   is set there by hand anyway; Jim's own settings never leave his laptop); (b) keep them but delete
@@ -233,6 +233,11 @@ finding was checked at the cited lines; all 23 are true.
   migrated to the pack's `lastMigration`); `PRAGMA trusted_schema=OFF`; `integrity_check` before
   binding; receiver attached read-only; (b) rebuild: create a fresh DB from migrations and copy rows
   in. *Recommended:* (a) — a few dozen lines, refuses anything extra; (b) is a larger change.
+  **Refined 2026-10-16 (Franz):** "exactly" would refuse Jim's real first send — views and full-text
+  triggers are created from the current code (`RawSchemaSql`), so Jim's 9/25 `v_index` is an older
+  text than a fresh database's (measured: the only difference). So views and triggers are never
+  taken from a pack: apply drops the incoming database's and recreates the build's own; tables and
+  indexes must match the reference exactly; nothing extra may exist.
 - **D3 — Knowing a return came from Franz.** (a) **Jim confirms the code before anything changes:**
   the shortcut verifies, shows an 8-character code (`96da-41c3`) and asks "Is this the code Franz
   read you? Y/N"; apply refuses when more than one return waits; (b) Ed25519-sign packs with keys
@@ -304,7 +309,7 @@ unless an item below changes it.
 6. **Q-C6 — 0.8.0 is published only after Jim is on it.** Jim installs from `to-jim\` (Q-C1 a),
    then 0.8.0 becomes the Latest, so later releases have a working updater to arrive through.
    0.7.1 and 0.6.0 stay drafts (Q-B9 unchanged).
-7. **Q-C7 — The read-out code stays 4 characters.** It only confirms both sides read the same
+7. **Q-C7 — The read-out code stays 4 characters.** *(Reversed by D3, 2026-10-16: 8 characters, confirmed by Jim before apply changes anything.)* It only confirms both sides read the same
    manifest; every file's SHA-256 does the real checking, and the folder is shared with Jim
    alone. 8 characters (`96da-41c3`) is a one-line change if you prefer it.
 8. **Q-C8 — The rule "published releases auto-update stations silently" is corrected** in
@@ -555,8 +560,10 @@ is his own, entered by him. Counsel to be told that packs pass through Google Dr
 
 ## 14 · Observability
 
-Every pack/verify/apply writes a one-line result (`OK 1234 · 2,140 files · 3.1 GB`) and a log
-beside the manifest; every return carries `changes.jsonl` and the needs-Jim sheet.
+Every pack/verify/apply prints a one-line result (`OK 96da-41c3 · 2,140 files · 3.1 GB`). Verify
+writes `station-verify.log` beside the manifest; apply and undo append to `station-apply.log` in the
+station folder, because the pack folder is deleted after use (D8); a pack's manifest is its own
+record. Every return carries `changes.jsonl` and the needs-Jim sheet.
 
 ## 15 · Performance and scale
 
@@ -671,7 +678,7 @@ days.
 
 | | |
 |---|---|
-| **Review round answered** | ☑ Round A 2026-10-09 (revise) — https://claude.ai/artifact/LTKoCtnKXZZTsoEZQVNBpV · ☑ Round B 2026-10-09 (approve) — https://claude.ai/artifact/EjYRfaTz1UDJ1zQHuQzEPi (doc SPEC-SCANNER-2026-010-rB) · ☑ Round C 2026-10-16 (approve) — https://claude.ai/artifact/GwvbCJH8cwXBG9KcVAb5yt (doc SPEC-SCANNER-2026-010-rC) |
+| **Review round answered** | ☑ Round A 2026-10-09 (revise) — https://claude.ai/artifact/LTKoCtnKXZZTsoEZQVNBpV · ☑ Round B 2026-10-09 (approve) — https://claude.ai/artifact/EjYRfaTz1UDJ1zQHuQzEPi (doc SPEC-SCANNER-2026-010-rB) · ☑ Round C 2026-10-16 (approve) — https://claude.ai/artifact/GwvbCJH8cwXBG9KcVAb5yt (doc SPEC-SCANNER-2026-010-rC) · ☑ Round D 2026-10-16 (approve) — https://claude.ai/artifact/5V9E13fbL7ijZUBPD4VB3J (doc SPEC-SCANNER-2026-010-rD) |
 | **Franz approved** | ☑ date: 2026-10-09 (Round B) · 2026-10-16 (Revision C, Round C) |
 | **Built** | ☐ date: |
 | **Verified in production** | ☐ date: |

@@ -338,6 +338,57 @@ CHECKPOINT 10 — Claude runs and records:
 
 ---
 
+**Revision D fix prompts** (approved in Round D 2026-10-16, every recommendation; D2 refined the
+same day). They run before P11, test first, each finding reproduced by a failing test. Nothing
+declined. After 10c, a cold-reader subagent re-reviews 10a–10c.
+
+PROMPT 10a — Apply and undo never strand a station (Revision D: P9-1, P9-2, P9-3, P10-6, D5)
+Spec: §05 Revision D, §10 AC-5/AC-6, §12    Depends on: P10    Franz stop: none
+
+1. Tests first (`StationApplyTests`): a file locked mid-commit (move-aside and place phases) →
+   auto-undo, station byte-identical, NOT OK, `undo.json` written before anything moves; a changed
+   file is never deleted by undo when its original was not yet moved aside (P9-1); undo refuses
+   with the app open, a journal, recovery scans, or content/files that differ from the freeze record
+   apply wrote, and moves the current DB into `apply-undone-…` (temp + move) (P9-3); a backup with no
+   plan is skipped; apply refuses when either volume lacks pack size + 1 GB (P10-6).
+2. D5: the CLI holds `FGScanner.SingleInstance` for the whole pack/apply/undo (an app started
+   meanwhile exits as a second instance); the 0.5.4 sender holds it too.
+
+PROMPT 10b — The incoming database is untrusted (Revision D: P10-1/D1, P10-2+P9-10, P10-3, P10-4/D2, P10-5/D3, P9-6, P10-7, P10-8, P10-10, P10-11, D7)
+Spec: §05 Revision D, §07, §13    Depends on: 10a    Franz stop: none
+
+1. Tests first: an empty station drops every Settings row (D1); a path in `Profiles.BaseDirectory`,
+   `Groups.DirectoryPath` or `TrashItems.GroupDirectoryPath` outside the evidence root or on a share
+   refuses (P10-2/P9-10); the freeze check uses the receiver's own freeze content and requires the
+   pack's `basedOnContent` to equal it — a 0.5.4 send keeps `station-sent.db` (its sent database) so
+   the content can be computed on Jim's side (P10-3); an extra table/index/trigger/view, or a changed
+   table/index, refuses, and views/triggers are rebuilt from `RawSchemaSql`, `trusted_schema=OFF`,
+   integrity before binding, receiver attached read-only (D2); the migration gate reads the receiver
+   DB's last migration and Settings are copied by named columns (P9-6); identifiers outside
+   `^[A-Za-z_][A-Za-z0-9_]*$` refuse (P10-7); a junction/symlink in a pack or station refuses (P10-8);
+   a malformed manifest or a database error is NOT OK, never a crash (P10-10); a network drive letter
+   is not local (P10-11).
+2. D3: the code is 8 hex characters `xxxx-xxxx` everywhere (verb, verify, 0.5.4 sender);
+   "Install Franz's update" verifies first, shows the code and asks "Is this the code Franz read
+   you? (Y/N)" before apply changes anything. D7: more than one `*-return` waiting → NOT OK.
+
+PROMPT 10c — Updater, change log and the shortcuts (Revision D: P9-8, D4, P9-9, D6, test gaps)
+Spec: §05 Revision D, §10 AC-9, AC-11    Depends on: 10b    Franz stop: none
+
+1. Tests first: the updater copies, then waits for a capture in hand, then re-verifies the Ed25519
+   signature of the exact copy and only then starts it (P9-8, D4); `UpdateInstallerTests` use an
+   update folder with a space; `changes.jsonl` diffs against a migrated copy of the received DB, so a
+   value Franz sets in a column a migration added is logged and the migration's own changes are not
+   (P9-9); "Send my scans to Franz" sends everything when the station's baseline has no content (D6).
+
+CHECKPOINT 10a–10c — Claude runs and records:
+  · each finding's test red first, then green; full suite green; Release 0 warnings; format clean
+  · on the spare: Jim's 9/25 copy round trip again (pack → empty workspace → return → apply → undo),
+    plus a tampered return (a `BaseDirectory` on a share; an extra trigger) refused with nothing changed
+  · a cold-reader subagent re-reviews 10a–10c; anything it finds is fixed or recorded
+
+---
+
 PROMPT 11 of 13 — Release 0.8.0: docs, draft, and the 0.5.4 → 0.8.0 rehearsal
 Spec: §18, §19 Phase 2, §17 Phase 1 ("repeat with 0.8.0"), §10 AC-1    Depends on: P10
 Franz stop: Outward action + Physical — Franz pushes the branch, merges after CI is green, pushes the tag; clicks UAC in the rehearsal
