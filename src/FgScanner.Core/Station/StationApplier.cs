@@ -47,7 +47,7 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
             return StationApplyResult.Refused(notAtRest);
         }
 
-        var verified = StationManifestVerifier.Verify(request.PackFolder);
+        var verified = StationManifestVerifier.Verify(request.PackFolder, out var manifestBytes);
         if (verified.Status == StationVerifyStatus.StillArriving)
         {
             return new StationApplyResult(null, "the update is still arriving — wait for Drive, then try again", StillArriving: true);
@@ -58,8 +58,7 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
             return StationApplyResult.Refused($"the update is damaged ({verified.Problems[0]}) — call Franz");
         }
 
-        var manifestBytes = File.ReadAllBytes(Path.Combine(request.PackFolder, StationManifest.FileName));
-        var manifest = StationManifest.Parse(manifestBytes);
+        var manifest = StationManifest.Parse(manifestBytes!);
         if (GateProblem(request, manifest, db, trash) is { } refusal)
         {
             return StationApplyResult.Refused(refusal);
@@ -94,7 +93,7 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
 
         StationFreezeRecord.Write(request.StationRoot, new StationFreezeRecord(
             Path.GetFileName(Path.TrimEndingDirectorySeparator(request.PackFolder)), verified.Code!, manifest.SentAt,
-            StationManifestBuilder.Sha256Of(db), StationManifest.HashOf(manifestBytes), database.Content(db)), manifestBytes);
+            StationManifestBuilder.Sha256Of(db), StationManifest.HashOf(manifestBytes!), database.Content(db)), manifestBytes!);
         return new StationApplyResult(verified.Code, null, BackupFolder: backup);
     }
 
@@ -226,7 +225,20 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
     {
         var stagedDb = Path.Combine(staging, StationManifest.DatabaseFileName);
         File.Copy(Path.Combine(request.PackFolder, StationManifest.DatabaseFileName), stagedDb);
-        database.BindToStation(stagedDb, File.Exists(db) ? db : null, trash);
+        if (StationManifestBuilder.Sha256Of(stagedDb) != manifest.DbSha256)
+        {
+            return "the update's database did not copy intact — call Franz";
+        }
+
+        try
+        {
+            database.BindToStation(stagedDb, File.Exists(db) ? db : null, trash);
+        }
+        catch (InvalidDataException ex)
+        {
+            return $"the update's database cannot be made this station's own ({ex.Message}) — call Franz";
+        }
+
         if (!database.IntegrityOk(stagedDb))
         {
             return "the update's database failed its integrity check — call Franz";

@@ -212,10 +212,15 @@ public sealed class CliIntegrationTests : IDisposable
         var jimsImages = Directory.GetFiles(evidence, "*", SearchOption.AllDirectories).Length;
         Directory.Move(evidence, evidence + ".jim");
 
-        var (applyExit, applyOut) = await RunStationCapturedAsync("station", "apply", pack, "--data-dir", franz);
+        var (untypedExit, untypedOut) = await RunStationCapturedAsync("station", "apply", pack, "--data-dir", franz);
+        var (applyExit, applyOut) = await RunStationCapturedAsync(
+            "station", "apply", pack, "--data-dir", franz, "--evidence", evidence);
         var images = Directory.GetFiles(evidence, "*", SearchOption.AllDirectories).Length;
         var (undoExit, undoOut) = await RunStationCapturedAsync("station", "apply", "--undo", "--data-dir", franz);
 
+        // The pack never chooses where an empty station's files land; the operator types it.
+        Assert.Equal(1, untypedExit);
+        Assert.StartsWith("NOT OK — say which folder holds the evidence", untypedOut);
         Assert.True(applyExit == 0, applyOut);
         Assert.StartsWith("OK ", applyOut);
         Assert.Equal(jimsImages, images);

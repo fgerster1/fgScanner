@@ -594,7 +594,7 @@ public static class CliRunner
             Arity = ArgumentArity.ZeroOrOne,
         };
         var undoOption = new Option<bool>("--undo") { Description = "Put the station back as it was before the last apply." };
-        var applyEvidenceOption = new Option<string?>("--evidence") { Description = "The evidence folder (default: the one the profiles name, or the pack's for an empty station). Undo uses the folder the last apply used." };
+        var applyEvidenceOption = new Option<string?>("--evidence") { Description = "The evidence folder (default: the one the profiles name; required for an empty station). Undo uses the folder the last apply used." };
         var apply = new Command("apply", "Install a pack into this station; prints OK and the code to read out.")
         {
             applyArgument, undoOption, applyEvidenceOption,
@@ -632,13 +632,17 @@ public static class CliRunner
         var stationRoot = paths.Root;
         var database = Path.Combine(stationRoot, StationManifest.DatabaseFileName);
         var applier = new StationApplier(IsAppOpen, StationDatabase);
+        // An empty station's evidence folder is typed by the operator, never taken from the pack:
+        // the pack arrives through a shared folder and would otherwise choose where files land.
         if (!undo && File.Exists(database))
         {
             evidence ??= StationFacts.Read(database).BaseDirectories is [var only] ? only : null;
         }
-        else if (!undo && packFolder is not null && File.Exists(Path.Combine(packFolder, StationManifest.FileName)))
+
+        if (evidence is not null && (evidence.StartsWith(@"\\", StringComparison.Ordinal) || evidence.StartsWith("//", StringComparison.Ordinal)))
         {
-            evidence ??= StationManifest.Parse(File.ReadAllBytes(Path.Combine(packFolder, StationManifest.FileName))).EvidenceRoot;
+            Console.WriteLine($"NOT OK — the evidence folder must be on this computer, not {evidence}");
+            return 1;
         }
 
         StationApplyResult result;

@@ -14,12 +14,12 @@ namespace FgScanner.Data;
 public sealed class SqliteStationDatabase : IStationDatabase
 {
     /// <summary>The evidence tables — everything a scan, an edit, a move or a trash changes.</summary>
-    private static readonly string[] ContentTables =
+    internal static readonly string[] ContentTables =
         ["Groups", "Documents", "Pages", "TrashItems", "Profiles", "IndexSchemas", "FieldDefinitions"];
 
     /// <summary>Values each station keeps for itself; apply overwrites or rebinds them, so they
     /// would make every return look like a freeze violation.</summary>
-    private static readonly HashSet<(string Table, string Column)> StationOwned =
+    internal static readonly HashSet<(string Table, string Column)> StationOwned =
         [("Profiles", "ScanSettingsJson"), ("TrashItems", "TrashFolderPath")];
 
     public StationContent Content(string database)
@@ -80,7 +80,19 @@ public sealed class SqliteStationDatabase : IStationDatabase
             {
                 var folder = reader.GetString(1).TrimEnd('\\', '/');
                 var name = folder[(folder.LastIndexOfAny(['\\', '/']) + 1)..];
-                rebound.Add((reader.GetString(0), Path.Combine(receiverTrash, name)));
+                var path = Path.Combine(receiverTrash, name);
+
+                // The arriving database is untrusted; a segment like ".." would root the item
+                // outside this station's trash, where restore and purge act on what is there.
+                if (name.Length == 0 || name is "." or ".." || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
+                    || !Path.GetFullPath(path).StartsWith(
+                        Path.TrimEndingDirectorySeparator(Path.GetFullPath(receiverTrash)) + Path.DirectorySeparatorChar,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidDataException($"a trash item names a folder outside the trash: {reader.GetString(1)}");
+                }
+
+                rebound.Add((reader.GetString(0), path));
             }
         }
 
@@ -105,7 +117,7 @@ public sealed class SqliteStationDatabase : IStationDatabase
         return command.ExecuteScalar() as string == "ok";
     }
 
-    private static SqliteConnection Open(string database, SqliteOpenMode mode)
+    internal static SqliteConnection Open(string database, SqliteOpenMode mode)
     {
         var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
@@ -125,7 +137,7 @@ public sealed class SqliteStationDatabase : IStationDatabase
         command.ExecuteNonQuery();
     }
 
-    private static List<string> Columns(SqliteConnection connection, string table)
+    internal static List<string> Columns(SqliteConnection connection, string table)
     {
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT name FROM pragma_table_info(@table)";

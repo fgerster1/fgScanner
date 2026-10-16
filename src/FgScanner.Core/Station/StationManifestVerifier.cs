@@ -26,8 +26,13 @@ public sealed record StationVerifyResult(
 /// </summary>
 public static class StationManifestVerifier
 {
-    public static StationVerifyResult Verify(string packFolder)
+    public static StationVerifyResult Verify(string packFolder) => Verify(packFolder, out _);
+
+    /// <summary>Also hands back the manifest bytes that were verified, so apply acts on exactly
+    /// those — a shared folder can change the file between a check and a second read.</summary>
+    internal static StationVerifyResult Verify(string packFolder, out byte[]? manifestBytes)
     {
+        manifestBytes = null;
         var manifestPath = Path.Combine(packFolder, StationManifest.FileName);
         if (!File.Exists(manifestPath))
         {
@@ -36,6 +41,7 @@ public static class StationManifestVerifier
         }
 
         var bytes = File.ReadAllBytes(manifestPath);
+        manifestBytes = bytes;
         StationManifest manifest;
         try
         {

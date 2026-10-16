@@ -150,6 +150,21 @@ public sealed class SqliteStationDatabaseTests : IDisposable
         Assert.True(_database.IntegrityOk(incoming));
     }
 
+    /// <summary>The arriving database is untrusted: a trash path ending in <c>..</c> would re-root
+    /// the item outside the station's trash, where a later restore or purge would act.</summary>
+    [Theory]
+    [InlineData(@"C:\Users\x\trash\..")]
+    [InlineData(@"C:\Users\x\trash\.")]
+    [InlineData(@"\\")]
+    public void A_trash_path_that_would_leave_the_trash_folder_is_refused(string hostile)
+    {
+        var incoming = Fixture("current");
+        Execute(incoming, $"UPDATE TrashItems SET TrashFolderPath = '{hostile}'");
+
+        Assert.Throws<InvalidDataException>(() =>
+            _database.BindToStation(incoming, null, Path.Combine(_root, "jim", "trash")));
+    }
+
     [Fact]
     public void Binding_into_an_empty_station_keeps_the_senders_settings()
     {
