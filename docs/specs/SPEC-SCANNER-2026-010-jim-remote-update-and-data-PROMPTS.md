@@ -17,8 +17,9 @@ Not tracked in Linear (FG Scanner work stays out of it).
 - Tests first: write the named test, watch it fail for the right reason, then make it pass.
 - CI's commands must pass: `dotnet build -c Release` (warnings are errors),
   `dotnet test -c Release` (MTP mode), `dotnet format --verify-no-changes`.
-- Work on branch `spec-scanner-010-remote-update`. Claude never pushes, tags or publishes a
-  release (the permission guard blocks it): Franz runs those as `!` commands that Claude gives him.
+- Work on branch `spec-scanner-010-remote-update`. Claude pushes, opens and merges the PR once CI
+  is green, tags, and publishes a **pre-release** itself (Franz, 2026-10-16: stop only for
+  decisions). Making a release the **Latest** still waits for Franz, because that reaches Jim.
 - **Never touch Franz's or Jim's real data** in a test. Tests use temp folders and temp SQLite
   databases; the rehearsals use copies (`%APPDATA%\FGScanner.rehearsal-jim-laptop-2026-09-25`,
   `C:\Evidence-Scans`), never `D:\Evidence-Scans` or the original copies on F:.
@@ -33,9 +34,8 @@ Not tracked in Linear (FG Scanner work stays out of it).
 - Continuous: run each checkpoint; when green, commit (`SPEC-SCANNER-2026-010 P<n>: …`), add a
   line to the Run log at the bottom, and go on. Stop only at a prompt's `Franz stop`.
 
-**Run order — Franz stops:** P1 (done 2026-10-15) · P11 (push the branch, merge, tag 0.8.0;
-publish v0.8.0 as a **pre-release**; click UAC on the spare in both rehearsals — outward,
-physical) · P12 (the cycle with Jim on Teams — physical; make v0.8.0 the Latest after Jim runs
+**Run order — Franz stops:** P1 (done 2026-10-15) · P11 (click UAC on the spare in both
+rehearsals — physical; Claude pushes, merges, tags and publishes the pre-release itself) · P12 (the cycle with Jim on Teams — physical; make v0.8.0 the Latest after Jim runs
 it — outward). P9/P10 stop only if a finding needs a decision the spec didn't make. P2–P8b run
 straight through.
 
@@ -404,7 +404,7 @@ CHECKPOINT 10a–10c — Claude runs and records:
 
 PROMPT 11 of 13 — Release 0.8.0: docs, draft, and the 0.5.4 → 0.8.0 rehearsal
 Spec: §18, §19 Phase 2, §17 Phase 1 ("repeat with 0.8.0"), §10 AC-1    Depends on: P10
-Franz stop: Outward action + Physical — Franz pushes the branch, merges after CI is green, pushes the tag; clicks UAC in the rehearsal
+Franz stop: Physical — Franz clicks UAC in the rehearsals (Claude pushes, merges after CI is green, tags and publishes the pre-release)
 
 Already done if: a v0.8.0 draft exists, verified, and the Run log has the rehearsal line.
 
@@ -419,7 +419,7 @@ Do only this:
    (Q-C8): CLAUDE.md says 0.5.4–0.7.1 are offered updates but cannot install them, the updater
    starts the verified file itself, and a release is a pre-release until rehearsed; an ADR for
    the updater repair; `docs/release.md` gains the pre-release step and `FGSCANNER_APPCAST_URL`.
-2. Bump `<Version>` to 0.8.0; give Franz the push and merge commands; after CI, the tag.
+2. Bump `<Version>` to 0.8.0; push, open the PR, merge when CI is green, then tag.
 3. When the draft is built: run `build/verify-publish.ps1` on it; download, install and start
    it on the spare (CLAUDE.md: install and start a draft before publishing).
 4. Rehearse on the spare (Q-C5), reset first: reinstall 0.5.4 and re-copy its data from the 9/25
@@ -427,8 +427,8 @@ Do only this:
    0.8.0 as Jim will do it (AC-1) → 0.8.0 opens it (migrates) → in a `--data-dir` workspace on
    Franz's PC set one Box, commit nothing → return pack → apply on the spare → counts and
    settings match. Franz's own station is not touched. Record reading speed on Franz's PC (§15).
-5. The updater rehearsal (AC-12, §17 Phase 2): give Franz
-   `! gh release edit v0.8.0 --draft=false --prerelease`; confirm
+5. The updater rehearsal (AC-12, §17 Phase 2): run
+   `gh release edit v0.8.0 --draft=false --prerelease`; confirm
    `releases/latest/download/appcast.xml` still names 0.5.4; on the spare install a local build
    of the same code stamped 0.7.99, set `FGSCANNER_APPCAST_URL` (user scope) to v0.8.0's own
    appcast; Franz starts it → Yes → UAC; the app closes itself; start again → 0.8.0, data
