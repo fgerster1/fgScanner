@@ -135,9 +135,12 @@ jobs:
           'AYGJKjx0kHdK1dPayOwD71kSEa4yS7j0iVMofJ9RVm4=' | Out-File "$keyDir\NetSparkle_Ed25519.pub" -NoNewline -Encoding ascii
           # -b is the binaries directory, -a the output directory. They are different flags;
           # passing only -a leaves the search at "." and silently finds nothing.
+          # The installer link names this release, not "latest": a pre-release's appcast must point
+          # at its own installer, because releases/latest never serves a pre-release — that is
+          # how the updater is rehearsed without any station being offered it (SPEC-SCANNER-2026-010 Q-C3).
           netsparkle-generate-appcast -b dist -a dist -e exe -o windows -n "FG Scanner" `
             --key-path $keyDir `
-            -u https://github.com/fgerster1/fgScanner/releases/latest/download/
+            -u https://github.com/fgerster1/fgScanner/releases/download/v${{ steps.ver.outputs.version }}/
           Remove-Item $keyDir -Recurse -Force
           # NetSparkle in SecurityMode.Strict fetches <appcast-url>.signature to verify the feed,
           # so a missing signature file means every client silently sees "no update available".

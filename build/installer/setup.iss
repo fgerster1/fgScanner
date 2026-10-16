@@ -67,16 +67,23 @@ ChangesAssociations=yes
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 Name: "aioptout"; Description: "Disable the optional AI description feature (nothing can be sent to Google on this computer)"; GroupDescription: "Privacy:"; Flags: unchecked
+; SPEC-SCANNER-2026-010: Jim's laptop only. The next page asks for the shared Google Drive folder.
+Name: "stationshortcuts"; Description: "This is Jim's station: put ""Send my scans to Franz"" and ""Install Franz's update"" on the desktop"; GroupDescription: "Station round trip:"; Flags: unchecked
 
 [Files]
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 Source: "..\..\PRIVACY.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\THIRD-PARTY-NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\station\Send-ToFranz.ps1"; DestDir: "{app}\station"; Flags: ignoreversion
+Source: "..\station\Install-FranzUpdate.ps1"; DestDir: "{app}\station"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#ExeName}"
 Name: "{group}\FG Scanner user guide"; Filename: "https://github.com/fgerster1/fgScanner/blob/main/docs/user-guide.md"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#ExeName}"; Tasks: desktopicon
+; Each runs in a console that stays open until a key is pressed, so Jim can read the OK line out.
+Name: "{autodesktop}\Send my scans to Franz"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\station\Send-ToFranz.ps1"""; IconFilename: "{app}\{#ExeName}"; Tasks: stationshortcuts
+Name: "{autodesktop}\Install Franz's update"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\station\Install-FranzUpdate.ps1"""; IconFilename: "{app}\{#ExeName}"; Tasks: stationshortcuts
 
 [Registry]
 ; ---- Machine-wide AI opt-out (privacy task above; the app hides the AI feature when set) ----
@@ -117,3 +124,38 @@ Type: filesandordirs; Name: "{app}\_winarm"
 Type: filesandordirs; Name: "{app}\tessdata"
 ; The command line tool's own folder (0.5.3 on): the *.dll purge above reaches only the top level.
 Type: filesandordirs; Name: "{app}\cli"
+
+[Code]
+// SPEC-SCANNER-2026-010: the shortcuts read the shared Google Drive folder from one file written
+// here, never a guessed path. Silent updates keep the answer given the first time; a first silent
+// install can pass it as /DriveFolder="G:\My Drive\FGScanner-Jim".
+var
+  DrivePage: TInputDirWizardPage;
+
+procedure InitializeWizard;
+begin
+  DrivePage := CreateInputDirPage(wpSelectTasks,
+    'Google Drive folder', 'Where is the FGScanner-Jim folder Franz shared with you?',
+    'The two desktop shortcuts send your scans to, and install Franz''s updates from, this folder. ' +
+    'It holds the to-franz and to-jim folders.',
+    False, '');
+  DrivePage.Add('');
+  DrivePage.Values[0] := GetPreviousData('DriveFolder',
+    ExpandConstant('{param:DriveFolder|G:\My Drive\FGScanner-Jim}'));
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := (PageID = DrivePage.ID) and not WizardIsTaskSelected('stationshortcuts');
+end;
+
+procedure RegisterPreviousData(PreviousDataKey: Integer);
+begin
+  SetPreviousData(PreviousDataKey, 'DriveFolder', DrivePage.Values[0]);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if (CurStep = ssPostInstall) and WizardIsTaskSelected('stationshortcuts') then
+    SaveStringToFile(ExpandConstant('{app}\station\drive-folder.txt'), DrivePage.Values[0], False);
+end;

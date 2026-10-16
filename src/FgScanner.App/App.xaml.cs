@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows;
 using FgScanner.App.Services;
 using FgScanner.App.Views;
+using FgScanner.Core.Station;
 using FgScanner.Data;
 using FgScanner.Scanning;
 using Microsoft.EntityFrameworkCore;
@@ -23,6 +24,20 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // Resolved before the single-instance check so a mistyped flag never reaches a window:
+        // falling back to the default station would open the wrong station's evidence.
+        StationPaths station;
+        try
+        {
+            station = StationPaths.Resolve(StationPaths.DataDirFromArgs(e.Args));
+        }
+        catch (ArgumentException ex)
+        {
+            MessageBox.Show(ex.Message, "FG Scanner", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown();
+            return;
+        }
 
         // Single instance (PLAN §5.8): a second launch activates the running window and exits.
         _singleInstanceMutex = new Mutex(initiallyOwned: true, "FGScanner.SingleInstance", out var isFirstInstance);
@@ -65,9 +80,7 @@ public partial class App : Application
         };
         listener.Start();
 
-        var logDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "FGScanner", "logs");
+        var logDir = station.Logs;
         Directory.CreateDirectory(logDir);
 
         _host = Host.CreateDefaultBuilder(e.Args)
@@ -91,10 +104,11 @@ public partial class App : Application
                     services.AddSingleton<IScanService, Naps2ScanService>();
                 }
 
-                services.AddSingleton<ScanSessionService>();
+                services.AddSingleton(station);
+                services.AddSingleton(_ => new ScanSessionService(station.Recovery));
                 services.AddSingleton<IStagedPageDiscarder, RecycleBinDiscarder>();
                 services.AddDbContextFactory<FgScannerDbContext>(o =>
-                    o.UseSqlite($"Data Source={DbBootstrapper.DefaultDbPath}"));
+                    o.UseSqlite($"Data Source={station.Database}"));
                 services.AddSingleton<GroupService>();
                 services.AddSingleton<ProfileService>();
                 services.AddSingleton(sp => new FgScanner.Core.Hooks.CommitHookService());
@@ -108,9 +122,7 @@ public partial class App : Application
                 services.AddSingleton<IndexingService>();
                 services.AddSingleton(sp => new TrashService(
                     sp.GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<FgScannerDbContext>>(),
-                    Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                        "FGScanner", "trash")));
+                    station.Trash));
                 services.AddSingleton<ReorderService>();
                 services.AddSingleton<AppSettingsService>();
 
@@ -122,7 +134,7 @@ public partial class App : Application
                 services.AddSingleton<EmailSender>();
                 services.AddSingleton<OcrQueueService>();
                 services.AddSingleton<AiQueueService>();
-                services.AddSingleton(sp => new FgScanner.Ai.CredentialStore());
+                services.AddSingleton(sp => new FgScanner.Ai.CredentialStore(fallbackDirectory: station.Root));
                 services.AddSingleton<AiWorker>();
                 services.AddSingleton(sp => new FgScanner.Scanning.Import.FileImportService());
                 services.AddSingleton<FgScanner.Core.IPdfRenderer>(sp => new FgScanner.Scanning.Import.Naps2PdfRenderer(
@@ -151,7 +163,7 @@ public partial class App : Application
                     // The DI sender, so the attachment folders it makes are the ones OnExit removes.
                     Email = sp.GetRequiredService<EmailSender>(),
                 });
-                services.AddSingleton(sp => new FgScanner.Ocr.LanguageManager());
+                services.AddSingleton(sp => new FgScanner.Ocr.LanguageManager(station.Tessdata));
                 services.AddSingleton(sp => new FgScanner.Ocr.TesseractRunner(
                     tessdataDir: sp.GetRequiredService<FgScanner.Ocr.LanguageManager>().TessdataDir));
                 services.AddSingleton(sp => new FgScanner.Ocr.OcrPipeline(
@@ -164,7 +176,8 @@ public partial class App : Application
                         sp.GetRequiredService<AppSettingsService>(), FeatureFlags.AutoOrient, ct)));
                 services.AddSingleton<ProfileOcrTrigger>();
                 services.AddSingleton<OcrWorker>();
-                services.AddSingleton<UpdateService>();
+                services.AddSingleton(sp => new UpdateService(
+                    sp.GetRequiredService<AppSettingsService>(), () => sp.GetRequiredService<ScanViewModel>().CaptureInHand));
                 services.AddSingleton<ActiveGroupStore>();
                 services.AddSingleton<GroupsViewModel>();
                 services.AddSingleton<SearchViewModel>();
@@ -182,7 +195,12 @@ public partial class App : Application
         var appVersion = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
         IndexingService.AppVersion = appVersion;
 
-        var backup = DbBootstrapper.MigrateWithBackup(DbBootstrapper.DefaultDbPath, appVersion);
+        if (!station.IsDefault)
+        {
+            Log.Information("Station workspace {Root}", station.Root);
+        }
+
+        var backup = DbBootstrapper.MigrateWithBackup(station.Database, appVersion);
         if (backup is not null)
         {
             Log.Information("Database migrated; pre-migration backup at {Backup}", backup);

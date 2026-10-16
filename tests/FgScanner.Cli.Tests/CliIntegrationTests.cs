@@ -45,6 +45,30 @@ public sealed class CliIntegrationTests : IDisposable
 
     private Task<int> RunAsync(params string[] args) => CliRunner.RunAsync(args, _overrides);
 
+    /// <summary>
+    /// SPEC-SCANNER-2026-010 AC-7: a second station's CLI run writes its database inside its own
+    /// folder. The overrides carry no database here on purpose — the station must supply it.
+    /// </summary>
+    [Fact]
+    public async Task A_data_dir_puts_the_database_in_that_station()
+    {
+        var station = Path.Combine(_root, "station-jim");
+        var exit = await CliRunner.RunAsync(
+            ["scan", "--data-dir", station, "--group", GroupDir, "--source", "feeder"],
+            new CliOverrides(ScanService: new FakeScanService(), TessdataDir: Path.Combine(_root, "tessdata")));
+
+        Assert.Equal(0, exit);
+        Assert.True(File.Exists(Path.Combine(station, "fgscanner.db")));
+    }
+
+    [Fact]
+    public async Task A_data_dir_with_no_folder_is_refused()
+    {
+        var exit = await CliRunner.RunAsync(["scan", "--data-dir"], _overrides);
+
+        Assert.NotEqual(0, exit);
+    }
+
     [Fact]
     public async Task Scan_lands_pages_as_files_and_rows()
     {
@@ -96,6 +120,200 @@ public sealed class CliIntegrationTests : IDisposable
         Assert.Equal(0, await RunAsync("list-devices"));
         Assert.Equal(0, await RunAsync("list-devices", "--driver", "escl"));
         Assert.Equal(1, await RunAsync("list-devices", "--driver", "parallel-port"));
+    }
+
+    /// <summary>
+    /// SPEC-SCANNER-2026-010 AC-2: Jim reads the line out on Teams, so it must carry the code and
+    /// name the first problem; the full list goes to a log beside the manifest.
+    /// </summary>
+    [Fact]
+    public async Task Station_verify_prints_the_code_and_names_a_flipped_byte()
+    {
+        var pack = Path.Combine(_root, "pack");
+        var evidence = Path.Combine(pack, "evidence", "Dental");
+        Directory.CreateDirectory(evidence);
+        await File.WriteAllTextAsync(Path.Combine(evidence, "scan_00001.jpg"), "jpeg", TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(Path.Combine(pack, "fgscanner.db"), "db", TestContext.Current.CancellationToken);
+        var manifest = Core.Station.StationManifestBuilder.Build(new Core.Station.StationSource(
+            "jim", Path.Combine(pack, "fgscanner.db"), Path.Combine(pack, "evidence"), Path.Combine(pack, "trash"),
+            "0.8.0", null, null, DateTimeOffset.UnixEpoch));
+        var bytes = manifest.ToJsonBytes();
+        await File.WriteAllBytesAsync(Path.Combine(pack, "station-manifest.json"), bytes, TestContext.Current.CancellationToken);
+        var code = Core.Station.StationManifest.CodeOf(bytes);
+
+        var (okExit, okOut) = await RunCapturedAsync("station", "verify", pack);
+        await File.AppendAllTextAsync(Path.Combine(evidence, "scan_00001.jpg"), "!", TestContext.Current.CancellationToken);
+        var (badExit, badOut) = await RunCapturedAsync("station", "verify", pack);
+        File.Delete(Path.Combine(pack, "station-manifest.json"));
+        var (waitExit, waitOut) = await RunCapturedAsync("station", "verify", pack);
+
+        Assert.Equal(0, okExit);
+        Assert.StartsWith($"OK {code} · 2 files · ", okOut);
+        Assert.Equal(1, badExit);
+        Assert.StartsWith("NOT OK — changed: evidence/Dental/scan_00001.jpg", badOut);
+        Assert.Contains("changed: evidence/Dental/scan_00001.jpg",
+            await File.ReadAllTextAsync(Path.Combine(pack, "station-verify.log"), TestContext.Current.CancellationToken));
+        Assert.Equal(3, waitExit);
+        Assert.StartsWith("NOT YET", waitOut);
+    }
+
+    /// <summary>
+    /// SPEC-SCANNER-2026-010 AC-3: the CLI packs a real station (a database the app wrote, a
+    /// scanned group), the pack verifies with the same code, and a second pack based on the first
+    /// carries only the database.
+    /// </summary>
+    [Fact]
+    public async Task Station_pack_makes_a_pack_that_verifies_and_a_second_that_ships_only_the_database()
+    {
+        var station = Path.Combine(_root, "station-jim");
+        var evidence = Path.Combine(_root, "Evidence-Scans");
+        var transport = Directory.CreateDirectory(Path.Combine(_root, "to-franz")).FullName;
+        Assert.Equal(0, await CliRunner.RunAsync(
+            ["scan", "--data-dir", station, "--group", Path.Combine(evidence, "Dental"), "--source", "feeder"],
+            new CliOverrides(ScanService: new FakeScanService(), TessdataDir: Path.Combine(_root, "tessdata"))));
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        string[] pack = ["station", "pack", "--data-dir", station, "--to", transport, "--evidence", evidence, "--station", "jim"];
+
+        var (firstExit, firstOut) = await RunStationCapturedAsync(pack);
+        var firstPack = Directory.GetDirectories(transport).Single();
+        var (verifyExit, verifyOut) = await RunCapturedAsync("station", "verify", firstPack);
+        var (secondExit, secondOut) = await RunStationCapturedAsync(
+            [.. pack, "--based-on", Path.Combine(firstPack, "station-manifest.json")]);
+
+        Assert.Equal(0, firstExit);
+        Assert.StartsWith("OK ", firstOut);
+        Assert.Matches("^jim-\\d{4}-\\d{2}-\\d{2}-\\d{4}-send$", Path.GetFileName(firstPack));
+        Assert.Equal(0, verifyExit);
+        Assert.Equal(firstOut.Split(" · ")[0], verifyOut.Split(" · ")[0]);
+        Assert.Equal(0, secondExit);
+        Assert.StartsWith("OK ", secondOut);
+        Assert.Contains(" · 1 files · ", secondOut);
+        Assert.True(File.Exists(Path.Combine(station, "station-freeze.json")));
+    }
+
+    /// <summary>
+    /// SPEC-SCANNER-2026-010 AC-6 through the CLI: a first pack opens into an empty station (as
+    /// Franz's workspace receives Jim's first send), and <c>--undo</c> takes it back out.
+    /// </summary>
+    [Fact]
+    public async Task Station_apply_opens_a_first_pack_into_an_empty_station_and_undo_takes_it_back()
+    {
+        var jim = Path.Combine(_root, "station-jim");
+        var franz = Path.Combine(_root, "station-franz");
+        var evidence = Path.Combine(_root, "Evidence-Scans");
+        var transport = Directory.CreateDirectory(Path.Combine(_root, "to-franz")).FullName;
+        Assert.Equal(0, await CliRunner.RunAsync(
+            ["scan", "--data-dir", jim, "--group", Path.Combine(evidence, "Dental"), "--source", "feeder"],
+            new CliOverrides(ScanService: new FakeScanService(), TessdataDir: Path.Combine(_root, "tessdata"))));
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        Assert.Equal(0, (await RunStationCapturedAsync(
+            "station", "pack", "--data-dir", jim, "--to", transport, "--evidence", evidence, "--station", "jim")).Exit);
+        var pack = Directory.GetDirectories(transport).Single();
+        var jimsImages = Directory.GetFiles(evidence, "*", SearchOption.AllDirectories).Length;
+        Directory.Move(evidence, evidence + ".jim");
+
+        var (untypedExit, untypedOut) = await RunStationCapturedAsync("station", "apply", pack, "--data-dir", franz);
+        var (applyExit, applyOut) = await RunStationCapturedAsync(
+            "station", "apply", pack, "--data-dir", franz, "--evidence", evidence);
+        var images = Directory.GetFiles(evidence, "*", SearchOption.AllDirectories).Length;
+        var (undoExit, undoOut) = await RunStationCapturedAsync("station", "apply", "--undo", "--data-dir", franz);
+        var dbAfterUndo = File.Exists(Path.Combine(franz, "fgscanner.db"));
+        var imagesAfterUndo = Directory.GetFiles(evidence, "*", SearchOption.AllDirectories).Length;
+
+        // Opened again, Franz packs a return; the station has then moved on, so undo has nothing to take back.
+        Assert.Equal(0, (await RunStationCapturedAsync("station", "apply", pack, "--data-dir", franz, "--evidence", evidence)).Exit);
+        var toJim = Directory.CreateDirectory(Path.Combine(_root, "to-jim")).FullName;
+        var (unansweredExit, unansweredOut) = await RunStationCapturedAsync(
+            "station", "pack", "--data-dir", franz, "--to", toJim, "--kind", "return", "--evidence", evidence);
+        var (returnExit, returnOut) = await RunStationCapturedAsync(
+            "station", "pack", "--data-dir", franz, "--to", toJim, "--kind", "return", "--evidence", evidence,
+            "--based-on", Path.Combine(pack, "station-manifest.json"), "--by", "Franz Gerster");
+        var returned = Directory.GetDirectories(toJim).Single();
+        var (lateUndoExit, lateUndoOut) = await RunStationCapturedAsync("station", "apply", "--undo", "--data-dir", franz);
+
+        // The pack never chooses where an empty station's files land; the operator types it.
+        Assert.Equal(1, untypedExit);
+        Assert.StartsWith("NOT OK — say which folder holds the evidence", untypedOut);
+        Assert.True(applyExit == 0, applyOut);
+        Assert.StartsWith("OK ", applyOut);
+        Assert.Equal(jimsImages, images);
+
+        // A return answers one send: its change log is a diff against the database that send carried.
+        Assert.Equal(1, unansweredExit);
+        Assert.StartsWith("NOT OK — a return must be based on the pack it answers", unansweredOut);
+        Assert.True(returnExit == 0, returnOut);
+        Assert.Equal("", await File.ReadAllTextAsync(Path.Combine(returned, "changes.jsonl"), TestContext.Current.CancellationToken));
+        Assert.Contains("Which box did these pages come from?",
+            await File.ReadAllTextAsync(Path.Combine(returned, "needs-jim.txt"), TestContext.Current.CancellationToken));
+        Assert.True(undoExit == 0, undoOut);
+        Assert.StartsWith("OK — put back", undoOut);
+        Assert.False(dbAfterUndo);
+        Assert.Equal(0, imagesAfterUndo);
+        Assert.Equal(1, lateUndoExit);
+        Assert.Contains("nothing to undo", lateUndoOut);
+    }
+
+    /// <summary>Revision D, D5: the verbs hold FG Scanner's own single-instance lock, so a running
+    /// app (here: this test holding the lock) refuses them, and an app launched mid-way cannot open.</summary>
+    [Fact]
+    public async Task Station_pack_refuses_while_the_app_holds_its_lock()
+    {
+        var transport = Directory.CreateDirectory(Path.Combine(_root, "to-franz")).FullName;
+        using var app = new Mutex(initiallyOwned: true, "FGScanner.SingleInstance", out var ours);
+        Assert.True(ours, "another FG Scanner is running on this machine; close it to run this test");
+        try
+        {
+            var (exit, output) = await RunStationCapturedAsync(
+                "station", "pack", "--data-dir", Path.Combine(_root, "station-jim"), "--to", transport);
+
+            Assert.Equal(1, exit);
+            Assert.StartsWith("NOT OK — FG Scanner is open", output);
+        }
+        finally
+        {
+            app.ReleaseMutex();
+        }
+    }
+
+    [Fact]
+    public async Task Station_pack_refuses_a_group_outside_the_evidence_folder()
+    {
+        var station = Path.Combine(_root, "station-jim");
+        var transport = Directory.CreateDirectory(Path.Combine(_root, "to-franz")).FullName;
+        Assert.Equal(0, await CliRunner.RunAsync(
+            ["scan", "--data-dir", station, "--group", GroupDir, "--source", "feeder"],
+            new CliOverrides(ScanService: new FakeScanService(), TessdataDir: Path.Combine(_root, "tessdata"))));
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+
+        var (exit, output) = await RunStationCapturedAsync(
+            "station", "pack", "--data-dir", station, "--to", transport,
+            "--evidence", Directory.CreateDirectory(Path.Combine(_root, "Evidence-Scans")).FullName, "--station", "jim");
+
+        Assert.Equal(1, exit);
+        Assert.StartsWith("NOT OK — a group lives outside the evidence folder", output);
+        Assert.Empty(Directory.EnumerateFileSystemEntries(transport));
+    }
+
+    private Task<(int Exit, string Output)> RunCapturedAsync(params string[] args) =>
+        RunCapturedAsync(_overrides, args);
+
+    /// <summary>A station's own database: the shared test database would win over <c>--data-dir</c>.</summary>
+    private Task<(int Exit, string Output)> RunStationCapturedAsync(params string[] args) =>
+        RunCapturedAsync(new CliOverrides(TessdataDir: Path.Combine(_root, "tessdata")), args);
+
+    private static async Task<(int Exit, string Output)> RunCapturedAsync(CliOverrides overrides, string[] args)
+    {
+        var original = Console.Out;
+        using var output = new StringWriter();
+        Console.SetOut(output);
+        try
+        {
+            return (await CliRunner.RunAsync(args, overrides), output.ToString());
+        }
+        finally
+        {
+            Console.SetOut(original);
+        }
     }
 
     [Fact]

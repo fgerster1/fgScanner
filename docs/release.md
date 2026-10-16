@@ -10,7 +10,17 @@
    Release. **Before publishing, install the draft's installer and start it** —
    the local check below never publishes the CLI, so it cannot catch what only the
    pipeline does. 0.5.2 passed every local check and shipped with the CLI written over
-   the app. Publishing is what puts it in front of every station's auto-update.
+   the app. Publishing is what puts it in front of every station's auto-update
+   (from 0.8.0 on; 0.5.4–0.7.1 are offered updates but cannot install them, ADR-0018).
+3a. **Publish as a pre-release first, and rehearse the update on the spare** (ADR-0018):
+   `gh release edit vX --draft=false --prerelease`. `releases/latest` never serves a
+   pre-release, so no station is offered it. On the spare, install the previous version (or
+   the same code built locally with a lower `<Version>`), set
+   `FGSCANNER_APPCAST_URL=https://github.com/fgerster1/fgScanner/releases/download/vX/appcast.xml`
+   for that account, start FG Scanner, press Yes, click UAC, start it again and check the
+   version; then remove the variable. Confirm `releases/latest/download/appcast.xml` still names
+   the previous Latest. Make it the Latest only at a station cycle's return:
+   `gh release edit vX --prerelease=false --latest`.
 4. Publishing the release triggers `winget.yml`, which is skipped unless
    `WINGET_ENABLED=true` (see winget below).
 
@@ -91,3 +101,26 @@ Migrations run at startup with an automatic pre-migration database backup
 tests/FgScanner.Data.Tests/fixtures prove old databases upgrade cleanly.
 The installer's `[InstallDelete]` purges stale binaries, and per-user data
 under %APPDATA% is never touched by install or uninstall.
+
+### The migration ladder — every release adds a rung
+
+`tests/FgScanner.Data.Tests/fixtures/ladder/` holds one database per shipped release, written by
+that release's own CLI, and `MigrationLadderTests` migrates each one to the current build and
+checks every group and page survives (SPEC-SCANNER-2026-010 AC-8). A station can be on any of
+them when a release reaches it — Jim went from 0.5.4 straight to 0.8.0 — so a release that
+cannot migrate one fails CI instead of failing on a station.
+
+After tagging a release, add its rung (PowerShell, from the repo root; the long-paths flag is
+needed because some test snapshot names are long):
+
+```powershell
+$tag = 'v0.8.0'; $wt = "$env:TEMP\wt-$tag"; $out = "$env:TEMP\ladder-$tag"
+git -c core.longpaths=true worktree add --detach $wt $tag
+dotnet build "$wt\src\FgScanner.Cli" -c Release
+$cli = "$wt\src\FgScanner.Cli\bin\Release\net10.0-windows\fgscanner.exe"
+foreach ($g in 'Box-A', 'Box-B') { & $cli --fake --db "$out\$tag.db" scan --group "$out\evidence\$g" --source feeder }
+Copy-Item "$out\$tag.db" tests\FgScanner.Data.Tests\fixtures\ladder\
+git worktree remove $wt
+```
+
+Two groups of three pages each is what the test expects of every rung.

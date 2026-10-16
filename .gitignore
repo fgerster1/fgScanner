@@ -40,3 +40,7 @@ dist/
 # ignore rules: a vendored file missing from a commit is a fresh-clone red
 # that re-running the sync cannot fix (SPEC-2026-005 review).
 !docs/contract-vendored/**
+
+# SQLite sidecars: opening a WAL fixture leaves these beside it (SPEC-SCANNER-2026-010 P9-12)
+*.db-shm
+*.db-wal
