@@ -250,6 +250,19 @@ public sealed class StationManifestTests : IDisposable
     }
 
     [Fact]
+    public void A_manifest_naming_an_unknown_report_refuses_the_pack()
+    {
+        var manifest = CopyToPack();
+        File.WriteAllBytes(Path.Combine(Pack, StationManifest.FileName), (manifest with
+        {
+            Reports = [new StationManifestReport("../../outside.txt", 1, new string('0', 64))],
+        }).ToJsonBytes());
+
+        Assert.Equal(["manifest names a file outside the pack: ../../outside.txt"],
+            StationManifestVerifier.Verify(Pack).Problems);
+    }
+
+    [Fact]
     public void A_rel_listed_twice_refuses_the_pack()
     {
         var manifest = CopyToPack();

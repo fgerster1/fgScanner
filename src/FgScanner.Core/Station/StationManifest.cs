@@ -21,7 +21,8 @@ public sealed record StationManifest(
     string EvidenceRoot,
     string? BasedOn,
     IReadOnlyList<StationManifestFile> Files,
-    StationContent? BasedOnContent = null)
+    StationContent? BasedOnContent = null,
+    IReadOnlyList<StationManifestReport>? Reports = null)
 {
     public const int CurrentFormat = 1;
 
@@ -34,6 +35,9 @@ public sealed record StationManifest(
     public const string EvidenceFolder = "evidence";
 
     public const string TrashFolder = "trash";
+
+    /// <summary>The only reports a pack carries beside the station's files (§07, Q-B8).</summary>
+    public static readonly IReadOnlyList<string> ReportNames = ["changes.jsonl", "needs-jim.txt"];
 
     // Fixed newline and escaping: the code Jim reads out is a hash of these bytes, so the same
     // manifest must serialize identically on his laptop and on Franz's PC.
@@ -77,3 +81,7 @@ public sealed record StationManifestFile(
     Guid? PageId = null,
     string? DbChecksum = null,
     string? From = null);
+
+/// <summary>A report at the pack's top level (a return's change log or needs-Jim sheet), hashed
+/// like every file so the chain-of-custody record cannot be edited in transit unnoticed.</summary>
+public sealed record StationManifestReport(string Name, long Size, string Sha256);

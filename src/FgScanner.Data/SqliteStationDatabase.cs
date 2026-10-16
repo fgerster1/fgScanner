@@ -80,14 +80,14 @@ public sealed class SqliteStationDatabase : IStationDatabase
             {
                 var folder = reader.GetString(1).TrimEnd('\\', '/');
                 var name = folder[(folder.LastIndexOfAny(['\\', '/']) + 1)..];
-                var path = Path.Combine(receiverTrash, name);
+                var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(receiverTrash)) + Path.DirectorySeparatorChar;
+                var path = Path.GetFullPath(Path.Combine(receiverTrash, name));
 
-                // The arriving database is untrusted; a segment like ".." would root the item
-                // outside this station's trash, where restore and purge act on what is there.
-                if (name.Length == 0 || name is "." or ".." || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
-                    || !Path.GetFullPath(path).StartsWith(
-                        Path.TrimEndingDirectorySeparator(Path.GetFullPath(receiverTrash)) + Path.DirectorySeparatorChar,
-                        StringComparison.OrdinalIgnoreCase))
+                // The arriving database is untrusted; a segment like ".." — or "...", which
+                // Windows trims to nothing — would root the item outside this station's trash or
+                // at the trash itself, where restore and purge act on everything there.
+                if (name.Length == 0 || name != name.TrimEnd('.', ' ') || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
+                    || !path.StartsWith(root, StringComparison.OrdinalIgnoreCase) || path.Length <= root.Length)
                 {
                     throw new InvalidDataException($"a trash item names a folder outside the trash: {reader.GetString(1)}");
                 }

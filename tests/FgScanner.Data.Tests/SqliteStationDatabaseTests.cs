@@ -155,6 +155,8 @@ public sealed class SqliteStationDatabaseTests : IDisposable
     [Theory]
     [InlineData(@"C:\Users\x\trash\..")]
     [InlineData(@"C:\Users\x\trash\.")]
+    [InlineData(@"C:\Users\x\trash\...")]
+    [InlineData(@"C:\Users\x\trash\a12bc ")]
     [InlineData(@"\\")]
     public void A_trash_path_that_would_leave_the_trash_folder_is_refused(string hostile)
     {

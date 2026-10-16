@@ -234,6 +234,38 @@ public sealed class StationPackTests : IDisposable
         Assert.Equal(StationManifest.FileName, written[^1]);
     }
 
+    /// <summary>A return's change log is the chain of custody for Franz's work: it travels inside
+    /// the manifest's hashes, so an edited log fails verify like an edited page.</summary>
+    [Fact]
+    public void Reports_travel_inside_the_manifest_and_an_edited_one_fails_verify()
+    {
+        var result = Packer().Pack(Request() with
+        {
+            Reports = [new StationPackReport("changes.jsonl", "{\"change\":\"changed\"}\n"u8.ToArray()),
+                new StationPackReport("needs-jim.txt", "Nothing needs you."u8.ToArray())],
+        });
+
+        Assert.Null(result.Problem);
+        Assert.Equal(["changes.jsonl", "needs-jim.txt"], ManifestOf(result).Reports!.Select(r => r.Name));
+        Assert.Equal(StationVerifyStatus.Ok, StationManifestVerifier.Verify(result.PackFolder!).Status);
+
+        File.AppendAllText(Path.Combine(result.PackFolder!, "changes.jsonl"), "{\"change\":\"forged\"}\n");
+
+        Assert.Equal(["changed: changes.jsonl"], StationManifestVerifier.Verify(result.PackFolder!).Problems);
+    }
+
+    [Fact]
+    public void A_report_name_outside_the_known_two_is_refused()
+    {
+        var result = Packer().Pack(Request() with
+        {
+            Reports = [new StationPackReport("..\\outside.txt", [1])],
+        });
+
+        Assert.Contains("not a report a pack carries", result.Problem);
+        Assert.Empty(Directory.EnumerateFileSystemEntries(Transport));
+    }
+
     [Fact]
     public void A_refusal_leaves_nothing_behind()
     {

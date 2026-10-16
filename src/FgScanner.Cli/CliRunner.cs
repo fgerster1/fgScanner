@@ -580,13 +580,15 @@ public static class CliRunner
         var kindOption = new Option<string>("--kind") { Description = "send | return.", DefaultValueFactory = _ => "send" };
         var stationOption = new Option<string?>("--station") { Description = "Name on the pack folder (default: the workspace's, else this computer's)." };
         var evidenceOption = new Option<string?>("--evidence") { Description = "The evidence folder (default: the one the profiles name)." };
+        var byOption = new Option<string?>("--by") { Description = "Whose work a return records in changes.jsonl (default: this Windows account)." };
         var pack = new Command("pack", "Pack this station for the other side; prints OK and the code to read out.")
         {
-            toOption, basedOnOption, kindOption, stationOption, evidenceOption,
+            toOption, basedOnOption, kindOption, stationOption, evidenceOption, byOption,
         };
         pack.SetAction(parseResult => PackStation(
             parseResult.GetValue(toOption)!, parseResult.GetValue(basedOnOption), parseResult.GetValue(kindOption)!,
-            parseResult.GetValue(stationOption), parseResult.GetValue(evidenceOption), overrides));
+            parseResult.GetValue(stationOption), parseResult.GetValue(evidenceOption),
+            parseResult.GetValue(byOption) ?? Environment.UserName, overrides));
 
         var applyArgument = new Argument<string?>("pack-folder")
         {
@@ -616,14 +618,24 @@ public static class CliRunner
     private static StationContent? ContentBehind(string basedOn, string stationRoot)
     {
         var bytes = File.ReadAllBytes(basedOn);
-        var packedDb = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(basedOn))!, StationManifest.DatabaseFileName);
-        if (File.Exists(packedDb) && StationManifestBuilder.Sha256Of(packedDb) == StationManifest.Parse(bytes).DbSha256)
+        if (PackedDatabaseBeside(basedOn) is { } packedDb)
         {
             return StationDatabase.Content(packedDb);
         }
 
         var freeze = StationFreezeRecord.Read(stationRoot);
         return freeze?.ManifestSha256 == StationManifest.HashOf(bytes) ? freeze.Content : null;
+    }
+
+    /// <summary>The database a pack carried, when <paramref name="manifest"/> sits in that pack and
+    /// the database is the one it names.</summary>
+    private static string? PackedDatabaseBeside(string manifest)
+    {
+        var packedDb = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(manifest))!, StationManifest.DatabaseFileName);
+        return File.Exists(packedDb)
+            && StationManifestBuilder.Sha256Of(packedDb) == StationManifest.Parse(File.ReadAllBytes(manifest)).DbSha256
+            ? packedDb
+            : null;
     }
 
     private static int ApplyStation(string? packFolder, bool undo, string? evidence, CliOverrides? overrides)
@@ -639,7 +651,7 @@ public static class CliRunner
             evidence ??= StationFacts.Read(database).BaseDirectories is [var only] ? only : null;
         }
 
-        if (evidence is not null && (evidence.StartsWith(@"\\", StringComparison.Ordinal) || evidence.StartsWith("//", StringComparison.Ordinal)))
+        if (evidence is not null && NotLocal(evidence))
         {
             Console.WriteLine($"NOT OK — the evidence folder must be on this computer, not {evidence}");
             return 1;
@@ -689,10 +701,15 @@ public static class CliRunner
         return result.Problem is null ? 0 : result.StillArriving ? 3 : 1;
     }
 
+    /// <summary>A share or a device path (UNC, <c>\\?\</c>, <c>\\.\</c>), judged after
+    /// normalising: evidence is only ever written to a folder on this computer.</summary>
+    private static bool NotLocal(string folder) =>
+        Path.GetFullPath(folder).StartsWith(@"\\", StringComparison.Ordinal);
+
     private static bool IsAppOpen() => Mutex.TryOpenExisting("FGScanner.SingleInstance", out var mutex) && Dispose(mutex);
 
     private static int PackStation(
-        string to, string? basedOn, string kind, string? stationName, string? evidence, CliOverrides? overrides)
+        string to, string? basedOn, string kind, string? stationName, string? evidence, string by, CliOverrides? overrides)
     {
         if (kind is not ("send" or "return"))
         {
@@ -726,6 +743,12 @@ public static class CliRunner
             return 1;
         }
 
+        if (NotLocal(evidence))
+        {
+            Console.WriteLine($"NOT OK — the evidence folder must be on this computer, not {evidence}");
+            return 1;
+        }
+
         // A group outside the evidence folder would not travel, and the other side's database
         // would point at a folder that is not there.
         var evidenceRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(evidence)) + Path.DirectorySeparatorChar;
@@ -735,6 +758,15 @@ public static class CliRunner
         if (outside is not null)
         {
             Console.WriteLine($"NOT OK — a group lives outside the evidence folder {evidence}: {outside}");
+            return 1;
+        }
+
+        // A return answers one send: its change log is a diff against the database that send
+        // carried, so without that database there is nothing to account for Franz's work against.
+        var received = basedOn is null ? null : PackedDatabaseBeside(basedOn);
+        if (kind == "return" && received is null)
+        {
+            Console.WriteLine("NOT OK — a return must be based on the pack it answers: --based-on <that pack>/station-manifest.json");
             return 1;
         }
 
@@ -769,7 +801,14 @@ public static class CliRunner
             kind,
             facts.PendingReadingJobs,
             basedOnContent,
-            StationDatabase.Content(database));
+            StationDatabase.Content(database),
+            received is null ? null :
+            [
+                new StationPackReport(StationChangeLog.FileName,
+                    StationChangeLog.ToBytes(StationChangeLog.Diff(received, database, by, DateTimeOffset.Now))),
+                new StationPackReport(NeedsJimSheet.FileName,
+                    System.Text.Encoding.UTF8.GetBytes(NeedsJimSheet.Write(database, DateTimeOffset.Now))),
+            ]);
 
         StationPackResult result;
         KeepAwake(true);

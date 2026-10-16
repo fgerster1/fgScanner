@@ -89,7 +89,22 @@ public static class StationManifestVerifier
             }
         }
 
+        foreach (var report in manifest.Reports ?? [])
+        {
+            total += report.Size;
+            var path = Path.Combine(packFolder, report.Name);
+            if (!File.Exists(path))
+            {
+                problems.Add($"missing: {report.Name}");
+            }
+            else if (new FileInfo(path).Length != report.Size || StationManifestBuilder.Sha256Of(path) != report.Sha256)
+            {
+                problems.Add($"changed: {report.Name}");
+            }
+        }
+
         var expected = shipped.Select(f => f.Rel)
+            .Concat((manifest.Reports ?? []).Select(r => r.Name))
             .Concat([StationManifest.FileName, StationManifest.DatabaseFileName, StationManifest.VerifyLogFileName])
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         problems.AddRange(Directory.EnumerateFiles(packFolder, "*", StationManifestBuilder.AllFiles)
@@ -133,6 +148,19 @@ public static class StationManifestVerifier
             if (!seen.Add(file.Rel))
             {
                 return $"manifest lists a file twice: {file.Rel}";
+            }
+        }
+
+        foreach (var report in manifest.Reports ?? [])
+        {
+            if (!StationManifest.ReportNames.Contains(report.Name, StringComparer.Ordinal))
+            {
+                return $"manifest names a file outside the pack: {report.Name}";
+            }
+
+            if (!seen.Add(report.Name))
+            {
+                return $"manifest lists a file twice: {report.Name}";
             }
         }
 

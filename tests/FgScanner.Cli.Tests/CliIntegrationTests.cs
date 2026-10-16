@@ -216,6 +216,13 @@ public sealed class CliIntegrationTests : IDisposable
         var (applyExit, applyOut) = await RunStationCapturedAsync(
             "station", "apply", pack, "--data-dir", franz, "--evidence", evidence);
         var images = Directory.GetFiles(evidence, "*", SearchOption.AllDirectories).Length;
+        var toJim = Directory.CreateDirectory(Path.Combine(_root, "to-jim")).FullName;
+        var (unansweredExit, unansweredOut) = await RunStationCapturedAsync(
+            "station", "pack", "--data-dir", franz, "--to", toJim, "--kind", "return", "--evidence", evidence);
+        var (returnExit, returnOut) = await RunStationCapturedAsync(
+            "station", "pack", "--data-dir", franz, "--to", toJim, "--kind", "return", "--evidence", evidence,
+            "--based-on", Path.Combine(pack, "station-manifest.json"), "--by", "Franz Gerster");
+        var returned = Directory.GetDirectories(toJim).Single();
         var (undoExit, undoOut) = await RunStationCapturedAsync("station", "apply", "--undo", "--data-dir", franz);
 
         // The pack never chooses where an empty station's files land; the operator types it.
@@ -224,6 +231,14 @@ public sealed class CliIntegrationTests : IDisposable
         Assert.True(applyExit == 0, applyOut);
         Assert.StartsWith("OK ", applyOut);
         Assert.Equal(jimsImages, images);
+
+        // A return answers one send: its change log is a diff against the database that send carried.
+        Assert.Equal(1, unansweredExit);
+        Assert.StartsWith("NOT OK — a return must be based on the pack it answers", unansweredOut);
+        Assert.True(returnExit == 0, returnOut);
+        Assert.Equal("", await File.ReadAllTextAsync(Path.Combine(returned, "changes.jsonl"), TestContext.Current.CancellationToken));
+        Assert.Contains("Which box did these pages come from?",
+            await File.ReadAllTextAsync(Path.Combine(returned, "needs-jim.txt"), TestContext.Current.CancellationToken));
         Assert.True(undoExit == 0, undoOut);
         Assert.StartsWith("OK — put back", undoOut);
         Assert.False(File.Exists(Path.Combine(franz, "fgscanner.db")));

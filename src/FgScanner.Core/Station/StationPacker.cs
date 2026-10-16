@@ -17,7 +17,12 @@ public sealed record StationPackRequest(
     string Kind,
     int PendingReadingJobs,
     StationContent? BasedOnContent = null,
-    StationContent? LiveContent = null);
+    StationContent? LiveContent = null,
+    IReadOnlyList<StationPackReport>? Reports = null);
+
+/// <summary>A report to put at the pack's top level; its name must be one of
+/// <see cref="StationManifest.ReportNames"/>.</summary>
+public sealed record StationPackReport(string Name, byte[] Content);
 
 /// <summary>A finished pack (<see cref="Problem"/> null) or the reason none was made.</summary>
 public sealed record StationPackResult(
@@ -92,9 +97,22 @@ public sealed class StationPacker(
                 onFileWritten?.Invoke(target);
             }
 
+            var reports = new List<StationManifestReport>();
+            foreach (var report in request.Reports ?? [])
+            {
+                var path = Path.Combine(pack, report.Name);
+                WriteAtomically(path, report.Content);
+                onFileWritten?.Invoke(path);
+                reports.Add(new StationManifestReport(report.Name, report.Content.Length, StationManifestBuilder.Sha256Of(path)));
+            }
+
             // The backup API writes its own bytes, so the manifest names the copy that travels;
             // the live database's hash goes into the freeze record instead.
-            manifest = manifest with { DbSha256 = StationManifestBuilder.Sha256Of(packedDb) };
+            manifest = manifest with
+            {
+                DbSha256 = StationManifestBuilder.Sha256Of(packedDb),
+                Reports = reports.Count == 0 ? null : reports,
+            };
             var manifestBytes = manifest.ToJsonBytes();
             var manifestPath = Path.Combine(pack, StationManifest.FileName);
             WriteAtomically(manifestPath, manifestBytes);
@@ -127,6 +145,11 @@ public sealed class StationPacker(
         if (StationRest.Problem(isAppOpen, source.Database, request.StationRoot, "pack") is { } notAtRest)
         {
             return notAtRest;
+        }
+
+        if ((request.Reports ?? []).FirstOrDefault(r => !StationManifest.ReportNames.Contains(r.Name, StringComparer.Ordinal)) is { } unknown)
+        {
+            return $"\"{unknown.Name}\" is not a report a pack carries";
         }
 
         if (request.PendingReadingJobs > 0)
