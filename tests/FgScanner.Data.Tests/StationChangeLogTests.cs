@@ -121,6 +121,27 @@ public sealed class StationChangeLogTests : IDisposable
         Assert.Empty(Diff(received, processed));
     }
 
+    /// <summary>Revision D, P9-9: in cycle 1 the received database is 0.5.4's and the processed
+    /// one 0.8.0's; a value Franz sets in a column the migration added must still be logged, and
+    /// what the migration itself filled in must not.</summary>
+    [Fact]
+    public void A_value_set_in_a_column_a_migration_added_is_logged()
+    {
+        var received = Path.Combine(_root, "received.db");
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "fixtures", "v2-exports-trash.db"), received);
+        var processed = Copy(received, "processed");
+        DbBootstrapper.MigrateWithBackup(processed, "test");
+        SqliteConnection.ClearAllPools();
+        Assert.Empty(StationChangeLog.DiffSinceReceived(received, processed, "Franz Gerster", At));
+
+        Execute(processed, "UPDATE Groups SET BatchFieldsJson = '{\"Box\":\"7\"}'");
+
+        var row = JsonDocument.Parse(Assert.Single(StationChangeLog.DiffSinceReceived(received, processed, "Franz Gerster", At))).RootElement;
+        Assert.Equal("BatchFieldsJson", row.GetProperty("column").GetString());
+        Assert.Equal("{\"Box\":\"7\"}", row.GetProperty("new").GetString());
+        Assert.DoesNotContain(Directory.GetFiles(_root, "received.db*"), f => f != received);
+    }
+
     [Fact]
     public void The_needs_Jim_sheet_names_each_open_group_why_and_what_to_look_for()
     {

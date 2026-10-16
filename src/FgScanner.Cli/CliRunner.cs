@@ -855,7 +855,7 @@ public static class CliRunner
             received is null ? null :
             [
                 new StationPackReport(StationChangeLog.FileName,
-                    StationChangeLog.ToBytes(StationChangeLog.Diff(received, database, by, DateTimeOffset.Now))),
+                    StationChangeLog.ToBytes(StationChangeLog.DiffSinceReceived(received, database, by, DateTimeOffset.Now))),
                 new StationPackReport(NeedsJimSheet.FileName,
                     System.Text.Encoding.UTF8.GetBytes(NeedsJimSheet.Write(database, DateTimeOffset.Now))),
             ]);

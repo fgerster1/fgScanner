@@ -17,12 +17,14 @@ namespace FgScanner.App.Services;
 /// <param name="close">Closes the app through its normal close path.</param>
 /// <param name="captureInHand">A sheet or a stack is mid-capture; closing now would strand it.</param>
 /// <param name="delay">Waits between checks of <paramref name="captureInHand"/>.</param>
+/// <param name="signatureValid">Checks a file against the appcast's Ed25519 signature.</param>
 public sealed class UpdateInstaller(
     Func<ProcessStartInfo, Process?> start,
     Action close,
     Func<bool> captureInHand,
     string updateFolder,
-    Func<TimeSpan, Task> delay)
+    Func<TimeSpan, Task> delay,
+    Func<string, bool> signatureValid)
 {
     public const string InstallerArguments = "/VERYSILENT /NORESTART";
 
@@ -34,18 +36,27 @@ public sealed class UpdateInstaller(
     /// <returns>True when the installer is running and the app has been asked to close.</returns>
     public async Task<bool> InstallAsync(string downloadedPath, string version)
     {
-        // The download takes a while, and Jim may have started scanning; an update is never worth
-        // a half-captured sheet.
-        while (captureInHand())
-        {
-            await delay(TimeSpan.FromSeconds(5)).ConfigureAwait(true);
-        }
-
         Directory.CreateDirectory(updateFolder);
         var installer = Path.Combine(updateFolder, $"fgscanner-{Safe(version)}-win-x64.exe");
         var staging = installer + ".tmp";
         File.Copy(downloadedPath, staging, overwrite: true);
         File.Move(staging, installer, overwrite: true);
+
+        // The download and the copy take a while, and Jim may have started scanning meanwhile;
+        // an update is never worth a half-captured sheet. Checked after the copy (Revision D, P9-8).
+        while (captureInHand())
+        {
+            await delay(TimeSpan.FromSeconds(5)).ConfigureAwait(true);
+        }
+
+        // NetSparkle checked the download; this checks the exact file about to run with
+        // administrator rights, which sat in a user-writable folder since (Revision D, D4).
+        if (!signatureValid(installer))
+        {
+            Log.Warning("Update {Version} not installed: {Installer} does not match the release signature", version, installer);
+            TryDelete(installer);
+            return false;
+        }
 
         try
         {

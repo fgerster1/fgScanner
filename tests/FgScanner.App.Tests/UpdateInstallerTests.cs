@@ -27,6 +27,10 @@ public sealed class UpdateInstallerTests : IDisposable
 
     private int _waits;
 
+    private bool _signatureValid = true;
+
+    private readonly List<string> _order = [];
+
     public UpdateInstallerTests()
     {
         _start = psi =>
@@ -47,7 +51,7 @@ public sealed class UpdateInstallerTests : IDisposable
         }
     }
 
-    private string UpdateFolder => Path.Combine(_root, "Temp", "FGScanner", "update");
+    private string UpdateFolder => Path.Combine(_root, "Franz Gerster", "AppData", "Local", "Temp", "FGScanner", "update");
 
     /// <summary>Where NetSparkle leaves the download: a GUID, no extension, under a profile with a space.</summary>
     private string Download()
@@ -59,14 +63,27 @@ public sealed class UpdateInstallerTests : IDisposable
     }
 
     private UpdateInstaller Installer() => new(
-        psi => _start(psi),
+        psi =>
+        {
+            _order.Add("start");
+            return _start(psi);
+        },
         () => _closed++,
-        () => _busy.Count > 0 && _busy.Dequeue(),
+        () =>
+        {
+            _order.Add(File.Exists(Path.Combine(UpdateFolder, "fgscanner-0.8.1-win-x64.exe")) ? "busy? (copied)" : "busy? (not copied)");
+            return _busy.Count > 0 && _busy.Dequeue();
+        },
         UpdateFolder,
         _ =>
         {
             _waits++;
             return Task.CompletedTask;
+        },
+        path =>
+        {
+            _order.Add("verify " + Path.GetFileName(path));
+            return _signatureValid;
         });
 
     [Fact]
@@ -106,6 +123,33 @@ public sealed class UpdateInstallerTests : IDisposable
         Assert.Equal(2, _waits);
         Assert.Single(_started);
         Assert.Equal(1, _closed);
+    }
+
+    /// <summary>Revision D, P9-8 and D4: the copy is made first, the capture in hand is waited
+    /// out after it, and the exact file about to start is checked against the signature last.</summary>
+    [Fact]
+    public async Task The_copy_is_waited_on_then_verified_then_started()
+    {
+        _busy.Enqueue(true);
+
+        await Installer().InstallAsync(Download(), "0.8.1");
+
+        Assert.Equal(["busy? (copied)", "busy? (copied)", "verify fgscanner-0.8.1-win-x64.exe", "start"], _order);
+    }
+
+    /// <summary>Revision D, D4: a copy swapped in the temp folder after NetSparkle's check is
+    /// caught by checking it again right before it runs with administrator rights.</summary>
+    [Fact]
+    public async Task A_copy_that_fails_its_signature_is_never_started()
+    {
+        _signatureValid = false;
+
+        var installed = await Installer().InstallAsync(Download(), "0.8.1");
+
+        Assert.False(installed);
+        Assert.Empty(_started);
+        Assert.Equal(0, _closed);
+        Assert.False(File.Exists(Path.Combine(UpdateFolder, "fgscanner-0.8.1-win-x64.exe")));
     }
 
     [Theory]

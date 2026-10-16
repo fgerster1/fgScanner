@@ -33,9 +33,19 @@ if (-not (Test-Path -LiteralPath $setting)) {
 
 $drive = (Get-Content -LiteralPath $setting -Raw).Trim()
 $arguments = @('station', 'pack', '--kind', 'send', '--station', 'jim', '--to', (Join-Path $drive 'to-franz'))
-$baseline = Join-Path (Join-Path $env:APPDATA 'FGScanner') 'station-sent-manifest.json'
-if (Test-Path -LiteralPath $baseline) {
+$station = Join-Path $env:APPDATA 'FGScanner'
+$baseline = Join-Path $station 'station-sent-manifest.json'
+$freeze = Join-Path $station 'station-freeze.json'
+
+# A send can only be based on a baseline that records its rows. The 0.5.4 sender's cannot; if
+# Franz's first update was refused, everything is sent again and Franz starts afresh from it
+# (Revision D, D6).
+$recorded = (Test-Path -LiteralPath $freeze) -and -not ((Get-Content -LiteralPath $freeze -Raw) -match '"content"\s*:\s*null')
+if ((Test-Path -LiteralPath $baseline) -and $recorded) {
   $arguments += @('--based-on', $baseline)
+}
+elseif (Test-Path -LiteralPath $baseline) {
+  Write-Host 'Sending everything again, because the last update from Franz was not installed.'
 }
 
 Write-Host 'Packing your scans for Franz. This can take a few minutes - leave the laptop on, and do not open FG Scanner until this says OK.'

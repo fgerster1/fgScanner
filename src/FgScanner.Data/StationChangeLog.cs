@@ -85,6 +85,40 @@ public static class StationChangeLog
         return lines;
     }
 
+    /// <summary>
+    /// The change log of a return: the received database is migrated (as a copy, in the temp
+    /// folder) to this build's schema first, so every column is compared — including one a
+    /// migration added, where Franz may have set values — and what the migration itself filled in
+    /// is not counted as his work (Revision D, P9-9).
+    /// </summary>
+    public static IReadOnlyList<string> DiffSinceReceived(string received, string processed, string by, DateTimeOffset at)
+    {
+        var copy = Path.Combine(Path.GetTempPath(), "fgscanner-received-" + Guid.NewGuid().ToString("N") + ".db");
+        File.Copy(received, copy);
+        try
+        {
+            var backup = DbBootstrapper.MigrateWithBackup(copy, "changelog");
+            SqliteConnection.ClearAllPools();
+            if (backup is not null)
+            {
+                File.Delete(backup);
+            }
+
+            return Diff(copy, processed, by, at);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            foreach (var file in new[] { copy, copy + "-wal", copy + "-shm" })
+            {
+                if (File.Exists(file))
+                {
+                    File.Delete(file);
+                }
+            }
+        }
+    }
+
     public static byte[] ToBytes(IReadOnlyList<string> lines) =>
         Encoding.UTF8.GetBytes(string.Concat(lines.Select(l => l + "\n")));
 

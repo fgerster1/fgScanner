@@ -91,7 +91,9 @@ public sealed class UpdateService(AppSettingsService settings, Func<bool> captur
                 }),
                 () => Application.Current.Dispatcher.Invoke(captureInHand),
                 UpdateInstaller.DefaultUpdateFolder,
-                Task.Delay);
+                Task.Delay,
+                path => latest.DownloadSignature is { } signature
+                    && _sparkle.SignatureVerifier.VerifySignatureOfFile(signature, path) == ValidationResult.Valid);
             _sparkle.DownloadFinished += (item, path) => _ = InstallAsync(installer, path, item.Version ?? "update");
             await _sparkle.InitAndBeginDownload(latest);
         }
