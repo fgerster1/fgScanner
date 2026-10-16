@@ -6,13 +6,18 @@ namespace FgScanner.Core.Station;
 /// <param name="BasedOnManifest">The manifest of the last pack the receiver applied or verified;
 /// its files are what the receiver already holds. Null for a first pack, which ships everything.</param>
 /// <param name="Kind"><c>send</c> (Jim to Franz) or <c>return</c> (Franz to Jim) — names the folder.</param>
+/// <param name="BasedOnContent">The fingerprint of the database the receiver holds — what its apply
+/// compares its own rows against. Null for a first pack.</param>
+/// <param name="LiveContent">This station's own fingerprint now, kept in the freeze record.</param>
 public sealed record StationPackRequest(
     StationSource Source,
     string StationRoot,
     string Destination,
     string? BasedOnManifest,
     string Kind,
-    int PendingReadingJobs);
+    int PendingReadingJobs,
+    StationContent? BasedOnContent = null,
+    StationContent? LiveContent = null);
 
 /// <summary>A finished pack (<see cref="Problem"/> null) or the reason none was made.</summary>
 public sealed record StationPackResult(
@@ -63,7 +68,7 @@ public sealed class StationPacker(
 
         var liveDbSha256 = StationManifestBuilder.Sha256Of(source.Database);
         var full = StationManifestBuilder.Build(source with { BasedOn = basedOnHash });
-        var manifest = full with { Files = Plan(full.Files, basedOn) };
+        var manifest = full with { Files = Plan(full.Files, basedOn), BasedOnContent = request.BasedOnContent };
         var shipped = manifest.Files.Where(f => f.From is null).ToList();
         var bytesNeeded = new FileInfo(source.Database).Length + shipped.Sum(f => f.Size);
         var free = freeBytes(request.Destination);
@@ -105,7 +110,7 @@ public sealed class StationPacker(
 
             StationFreezeRecord.Write(request.StationRoot, new StationFreezeRecord(
                 Path.GetFileName(pack), verified.Code!, manifest.SentAt, liveDbSha256,
-                StationManifest.HashOf(manifestBytes)), manifestBytes);
+                StationManifest.HashOf(manifestBytes), request.LiveContent), manifestBytes);
             return new StationPackResult(pack, verified.Code, shipped.Count, shipped.Sum(f => f.Size), null);
         }
         catch
@@ -119,22 +124,9 @@ public sealed class StationPacker(
     private string? RefusalOf(StationPackRequest request)
     {
         var source = request.Source;
-        if (isAppOpen())
+        if (StationRest.Problem(isAppOpen, source.Database, request.StationRoot, "pack") is { } notAtRest)
         {
-            return "FG Scanner is open — close it, then pack again";
-        }
-
-        if (File.Exists(source.Database + "-journal")
-            || (File.Exists(source.Database + "-wal") && new FileInfo(source.Database + "-wal").Length > 0))
-        {
-            return "the database was not closed cleanly — start FG Scanner once, close it, then pack again";
-        }
-
-        var recovery = Path.Combine(request.StationRoot, "recovery");
-        if (Directory.Exists(recovery) && Directory.EnumerateFiles(recovery, "*", SearchOption.AllDirectories)
-                .Any(f => !Path.GetFileName(f).Equals(".lock", StringComparison.OrdinalIgnoreCase)))
-        {
-            return "FG Scanner holds unsaved scans in its recovery folder — start it, save or discard them, then pack again";
+            return notAtRest;
         }
 
         if (request.PendingReadingJobs > 0)

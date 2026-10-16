@@ -3,16 +3,18 @@ using System.Text.Json;
 namespace FgScanner.Core.Station;
 
 /// <summary>
-/// What the station looked like when its pack left (SPEC-SCANNER-2026-010 §08). Apply compares
-/// the live database against <see cref="LiveDbSha256"/>: a mismatch means Jim worked while his data
-/// was with Franz, and swapping the database would lose that work, so apply refuses (AC-5).
+/// The state both sides last shared (SPEC-SCANNER-2026-010 §07): written when a pack leaves and
+/// again when one is applied. The next pack is based on <see cref="SentManifestFileName"/>, and
+/// <see cref="Content"/> is what the other side's apply compares against — a difference means
+/// someone worked while the data was away, and swapping the database would lose that work (AC-5).
 /// </summary>
 public sealed record StationFreezeRecord(
     string Pack,
     string Code,
     string SentAt,
     string LiveDbSha256,
-    string ManifestSha256)
+    string ManifestSha256,
+    StationContent? Content = null)
 {
     public const string FileName = "station-freeze.json";
 

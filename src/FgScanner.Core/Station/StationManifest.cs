@@ -20,7 +20,8 @@ public sealed record StationManifest(
     string DbSha256,
     string EvidenceRoot,
     string? BasedOn,
-    IReadOnlyList<StationManifestFile> Files)
+    IReadOnlyList<StationManifestFile> Files,
+    StationContent? BasedOnContent = null)
 {
     public const int CurrentFormat = 1;
 

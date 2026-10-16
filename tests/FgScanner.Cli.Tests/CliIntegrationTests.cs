@@ -191,6 +191,40 @@ public sealed class CliIntegrationTests : IDisposable
         Assert.True(File.Exists(Path.Combine(station, "station-freeze.json")));
     }
 
+    /// <summary>
+    /// SPEC-SCANNER-2026-010 AC-6 through the CLI: a first pack opens into an empty station (as
+    /// Franz's workspace receives Jim's first send), and <c>--undo</c> takes it back out.
+    /// </summary>
+    [Fact]
+    public async Task Station_apply_opens_a_first_pack_into_an_empty_station_and_undo_takes_it_back()
+    {
+        var jim = Path.Combine(_root, "station-jim");
+        var franz = Path.Combine(_root, "station-franz");
+        var evidence = Path.Combine(_root, "Evidence-Scans");
+        var transport = Directory.CreateDirectory(Path.Combine(_root, "to-franz")).FullName;
+        Assert.Equal(0, await CliRunner.RunAsync(
+            ["scan", "--data-dir", jim, "--group", Path.Combine(evidence, "Dental"), "--source", "feeder"],
+            new CliOverrides(ScanService: new FakeScanService(), TessdataDir: Path.Combine(_root, "tessdata"))));
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        Assert.Equal(0, (await RunStationCapturedAsync(
+            "station", "pack", "--data-dir", jim, "--to", transport, "--evidence", evidence, "--station", "jim")).Exit);
+        var pack = Directory.GetDirectories(transport).Single();
+        var jimsImages = Directory.GetFiles(evidence, "*", SearchOption.AllDirectories).Length;
+        Directory.Move(evidence, evidence + ".jim");
+
+        var (applyExit, applyOut) = await RunStationCapturedAsync("station", "apply", pack, "--data-dir", franz);
+        var images = Directory.GetFiles(evidence, "*", SearchOption.AllDirectories).Length;
+        var (undoExit, undoOut) = await RunStationCapturedAsync("station", "apply", "--undo", "--data-dir", franz);
+
+        Assert.True(applyExit == 0, applyOut);
+        Assert.StartsWith("OK ", applyOut);
+        Assert.Equal(jimsImages, images);
+        Assert.True(undoExit == 0, undoOut);
+        Assert.StartsWith("OK — put back", undoOut);
+        Assert.False(File.Exists(Path.Combine(franz, "fgscanner.db")));
+        Assert.Empty(Directory.GetFiles(evidence, "*", SearchOption.AllDirectories));
+    }
+
     [Fact]
     public async Task Station_pack_refuses_a_group_outside_the_evidence_folder()
     {

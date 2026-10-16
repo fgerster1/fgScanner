@@ -588,8 +588,104 @@ public static class CliRunner
             parseResult.GetValue(toOption)!, parseResult.GetValue(basedOnOption), parseResult.GetValue(kindOption)!,
             parseResult.GetValue(stationOption), parseResult.GetValue(evidenceOption), overrides));
 
-        return new Command("station", "Move a whole station between machines as verified packs.") { verify, pack };
+        var applyArgument = new Argument<string?>("pack-folder")
+        {
+            Description = "The pack folder to install (not with --undo).",
+            Arity = ArgumentArity.ZeroOrOne,
+        };
+        var undoOption = new Option<bool>("--undo") { Description = "Put the station back as it was before the last apply." };
+        var applyEvidenceOption = new Option<string?>("--evidence") { Description = "The evidence folder (default: the one the profiles name, or the pack's for an empty station). Undo uses the folder the last apply used." };
+        var apply = new Command("apply", "Install a pack into this station; prints OK and the code to read out.")
+        {
+            applyArgument, undoOption, applyEvidenceOption,
+        };
+        apply.SetAction(parseResult => ApplyStation(
+            parseResult.GetValue(applyArgument), parseResult.GetValue(undoOption),
+            parseResult.GetValue(applyEvidenceOption), overrides));
+
+        return new Command("station", "Move a whole station between machines as verified packs.") { verify, pack, apply };
     }
+
+    private static readonly SqliteStationDatabase StationDatabase = new();
+
+    /// <summary>
+    /// What the receiver's database looked like when it last matched <paramref name="basedOn"/>:
+    /// read from the pack that manifest came with (Franz's return, based on Jim's send), or kept
+    /// in this station's freeze record (a send based on the last return).
+    /// </summary>
+    private static StationContent? ContentBehind(string basedOn, string stationRoot)
+    {
+        var bytes = File.ReadAllBytes(basedOn);
+        var packedDb = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(basedOn))!, StationManifest.DatabaseFileName);
+        if (File.Exists(packedDb) && StationManifestBuilder.Sha256Of(packedDb) == StationManifest.Parse(bytes).DbSha256)
+        {
+            return StationDatabase.Content(packedDb);
+        }
+
+        var freeze = StationFreezeRecord.Read(stationRoot);
+        return freeze?.ManifestSha256 == StationManifest.HashOf(bytes) ? freeze.Content : null;
+    }
+
+    private static int ApplyStation(string? packFolder, bool undo, string? evidence, CliOverrides? overrides)
+    {
+        var paths = overrides?.StationRoot is { } root ? StationPaths.Resolve(root) : StationPaths.Default;
+        var stationRoot = paths.Root;
+        var database = Path.Combine(stationRoot, StationManifest.DatabaseFileName);
+        var applier = new StationApplier(IsAppOpen, StationDatabase);
+        if (!undo && File.Exists(database))
+        {
+            evidence ??= StationFacts.Read(database).BaseDirectories is [var only] ? only : null;
+        }
+        else if (!undo && packFolder is not null && File.Exists(Path.Combine(packFolder, StationManifest.FileName)))
+        {
+            evidence ??= StationManifest.Parse(File.ReadAllBytes(Path.Combine(packFolder, StationManifest.FileName))).EvidenceRoot;
+        }
+
+        StationApplyResult result;
+        if (undo)
+        {
+            result = applier.Undo(stationRoot);
+        }
+        else
+        {
+            if (packFolder is null || evidence is null)
+            {
+                Console.WriteLine(packFolder is null
+                    ? "NOT OK — name the pack folder to install"
+                    : "NOT OK — say which folder holds the evidence: --evidence <folder>");
+                return packFolder is null ? 2 : 1;
+            }
+
+            using var migrations = new FgScannerDbContext(DbBootstrapper.BuildOptions(database));
+            KeepAwake(true);
+            try
+            {
+                result = applier.Apply(new StationApplyRequest(
+                    packFolder, stationRoot, evidence,
+                    typeof(CliRunner).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
+                    migrations.Database.GetMigrations().Last(),
+                    DateTimeOffset.Now));
+            }
+            finally
+            {
+                KeepAwake(false);
+            }
+        }
+
+        var line = result.Problem is not null
+            ? (result.StillArriving ? "NOT YET — " : "NOT OK — ") + result.Problem
+            : undo ? "OK — put back as it was before the last update" : $"OK {result.Code}";
+        Console.WriteLine(line);
+        if (Directory.Exists(stationRoot))
+        {
+            File.AppendAllText(Path.Combine(stationRoot, "station-apply.log"),
+                $"{StationManifest.FormatSentAt(DateTimeOffset.UtcNow)} {(undo ? "undo" : packFolder)}: {line}{Environment.NewLine}");
+        }
+
+        return result.Problem is null ? 0 : result.StillArriving ? 3 : 1;
+    }
+
+    private static bool IsAppOpen() => Mutex.TryOpenExisting("FGScanner.SingleInstance", out var mutex) && Dispose(mutex);
 
     private static int PackStation(
         string to, string? basedOn, string kind, string? stationName, string? evidence, CliOverrides? overrides)
@@ -638,8 +734,19 @@ public static class CliRunner
             return 1;
         }
 
+        StationContent? basedOnContent = null;
+        if (basedOn is not null)
+        {
+            basedOnContent = ContentBehind(basedOn, Path.GetDirectoryName(Path.GetFullPath(database))!);
+            if (basedOnContent is null)
+            {
+                Console.WriteLine($"NOT OK — cannot tell what the other side holds: {basedOn} is neither a verified pack nor this station's last one");
+                return 1;
+            }
+        }
+
         var packer = new StationPacker(
-            isAppOpen: () => Mutex.TryOpenExisting("FGScanner.SingleInstance", out var mutex) && Dispose(mutex),
+            isAppOpen: IsAppOpen,
             copyDatabase: BackUpDatabase,
             freeBytes: folder => new DriveInfo(Path.GetPathRoot(Path.GetFullPath(folder))!).AvailableFreeSpace);
         var request = new StationPackRequest(
@@ -656,7 +763,9 @@ public static class CliRunner
             to,
             basedOn,
             kind,
-            facts.PendingReadingJobs);
+            facts.PendingReadingJobs,
+            basedOnContent,
+            StationDatabase.Content(database));
 
         StationPackResult result;
         KeepAwake(true);
