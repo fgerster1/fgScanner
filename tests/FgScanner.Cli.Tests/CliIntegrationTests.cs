@@ -216,6 +216,12 @@ public sealed class CliIntegrationTests : IDisposable
         var (applyExit, applyOut) = await RunStationCapturedAsync(
             "station", "apply", pack, "--data-dir", franz, "--evidence", evidence);
         var images = Directory.GetFiles(evidence, "*", SearchOption.AllDirectories).Length;
+        var (undoExit, undoOut) = await RunStationCapturedAsync("station", "apply", "--undo", "--data-dir", franz);
+        var dbAfterUndo = File.Exists(Path.Combine(franz, "fgscanner.db"));
+        var imagesAfterUndo = Directory.GetFiles(evidence, "*", SearchOption.AllDirectories).Length;
+
+        // Opened again, Franz packs a return; the station has then moved on, so undo has nothing to take back.
+        Assert.Equal(0, (await RunStationCapturedAsync("station", "apply", pack, "--data-dir", franz, "--evidence", evidence)).Exit);
         var toJim = Directory.CreateDirectory(Path.Combine(_root, "to-jim")).FullName;
         var (unansweredExit, unansweredOut) = await RunStationCapturedAsync(
             "station", "pack", "--data-dir", franz, "--to", toJim, "--kind", "return", "--evidence", evidence);
@@ -223,7 +229,7 @@ public sealed class CliIntegrationTests : IDisposable
             "station", "pack", "--data-dir", franz, "--to", toJim, "--kind", "return", "--evidence", evidence,
             "--based-on", Path.Combine(pack, "station-manifest.json"), "--by", "Franz Gerster");
         var returned = Directory.GetDirectories(toJim).Single();
-        var (undoExit, undoOut) = await RunStationCapturedAsync("station", "apply", "--undo", "--data-dir", franz);
+        var (lateUndoExit, lateUndoOut) = await RunStationCapturedAsync("station", "apply", "--undo", "--data-dir", franz);
 
         // The pack never chooses where an empty station's files land; the operator types it.
         Assert.Equal(1, untypedExit);
@@ -241,8 +247,10 @@ public sealed class CliIntegrationTests : IDisposable
             await File.ReadAllTextAsync(Path.Combine(returned, "needs-jim.txt"), TestContext.Current.CancellationToken));
         Assert.True(undoExit == 0, undoOut);
         Assert.StartsWith("OK — put back", undoOut);
-        Assert.False(File.Exists(Path.Combine(franz, "fgscanner.db")));
-        Assert.Empty(Directory.GetFiles(evidence, "*", SearchOption.AllDirectories));
+        Assert.False(dbAfterUndo);
+        Assert.Equal(0, imagesAfterUndo);
+        Assert.Equal(1, lateUndoExit);
+        Assert.Contains("nothing to undo", lateUndoOut);
     }
 
     /// <summary>Revision D, D5: the verbs hold FG Scanner's own single-instance lock, so a running

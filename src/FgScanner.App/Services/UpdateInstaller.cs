@@ -39,8 +39,13 @@ public sealed class UpdateInstaller(
         Directory.CreateDirectory(updateFolder);
         var installer = Path.Combine(updateFolder, $"fgscanner-{Safe(version)}-win-x64.exe");
         var staging = installer + ".tmp";
-        File.Copy(downloadedPath, staging, overwrite: true);
-        File.Move(staging, installer, overwrite: true);
+
+        // About 150 MB; NetSparkle may call this on the window's thread, which must not freeze.
+        await Task.Run(() =>
+        {
+            File.Copy(downloadedPath, staging, overwrite: true);
+            File.Move(staging, installer, overwrite: true);
+        }).ConfigureAwait(true);
 
         // The download and the copy take a while, and Jim may have started scanning meanwhile;
         // an update is never worth a half-captured sheet. Checked after the copy (Revision D, P9-8).

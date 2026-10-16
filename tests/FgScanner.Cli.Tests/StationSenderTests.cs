@@ -71,7 +71,10 @@ public sealed class StationSenderTests : IDisposable
         throw new FileNotFoundException(Path.Combine(parts));
     }
 
-    internal static (int Exit, string Output) PowerShell(params string[] arguments)
+    internal static (int Exit, string Output) PowerShell(params string[] arguments) =>
+        PowerShellWith(new Dictionary<string, string>(), arguments);
+
+    internal static (int Exit, string Output) PowerShellWith(Dictionary<string, string> environment, params string[] arguments)
     {
         var start = new ProcessStartInfo("powershell.exe")
         {
@@ -80,6 +83,11 @@ public sealed class StationSenderTests : IDisposable
             UseShellExecute = false,
             StandardOutputEncoding = System.Text.Encoding.UTF8,
         };
+        foreach (var (name, value) in environment)
+        {
+            start.Environment[name] = value;
+        }
+
         foreach (var argument in (string[])["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", .. arguments])
         {
             start.ArgumentList.Add(argument);
@@ -169,6 +177,72 @@ public sealed class StationSenderTests : IDisposable
         {
             app.ReleaseMutex();
         }
+    }
+
+    /// <summary>Re-review R-7: the other sender tests skip the lock (the developer's own FG Scanner
+    /// may be open); this one takes it for real and must leave it free afterwards.</summary>
+    [Fact]
+    public void The_054_sender_takes_the_apps_lock_and_lets_it_go()
+    {
+        var to = Directory.CreateDirectory(Path.Combine(_root, "to-franz")).FullName;
+
+        var (exit, output) = PowerShell(
+            "-File", RepoFile("build", "station", "Send-ToFranz-0.5.4.ps1"),
+            "-StationRoot", Station, "-EvidenceRoot", Evidence, "-To", to, "-AppVersion", "0.5.4");
+
+        Assert.True(exit == 0, output);
+        using var after = new Mutex(initiallyOwned: true, "FGScanner.SingleInstance", out var free);
+        Assert.True(free, "the sender left FG Scanner's lock held");
+        after.ReleaseMutex();
+    }
+
+    /// <summary>Re-review R-7, Revision D D6: a send is based on the last shared baseline only when
+    /// that baseline recorded its rows; after a refused first update everything goes again.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Send_my_scans_is_based_on_the_last_update_only_when_its_rows_were_recorded(bool recorded)
+    {
+        var app = Path.Combine(_root, "app");
+        Directory.CreateDirectory(Path.Combine(app, "station"));
+        Directory.CreateDirectory(Path.Combine(app, "cli"));
+        File.Copy(RepoFile("build", "station", "Send-ToFranz.ps1"), Path.Combine(app, "station", "Send-ToFranz.ps1"));
+        var drive = Directory.CreateDirectory(Path.Combine(_root, "drive", "to-franz")).Parent!.FullName;
+        File.WriteAllText(Path.Combine(app, "station", "drive-folder.txt"), drive);
+        var stationData = Directory.CreateDirectory(Path.Combine(_root, "appdata", "FGScanner")).FullName;
+        File.WriteAllText(Path.Combine(stationData, "station-sent-manifest.json"), "{}");
+        File.WriteAllText(Path.Combine(stationData, "station-freeze.json"),
+            recorded ? "{\n  \"content\": {\n    \"sha256\": \"ab\"\n  }\n}" : "{\n  \"content\": null\n}");
+        StandInCli(Path.Combine(app, "cli", "fgscanner.exe"));
+
+        var (exit, output) = PowerShellWith(
+            new Dictionary<string, string> { ["APPDATA"] = Path.Combine(_root, "appdata") },
+            "-File", Path.Combine(app, "station", "Send-ToFranz.ps1"));
+
+        Assert.True(exit == 0, output);
+        var arguments = File.ReadAllText(Path.Combine(app, "cli", "args.txt"));
+        Assert.Equal(recorded, arguments.Contains("--based-on", StringComparison.Ordinal));
+        Assert.Equal(!recorded, output.Contains("Sending everything again", StringComparison.Ordinal));
+    }
+
+    /// <summary>A console program standing in for fgscanner.exe: it records its arguments.</summary>
+    private static void StandInCli(string exe)
+    {
+        var source = Path.Combine(Path.GetDirectoryName(exe)!, "standin.cs");
+        File.WriteAllText(source, """
+            class StandIn
+            {
+                static void Main(string[] args)
+                {
+                    var here = System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location);
+                    System.IO.File.WriteAllText(System.IO.Path.Combine(here, "args.txt"), string.Join("|", args));
+                    System.Console.WriteLine("OK 1234-5678");
+                }
+            }
+            """);
+        var (exit, output) = PowerShell("-Command",
+            $"Add-Type -TypeDefinition ([IO.File]::ReadAllText('{source}')) -OutputAssembly '{exe}' -OutputType ConsoleApplication");
+        Assert.True(exit == 0 && File.Exists(exe), output);
     }
 
     [Fact]

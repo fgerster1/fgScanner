@@ -71,7 +71,7 @@ if ($answer.Trim() -ine 'Y') {
 }
 
 Write-Host ''
-& $cli station apply $pack
+& $cli station apply $pack --expect-code $code
 $exit = $LASTEXITCODE
 if ($exit -eq 0) {
   Write-Host ''

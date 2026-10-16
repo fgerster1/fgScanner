@@ -223,6 +223,18 @@ finding was checked at the cited lines; all 23 are true.
 | P9-7 | `…-1405-2-return` sorts before `…-1405-return`; the shortcut installs the older one | spec silent | **Open D7** | 10c |
 | P9-11 | §14 promises a log beside the manifest for pack and apply; apply logs in the station folder (the pack folder is deleted after use) | spec wrong | **Open D8** | 10c |
 
+**Revision D re-review** (cold reader over `9e4e840..6f53b51`, 2026-10-16): every finding fixed or
+partly; nine follow-ups, all bugs against what D already decided — no new decision, fixed in 10d.
+R-1 apply is not told the code Jim confirmed (D3) → `--expect-code`; R-2 a restore that itself fails
+leaves the station between versions with no verb to finish it (P9-2) → restore continues past
+per-file errors, marks itself started, and undo finishes it; R-3 a non-IO error after Commit skips
+the restore (P9-2) → every exception restores; R-4 a second undo rolls back the cycle before
+(AC-6) → undo only the apply the freeze record names; R-5 moved-aside originals not counted when the
+station and evidence are on different drives (P10-6); R-6 a crash in apply is not logged (D8);
+R-7 test gaps (the 0.5.4 sender's real lock path, D6's full re-send); R-8 the 150 MB copy may block
+the window → off the UI thread; R-9 an app started during an apply exits silently — that is D5 (a)
+as decided, kept.
+
 **Decided in Round D (2026-10-16, approve — every recommendation (a), no notes):**
 - **D1 — Settings an empty station takes from a pack.** (a) **None:** delete every Settings row from
   the incoming DB when the receiver has none — Franz's workspace starts on defaults (auto-orient off

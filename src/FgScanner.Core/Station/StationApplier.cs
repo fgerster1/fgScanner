@@ -6,6 +6,8 @@ namespace FgScanner.Core.Station;
 /// <param name="StationRoot">The receiving station's folder: database, trash, recovery, freeze record.</param>
 /// <param name="AppVersion">The version this station runs.</param>
 /// <param name="LatestMigration">The newest migration this version knows.</param>
+/// <param name="ExpectedCode">The code Jim confirmed with Franz; the pack must still be the one
+/// that has it.</param>
 /// <param name="ReceiverMigration">The receiving database's own last migration; behind
 /// <paramref name="LatestMigration"/> when the new version was installed but never started.</param>
 public sealed record StationApplyRequest(
@@ -15,7 +17,8 @@ public sealed record StationApplyRequest(
     string AppVersion,
     string LatestMigration,
     DateTimeOffset At,
-    string? ReceiverMigration = null);
+    string? ReceiverMigration = null,
+    string? ExpectedCode = null);
 
 /// <summary>Applied (<see cref="Problem"/> null), still downloading, or refused with nothing changed.</summary>
 public sealed record StationApplyResult(
@@ -44,6 +47,9 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
     /// <summary>The database an undo replaced, kept in the <c>apply-undone-</c> folder.</summary>
     private const string ReplacedDatabaseFileName = "fgscanner.replaced.db";
 
+    /// <summary>Written when a restore starts; still there means it was cut short and undo finishes it.</summary>
+    private const string RestoreMarkerFileName = "restore-started";
+
     private const long Headroom = 1L << 30;
 
     private static readonly string[] StationFiles =
@@ -70,6 +76,13 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
         if (verified.Status != StationVerifyStatus.Ok)
         {
             return StationApplyResult.Refused($"the update is damaged ({verified.Problems[0]}) — call Franz");
+        }
+
+        // Jim confirmed a code with Franz before this ran; the folder could have changed meanwhile.
+        if (request.ExpectedCode is { } confirmed && confirmed != verified.Code)
+        {
+            return StationApplyResult.Refused(
+                $"the update is not the one whose code you checked ({confirmed}; it is now {verified.Code}) — nothing was changed, call Franz");
         }
 
         var manifest = StationManifest.Parse(manifestBytes!);
@@ -122,17 +135,23 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
                 Path.GetFileName(Path.TrimEndingDirectorySeparator(request.PackFolder)), verified.Code!, manifest.SentAt,
                 StationManifestBuilder.Sha256Of(db), StationManifest.HashOf(manifestBytes!), database.Content(db)), manifestBytes!);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // Whatever stopped it - a file another program holds, a full disk - Jim is left with
-            // the station he had, never half of each.
-            Restore(request.StationRoot, backup);
-            Directory.Move(backup, Path.Combine(request.StationRoot, UndonePrefix + Path.GetFileName(backup)[BackupPrefix.Length..]));
+            // Whatever stopped it - a file another program holds, a full disk, a database error -
+            // Jim is left with the station he had, never half of each.
+            var stuck = Restore(request.StationRoot, backup);
             if (Directory.Exists(staging))
             {
                 Directory.Delete(staging, recursive: true);
             }
 
+            if (stuck.Count > 0)
+            {
+                return StationApplyResult.Refused(
+                    $"the update could not be installed ({ex.Message}) and could not be fully put back ({stuck[0]}) — call Franz; \"station apply --undo\" finishes putting it back");
+            }
+
+            Directory.Move(backup, Path.Combine(request.StationRoot, UndonePrefix + Path.GetFileName(backup)[BackupPrefix.Length..]));
             return StationApplyResult.Refused($"the update could not be installed ({ex.Message}), so the station has been put back — call Franz");
         }
 
@@ -151,11 +170,14 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
             return StationApplyResult.Refused(notAtRest);
         }
 
-        // A backup with no plan is one an interrupted apply never finished starting; the last
-        // one with a plan is the apply to undo.
+        // The apply to undo is the one the station is on now (the freeze record names its pack) -
+        // an older backup is never a second thing to undo - or one whose own restore was cut
+        // short. A backup with no plan is one an interrupted apply never finished starting.
+        var current = StationFreezeRecord.Read(stationRoot)?.Pack;
         var backup = Directory.Exists(stationRoot)
             ? Directory.EnumerateDirectories(stationRoot, BackupPrefix + "*")
                 .Where(d => File.Exists(Path.Combine(d, UndoPlanFileName)))
+                .Where(d => File.Exists(Path.Combine(d, RestoreMarkerFileName)) || ReadPlan(d).Pack == current)
                 .Order(StringComparer.Ordinal).LastOrDefault()
             : null;
         if (backup is null)
@@ -164,17 +186,23 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
         }
 
         var plan = ReadPlan(backup);
-        if (ChangedSinceApply(stationRoot, plan.EvidenceRoot, db) is { } changed)
+        var interrupted = File.Exists(Path.Combine(backup, RestoreMarkerFileName));
+        if (!interrupted && ChangedSinceApply(stationRoot, plan.EvidenceRoot, db) is { } changed)
         {
             return StationApplyResult.Refused(changed);
         }
 
-        if (File.Exists(db))
+        var replaced = Path.Combine(backup, ReplacedDatabaseFileName);
+        if (File.Exists(db) && !File.Exists(replaced))
         {
-            File.Copy(db, Path.Combine(backup, ReplacedDatabaseFileName));
+            File.Copy(db, replaced);
         }
 
-        Restore(stationRoot, backup);
+        if (Restore(stationRoot, backup) is [var first, ..])
+        {
+            return StationApplyResult.Refused($"the station could not be fully put back ({first}) — close what holds it, then undo again");
+        }
+
         Directory.Move(backup, Path.Combine(stationRoot, UndonePrefix + Path.GetFileName(backup)[BackupPrefix.Length..]));
         return new StationApplyResult(null, null, BackupFolder: backup);
     }
@@ -210,8 +238,24 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
     /// replaced is safely in the backup, or when it replaced nothing: an apply stopped part-way
     /// may not have moved the original yet, and that original is then still the live file.
     /// </summary>
-    private static void Restore(string stationRoot, string backup)
+    /// <returns>What could not be put back; empty when the station is whole again. The restore
+    /// goes on past a file it cannot move, marks itself started, and can be run again to finish.</returns>
+    private static List<string> Restore(string stationRoot, string backup)
     {
+        var stuck = new List<string>();
+        File.WriteAllText(Path.Combine(backup, RestoreMarkerFileName), "");
+        void Try(string what, Action step)
+        {
+            try
+            {
+                step();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                stuck.Add($"{what}: {ex.Message}");
+            }
+        }
+
         var plan = ReadPlan(backup);
         var trash = Path.Combine(stationRoot, StationManifest.TrashFolder);
         var movedAside = plan.MovedAside.ToHashSet(StringComparer.Ordinal);
@@ -225,7 +269,7 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
             var placed = TargetOf(rel, plan.EvidenceRoot, trash);
             if (File.Exists(placed))
             {
-                File.Delete(placed);
+                Try(rel, () => File.Delete(placed));
             }
         }
 
@@ -235,8 +279,11 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
             if (File.Exists(kept))
             {
                 var target = TargetOf(rel, plan.EvidenceRoot, trash);
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                File.Move(kept, target);
+                Try(rel, () =>
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                    File.Move(kept, target);
+                });
             }
         }
 
@@ -246,16 +293,26 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
             var live = Path.Combine(stationRoot, name);
             if (File.Exists(kept))
             {
-                File.Copy(kept, live + ".tmp", overwrite: true);
-                File.Move(live + ".tmp", live, overwrite: true);
+                Try(name, () =>
+                {
+                    File.Copy(kept, live + ".tmp", overwrite: true);
+                    File.Move(live + ".tmp", live, overwrite: true);
+                });
             }
             else if (!plan.Existed.Contains(name, StringComparer.Ordinal) && File.Exists(live))
             {
                 // Not there before the apply, so the apply made it. A file that was there but has
                 // no copy in the backup was never touched - the apply stopped before reaching it.
-                File.Delete(live);
+                Try(name, () => File.Delete(live));
             }
         }
+
+        if (stuck.Count == 0)
+        {
+            File.Delete(Path.Combine(backup, RestoreMarkerFileName));
+        }
+
+        return stuck;
     }
 
     private static UndoPlan ReadPlan(string backup) =>
@@ -271,13 +328,27 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
         // copies, so each drive must hold the whole update with room to spare.
         var needed = new FileInfo(Path.Combine(request.PackFolder, StationManifest.DatabaseFileName)).Length
             + manifest.Files.Where(f => f.From != f.Rel).Sum(f => f.Size) + Headroom;
-        foreach (var drive in new[] { request.StationRoot, request.EvidenceRoot }
-                     .Select(p => Path.GetPathRoot(Path.GetFullPath(p))!).Distinct(StringComparer.OrdinalIgnoreCase))
+        var stationDrive = Path.GetPathRoot(Path.GetFullPath(request.StationRoot))!;
+        var evidenceDrive = Path.GetPathRoot(Path.GetFullPath(request.EvidenceRoot))!;
+
+        // Originals moved aside go into the backup in the station folder: on another drive that
+        // move is a copy, and the station drive must hold them too.
+        var movedAcross = 0L;
+        if (!stationDrive.Equals(evidenceDrive, StringComparison.OrdinalIgnoreCase) && Directory.Exists(request.EvidenceRoot))
+        {
+            var keptInPlace = manifest.Files.Where(f => f.From == f.Rel).Select(f => f.Rel).ToHashSet(StringComparer.Ordinal);
+            movedAcross = StationManifestBuilder.FilesUnder(request.EvidenceRoot)
+                .Where(path => !keptInPlace.Contains(StationManifest.EvidenceFolder + "/" + StationManifestBuilder.RelativeOf(request.EvidenceRoot, path)))
+                .Sum(path => new FileInfo(path).Length);
+        }
+
+        foreach (var drive in new[] { stationDrive, evidenceDrive }.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             var free = (freeBytes ?? (root => new DriveInfo(root).AvailableFreeSpace))(drive);
-            if (free < needed)
+            var neededHere = needed + (drive.Equals(stationDrive, StringComparison.OrdinalIgnoreCase) ? movedAcross : 0);
+            if (free < neededHere)
             {
-                return $"not enough free space on {drive} (the update needs {Megabytes(needed)}, there is {Megabytes(free)}) — call Franz";
+                return $"not enough free space on {drive} (the update needs {Megabytes(neededHere)}, there is {Megabytes(free)}) — call Franz";
             }
         }
 
@@ -452,7 +523,8 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
         // the apply simply had not reached yet.
         var existed = StationFiles.Where(name => File.Exists(Path.Combine(request.StationRoot, name))).ToList();
         StationPacker.WriteAtomically(Path.Combine(backup, UndoPlanFileName),
-            JsonSerializer.SerializeToUtf8Bytes(new UndoPlan(request.EvidenceRoot, placed, movedAside, existed)));
+            JsonSerializer.SerializeToUtf8Bytes(new UndoPlan(
+                request.EvidenceRoot, placed, movedAside, existed, Path.GetFileName(Path.TrimEndingDirectorySeparator(request.PackFolder)))));
         foreach (var name in new[] { StationManifest.DatabaseFileName, StationFreezeRecord.FileName, StationFreezeRecord.SentManifestFileName })
         {
             var live = Path.Combine(request.StationRoot, name);
@@ -533,5 +605,5 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
     }
 
     private sealed record UndoPlan(
-        string EvidenceRoot, IReadOnlyList<string> Placed, IReadOnlyList<string> MovedAside, IReadOnlyList<string> Existed);
+        string EvidenceRoot, IReadOnlyList<string> Placed, IReadOnlyList<string> MovedAside, IReadOnlyList<string> Existed, string Pack);
 }

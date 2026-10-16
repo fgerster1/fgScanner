@@ -607,13 +607,16 @@ public static class CliRunner
         };
         var undoOption = new Option<bool>("--undo") { Description = "Put the station back as it was before the last apply." };
         var applyEvidenceOption = new Option<string?>("--evidence") { Description = "The evidence folder (default: the one the profiles name; required for an empty station). Undo uses the folder the last apply used." };
+        var expectCodeOption = new Option<string?>("--expect-code") { Description = "The code the operator confirmed; the pack must still have it." };
         var apply = new Command("apply", "Install a pack into this station; prints OK and the code to read out.")
         {
-            applyArgument, undoOption, applyEvidenceOption,
+            applyArgument, undoOption, applyEvidenceOption, expectCodeOption,
         };
-        apply.SetAction(parseResult => HoldingTheStation(() => ApplyStation(
-            parseResult.GetValue(applyArgument), parseResult.GetValue(undoOption),
-            parseResult.GetValue(applyEvidenceOption), overrides)));
+        apply.SetAction(parseResult => HoldingTheStation(
+            () => ApplyStation(
+                parseResult.GetValue(applyArgument), parseResult.GetValue(undoOption),
+                parseResult.GetValue(applyEvidenceOption), parseResult.GetValue(expectCodeOption), overrides),
+            (overrides?.StationRoot is { } stationRoot ? StationPaths.Resolve(stationRoot) : StationPaths.Default).Root));
 
         return new Command("station", "Move a whole station between machines as verified packs.") { verify, pack, apply };
     }
@@ -648,7 +651,7 @@ public static class CliRunner
             : null;
     }
 
-    private static int ApplyStation(string? packFolder, bool undo, string? evidence, CliOverrides? overrides)
+    private static int ApplyStation(string? packFolder, bool undo, string? evidence, string? expectCode, CliOverrides? overrides)
     {
         var paths = overrides?.StationRoot is { } root ? StationPaths.Resolve(root) : StationPaths.Default;
         var stationRoot = paths.Root;
@@ -691,7 +694,8 @@ public static class CliRunner
                     typeof(CliRunner).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
                     migrations.Database.GetMigrations().Last(),
                     DateTimeOffset.Now,
-                    File.Exists(database) ? StationFacts.Read(database).LastMigration : null));
+                    File.Exists(database) ? StationFacts.Read(database).LastMigration : null,
+                    expectCode));
             }
             finally
             {
@@ -728,7 +732,9 @@ public static class CliRunner
     /// installing take minutes, and an app opened meanwhile would scan into a station being
     /// copied or swapped. While the lock is held a launched app exits as a second instance does.
     /// </summary>
-    private static int HoldingTheStation(Func<int> verb)
+    /// <param name="logFolder">Where apply and undo keep <c>station-apply.log</c>; a crash is
+    /// logged there too (re-review R-6). Null for pack.</param>
+    private static int HoldingTheStation(Func<int> verb, string? logFolder = null)
     {
         using var hold = new Mutex(initiallyOwned: true, "FGScanner.SingleInstance", out var ours);
         if (!ours)
@@ -744,6 +750,12 @@ public static class CliRunner
         catch (Exception ex) when (NotOkRather(ex))
         {
             Console.WriteLine($"NOT OK — {ex.Message}");
+            if (logFolder is not null && Directory.Exists(logFolder))
+            {
+                File.AppendAllText(Path.Combine(logFolder, "station-apply.log"),
+                    $"{StationManifest.FormatSentAt(DateTimeOffset.UtcNow)} NOT OK — {ex.GetType().Name}: {ex.Message}{Environment.NewLine}");
+            }
+
             return 1;
         }
         finally

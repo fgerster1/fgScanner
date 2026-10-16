@@ -376,6 +376,50 @@ public sealed class StationApplyTests : IDisposable
         Assert.Equal(before, Snapshot());
     }
 
+    /// <summary>Re-review R-1: Jim confirms a code, and apply installs exactly that pack — one
+    /// swapped in the folder while the two of them compared codes is refused.</summary>
+    [Fact]
+    public void An_update_other_than_the_one_whose_code_Jim_confirmed_is_refused()
+    {
+        var pack = RoundTrip();
+        var before = Snapshot();
+
+        var result = Applier().Apply(ApplyRequest(pack) with { ExpectedCode = "0000-0000" });
+
+        Assert.Contains("not the one whose code you checked", result.Problem);
+        Assert.Equal(before, Snapshot());
+    }
+
+    /// <summary>Re-review R-2: a restore that was itself interrupted leaves its mark, and undo
+    /// finishes it without asking whether the half-restored station "changed since the update".</summary>
+    [Fact]
+    public void Undo_finishes_a_restore_that_was_interrupted()
+    {
+        var pack = RoundTrip();
+        var before = Snapshot();
+        var applied = Applier().Apply(ApplyRequest(pack));
+        File.WriteAllText(Path.Combine(applied.BackupFolder!, "restore-started"), "");
+        File.AppendAllText(Path.Combine(Jim, "fgscanner.db"), "\nrow:half put back");
+
+        var undone = Applier().Undo(Jim);
+
+        Assert.Null(undone.Problem);
+        Assert.Equal(before, Snapshot());
+    }
+
+    /// <summary>Re-review R-4: one undo takes back one update; an older backup still on disk is
+    /// not a second thing to undo.</summary>
+    [Fact]
+    public void Undo_takes_back_only_the_update_the_station_is_on()
+    {
+        Assert.Null(Applier().Apply(ApplyRequest(RoundTrip())).Problem);
+        Assert.Null(Applier().Undo(Jim).Problem);
+        var undone = Directory.GetDirectories(Jim, "apply-undone-*").Single();
+        Directory.Move(undone, Path.Combine(Jim, "apply-backup-" + Path.GetFileName(undone)["apply-undone-".Length..]));
+
+        Assert.Contains("nothing to undo", Applier().Undo(Jim).Problem);
+    }
+
     [Fact]
     public void Jim_scanning_during_the_freeze_refuses_and_changes_nothing()
     {
