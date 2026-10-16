@@ -167,15 +167,105 @@ public sealed class SqliteStationDatabaseTests : IDisposable
             _database.BindToStation(incoming, null, Path.Combine(_root, "jim", "trash")));
     }
 
+    /// <summary>Revision D, D1: nothing in a pack configures the machine that opens it — the
+    /// sender's Settings include the commit-hook command line FG Scanner runs.</summary>
     [Fact]
-    public void Binding_into_an_empty_station_keeps_the_senders_settings()
+    public void Binding_into_an_empty_station_takes_none_of_the_senders_settings()
     {
         var incoming = Fixture("current");
-        Execute(incoming, "INSERT OR REPLACE INTO Settings (Key, Value) VALUES ('Theme', 'Dark')");
+        Execute(incoming, "INSERT OR REPLACE INTO Settings (Key, Value) VALUES ('Hook.CommandLine', 'powershell -c evil')");
 
         _database.BindToStation(incoming, null, Path.Combine(_root, "franz", "trash"));
 
-        Assert.Equal("Dark", Scalar(incoming, "SELECT Value FROM Settings WHERE Key = 'Theme'"));
+        Assert.Equal("0", Scalar(incoming, "SELECT count(*) FROM Settings"));
         Assert.StartsWith(Path.Combine(_root, "franz", "trash"), Scalar(incoming, "SELECT TrashFolderPath FROM TrashItems LIMIT 1"));
+    }
+
+    /// <summary>Revision D, P10-2: a path in the arriving database decides where future scans and
+    /// exports are written; one outside the evidence folder, or on a share, refuses the update.</summary>
+    [Theory]
+    [InlineData("UPDATE Profiles SET BaseDirectory = '\\\\attacker@SSL\\x'", "Profiles.BaseDirectory")]
+    [InlineData("UPDATE Groups SET DirectoryPath = 'C:\\Users\\Jim\\Startup'", "Groups.DirectoryPath")]
+    [InlineData("UPDATE TrashItems SET GroupDirectoryPath = 'D:\\elsewhere'", "TrashItems.GroupDirectoryPath")]
+    public void A_path_outside_the_evidence_folder_is_named(string sql, string column)
+    {
+        var db = Fixture("current");
+        var evidence = Path.Combine(_root, "Evidence-Scans");
+        Execute(db, $"UPDATE Profiles SET BaseDirectory = '{evidence}'");
+        Execute(db, $"UPDATE Groups SET DirectoryPath = '{Path.Combine(evidence, "Dental")}'");
+        Execute(db, $"UPDATE TrashItems SET GroupDirectoryPath = '{Path.Combine(evidence, "Toms")}'");
+        Assert.Null(_database.PathOutside(db, evidence));
+
+        Execute(db, sql);
+
+        Assert.StartsWith(column, _database.PathOutside(db, evidence));
+    }
+
+    /// <summary>Revision D, D2 (refined): tables and indexes must be exactly this version's;
+    /// triggers and views are never taken from a pack but rebuilt from the build's own.</summary>
+    [Fact]
+    public void A_matching_schema_passes_and_an_extra_table_or_changed_index_does_not()
+    {
+        var receiver = Fixture("current");
+        var incoming = Path.Combine(_root, "incoming.db");
+        File.Copy(receiver, incoming);
+        Assert.Null(_database.SchemaProblem(incoming, receiver, null));
+
+        Execute(incoming, "CREATE TABLE Smuggled (Id TEXT)");
+        Assert.Contains("Smuggled", _database.SchemaProblem(incoming, receiver, null));
+
+        Execute(incoming, "DROP TABLE Smuggled");
+        var index = Scalar(incoming, "SELECT name FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL LIMIT 1");
+        Execute(incoming, $"DROP INDEX \"{index}\"");
+        Assert.Contains(index, _database.SchemaProblem(incoming, receiver, null));
+    }
+
+    [Fact]
+    public void An_empty_station_compares_with_a_fresh_database_at_the_packs_version()
+    {
+        var shipped = Path.Combine(_root, "v0.5.4.db");
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "fixtures", "ladder", "v0.5.4.db"), shipped);
+
+        Assert.Null(_database.SchemaProblem(shipped, null, "20260914210756_AddFieldLengthAndMemo"));
+        Assert.NotNull(_database.SchemaProblem(shipped, null, "20261005135716_AddPageOrientationSettled"));
+    }
+
+    [Fact]
+    public void An_unknown_version_cannot_be_compared()
+    {
+        var shipped = Path.Combine(_root, "v0.5.4.db");
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "fixtures", "ladder", "v0.5.4.db"), shipped);
+
+        Assert.Contains("not a version", _database.SchemaProblem(shipped, null, "20990101000000_FromTheFuture"));
+    }
+
+    [Fact]
+    public void Binding_drops_a_smuggled_trigger_and_rebuilds_the_builds_own()
+    {
+        var incoming = Fixture("current");
+        var receiver = Path.Combine(_root, "jim.db");
+        File.Copy(incoming, receiver);
+        Execute(incoming, "CREATE TRIGGER Rewrite AFTER INSERT ON Pages BEGIN UPDATE Pages SET Checksum = 'forged'; END");
+        Execute(incoming, "DROP VIEW v_index");
+        Execute(incoming, "CREATE VIEW v_index AS SELECT 'lie' AS GroupName");
+
+        _database.BindToStation(incoming, receiver, Path.Combine(_root, "jim", "trash"));
+
+        Assert.Equal("Pages_fts_delete,Pages_fts_insert,Pages_fts_update",
+            Scalar(incoming, "SELECT group_concat(name, ',') FROM (SELECT name FROM sqlite_master WHERE type = 'trigger' ORDER BY name)"));
+        Assert.Equal(
+            string.Join(" ", RawSchemaSql.CreateViewIndex.Split((char[])null!, StringSplitOptions.RemoveEmptyEntries)).TrimEnd(';'),
+            string.Join(" ", Scalar(incoming, "SELECT sql FROM sqlite_master WHERE name = 'v_index'").Split((char[])null!, StringSplitOptions.RemoveEmptyEntries)));
+    }
+
+    /// <summary>Revision D, P10-7: table and column names come from an untrusted database or
+    /// manifest and are spliced into SQL; anything but a plain identifier is refused.</summary>
+    [Fact]
+    public void A_table_name_that_is_not_an_identifier_is_refused()
+    {
+        var db = Fixture("current");
+
+        Assert.Throws<InvalidDataException>(() => _database.ContentSha256(db,
+            [new Core.Station.StationContentTable("Pages\" FROM Pages; SELECT \"x", ["Id"])]));
     }
 }

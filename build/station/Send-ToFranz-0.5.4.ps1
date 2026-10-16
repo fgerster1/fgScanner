@@ -207,7 +207,9 @@ try {
   $manifestSha = (($sha.ComputeHash($manifestBytes) | ForEach-Object { $_.ToString('x2') }) -join '')
   $code = $manifestSha.Substring(0, 4)
 
-  # The freeze record: the next update from Franz is checked against what left here.
+  # The freeze record: the next update from Franz is checked against what left here. This
+  # sender cannot read SQLite, so it keeps the database it sent; apply fingerprints that copy.
+  Copy-Item -LiteralPath (Join-Path $pack 'fgscanner.db') -Destination (Join-Path $StationRoot 'station-sent.db') -Force
   [System.IO.File]::WriteAllBytes((Join-Path $StationRoot 'station-sent-manifest.json.tmp'), $manifestBytes)
   Move-Item -LiteralPath (Join-Path $StationRoot 'station-sent-manifest.json.tmp') -Destination (Join-Path $StationRoot 'station-sent-manifest.json') -Force
   $freeze = "{`r`n  `"pack`": `"$(Esc $name)`",`r`n  `"code`": `"$code`",`r`n  `"sentAt`": `"$($at.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", [System.Globalization.CultureInfo]::InvariantCulture))`",`r`n  `"liveDbSha256`": `"$liveDb`",`r`n  `"manifestSha256`": `"$manifestSha`",`r`n  `"content`": null`r`n}"

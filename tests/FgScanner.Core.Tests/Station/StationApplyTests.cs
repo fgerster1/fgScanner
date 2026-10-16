@@ -15,6 +15,8 @@ public sealed class StationApplyTests : IDisposable
 {
     private static readonly DateTimeOffset At = new(2026, 10, 16, 14, 0, 0, TimeSpan.FromHours(-4));
 
+    private static readonly System.Text.Json.JsonSerializerOptions WebJson = new(System.Text.Json.JsonSerializerDefaults.Web);
+
     private readonly string _root = Directory.CreateTempSubdirectory("fg-apply").FullName;
 
     private readonly FakeDatabase _database = new();
@@ -71,8 +73,9 @@ public sealed class StationApplyTests : IDisposable
                 Path.Combine(station, "trash"), "0.8.0", "M2", null, at ?? At),
             station, Transport, basedOn, kind, 0, basedOnContent, _database.Content(Path.Combine(station, "fgscanner.db"))));
 
-    private StationApplyRequest ApplyRequest(string pack, string version = "0.8.0", string migration = "M2") =>
-        new(pack, Jim, Evidence, version, migration, At);
+    private StationApplyRequest ApplyRequest(
+        string pack, string version = "0.8.0", string migration = "M2", string? jimsMigration = null) =>
+        new(pack, Jim, Evidence, version, migration, At, jimsMigration ?? migration);
 
     /// <summary>Jim sends; Franz opens the send, adds a page, changes one, renames one, deletes one,
     /// and packs the return. Jim's evidence is parked while Franz's tree stands at the shared path.</summary>
@@ -289,6 +292,90 @@ public sealed class StationApplyTests : IDisposable
         Assert.Equal(before, Snapshot());
     }
 
+    /// <summary>Revision D, P10-3: the pack may not choose which rows the freeze check reads — a
+    /// return claiming a subset that Jim's new scans did not touch is refused.</summary>
+    [Fact]
+    public void A_return_that_chooses_its_own_freeze_tables_is_refused()
+    {
+        var pack = RoundTrip();
+        File.AppendAllText(Path.Combine(Jim, "fgscanner.db"), "\nrow:page 99");
+        var manifestPath = Path.Combine(pack, StationManifest.FileName);
+        var forged = StationManifest.Parse(File.ReadAllBytes(manifestPath)) with
+        {
+            BasedOnContent = new StationContent(
+                [new StationContentTable("Subset", ["Id"])],
+                _database.ContentSha256(Path.Combine(Jim, "fgscanner.db"), [])),
+        };
+        File.WriteAllBytes(manifestPath, forged.ToJsonBytes());
+        var before = Snapshot();
+
+        var result = Applier().Apply(ApplyRequest(pack));
+
+        Assert.Contains("not made from this station's last pack", result.Problem);
+        Assert.Equal(before, Snapshot());
+    }
+
+    /// <summary>The 0.5.4 sender cannot fingerprint the database, so it keeps a copy of what it
+    /// sent; apply works out Jim's own content from that copy.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_send_by_the_054_sender_is_checked_against_its_own_copy(bool jimScannedSince)
+    {
+        var pack = RoundTrip();
+        var freeze = StationFreezeRecord.Read(Jim)! with { Content = null };
+        File.WriteAllText(Path.Combine(Jim, StationFreezeRecord.FileName),
+            System.Text.Json.JsonSerializer.Serialize(freeze, WebJson));
+        File.Copy(Path.Combine(Jim, "fgscanner.db"), Path.Combine(Jim, StationFreezeRecord.SentDatabaseFileName));
+        if (jimScannedSince)
+        {
+            File.AppendAllText(Path.Combine(Jim, "fgscanner.db"), "\nrow:page 99");
+        }
+
+        var result = Applier().Apply(ApplyRequest(pack));
+
+        if (jimScannedSince)
+        {
+            Assert.Contains("changed since it was sent", result.Problem);
+        }
+        else
+        {
+            Assert.Null(result.Problem);
+        }
+    }
+
+    [Fact]
+    public void A_new_version_never_started_is_asked_to_start_once()
+    {
+        var pack = RoundTrip();
+
+        Assert.Contains("start it once", Applier().Apply(ApplyRequest(pack, jimsMigration: "M1")).Problem);
+    }
+
+    [Fact]
+    public void A_return_naming_a_folder_outside_the_evidence_folder_is_refused()
+    {
+        var pack = RoundTrip(() => File.AppendAllText(Path.Combine(Franz, "fgscanner.db"), "\npath:\\\\attacker\\share"));
+        var before = Snapshot();
+
+        var result = Applier().Apply(ApplyRequest(pack));
+
+        Assert.Contains("outside this station's evidence folder", result.Problem);
+        Assert.Equal(before, Snapshot());
+    }
+
+    [Fact]
+    public void A_return_whose_database_carries_an_extra_table_is_refused()
+    {
+        var pack = RoundTrip(() => File.AppendAllText(Path.Combine(Franz, "fgscanner.db"), "\nschema:smuggled"));
+        var before = Snapshot();
+
+        var result = Applier().Apply(ApplyRequest(pack));
+
+        Assert.Contains("smuggled", result.Problem);
+        Assert.Equal(before, Snapshot());
+    }
+
     [Fact]
     public void Jim_scanning_during_the_freeze_refuses_and_changes_nothing()
     {
@@ -443,14 +530,23 @@ public sealed class StationApplyTests : IDisposable
             Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n",
                 File.ReadAllLines(database).Where(l => l.StartsWith("row:", StringComparison.Ordinal))))));
 
+        public string? SchemaProblem(string incoming, string? receiver, string? lastMigration) =>
+            File.ReadAllText(incoming).Contains("schema:smuggled", StringComparison.Ordinal)
+                ? "the update's database has a table this version does not: smuggled"
+                : null;
+
+        public string? PathOutside(string database, string evidenceRoot) =>
+            File.ReadAllLines(database).Where(l => l.StartsWith("path:", StringComparison.Ordinal))
+                .Select(l => l["path:".Length..])
+                .Where(p => !p.StartsWith(evidenceRoot, StringComparison.OrdinalIgnoreCase))
+                .Select(p => $"Groups.DirectoryPath = {p}")
+                .FirstOrDefault();
+
         public void BindToStation(string incoming, string? receiver, string receiverTrash)
         {
-            if (receiver is null)
-            {
-                return;
-            }
-
-            var settings = File.ReadAllLines(receiver).Where(l => l.StartsWith("setting:", StringComparison.Ordinal));
+            var settings = receiver is null
+                ? []
+                : File.ReadAllLines(receiver).Where(l => l.StartsWith("setting:", StringComparison.Ordinal));
             File.WriteAllLines(incoming,
                 File.ReadAllLines(incoming).Where(l => !l.StartsWith("setting:", StringComparison.Ordinal)).Concat(settings));
         }

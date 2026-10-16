@@ -120,6 +120,8 @@ public sealed class StationSenderTests : IDisposable
         Assert.Equal(StationVerifyStatus.Ok, verified.Status);
         Assert.StartsWith($"OK {verified.Code} - leave the laptop on", output.Trim());
         Assert.Equal(File.ReadAllBytes(Path.Combine(scriptPack, StationManifest.FileName)), sentManifest);
+        Assert.Equal(File.ReadAllBytes(Path.Combine(Station, "fgscanner.db")),
+            File.ReadAllBytes(Path.Combine(Station, StationFreezeRecord.SentDatabaseFileName)));
     }
 
     [Theory]

@@ -680,7 +680,8 @@ public static class CliRunner
                     packFolder, stationRoot, evidence,
                     typeof(CliRunner).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
                     migrations.Database.GetMigrations().Last(),
-                    DateTimeOffset.Now));
+                    DateTimeOffset.Now,
+                    File.Exists(database) ? StationFacts.Read(database).LastMigration : null));
             }
             finally
             {

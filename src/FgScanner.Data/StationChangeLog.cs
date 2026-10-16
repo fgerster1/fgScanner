@@ -91,7 +91,7 @@ public static class StationChangeLog
     private static Dictionary<string, object?[]> Rows(SqliteConnection connection, string table, List<string> columns)
     {
         using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT {string.Join(", ", columns.Select(c => $"\"{c}\""))} FROM \"{table}\"";
+        command.CommandText = $"SELECT {string.Join(", ", columns.Select(c => $"\"{SqliteStationDatabase.Identifier(c)}\""))} FROM \"{table}\"";
         using var reader = command.ExecuteReader();
         var key = columns.IndexOf("Id");
         var rows = new Dictionary<string, object?[]>(StringComparer.Ordinal);

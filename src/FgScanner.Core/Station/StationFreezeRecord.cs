@@ -21,6 +21,10 @@ public sealed record StationFreezeRecord(
     /// <summary>The sent manifest itself, kept beside the record so the next pack can be based on it.</summary>
     public const string SentManifestFileName = "station-sent-manifest.json";
 
+    /// <summary>A copy of the database the 0.5.4 sender sent. That sender cannot read SQLite, so
+    /// apply works out <see cref="Content"/> from this copy instead (Revision D, P10-3).</summary>
+    public const string SentDatabaseFileName = "station-sent.db";
+
     private static readonly JsonSerializerOptions Json = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,

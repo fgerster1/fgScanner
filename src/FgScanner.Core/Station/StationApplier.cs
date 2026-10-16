@@ -6,13 +6,16 @@ namespace FgScanner.Core.Station;
 /// <param name="StationRoot">The receiving station's folder: database, trash, recovery, freeze record.</param>
 /// <param name="AppVersion">The version this station runs.</param>
 /// <param name="LatestMigration">The newest migration this version knows.</param>
+/// <param name="ReceiverMigration">The receiving database's own last migration; behind
+/// <paramref name="LatestMigration"/> when the new version was installed but never started.</param>
 public sealed record StationApplyRequest(
     string PackFolder,
     string StationRoot,
     string EvidenceRoot,
     string AppVersion,
     string LatestMigration,
-    DateTimeOffset At);
+    DateTimeOffset At,
+    string? ReceiverMigration = null);
 
 /// <summary>Applied (<see cref="Problem"/> null), still downloading, or refused with nothing changed.</summary>
 public sealed record StationApplyResult(
@@ -301,21 +304,33 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
             return $"the update was made with FG Scanner {manifest.AppVersion}; this station runs {request.AppVersion} — call Franz";
         }
 
+        if (request.ReceiverMigration is { } here && here != request.LatestMigration)
+        {
+            return "FG Scanner has not been started since it was updated — start it once, close it, then try again";
+        }
+
         if (manifest.LastMigration != request.LatestMigration)
         {
             return $"the update's database is at {manifest.LastMigration ?? "no migration"}; this station is at {request.LatestMigration} — call Franz";
         }
 
         var sentPath = Path.Combine(request.StationRoot, StationFreezeRecord.SentManifestFileName);
-        if (!File.Exists(sentPath) || manifest.BasedOn != StationManifest.HashOf(File.ReadAllBytes(sentPath))
-            || manifest.BasedOnContent is null)
+        if (!File.Exists(sentPath) || manifest.BasedOn != StationManifest.HashOf(File.ReadAllBytes(sentPath)))
+        {
+            return "the update was not made from this station's last pack — call Franz";
+        }
+
+        // The rows are compared as this station recorded them when it sent, never as the pack
+        // describes them: a pack choosing its own tables could pick ones Jim did not touch.
+        var own = OwnContent(request.StationRoot);
+        if (own is null || manifest.BasedOnContent is null || !own.Equals(manifest.BasedOnContent))
         {
             return "the update was not made from this station's last pack — call Franz";
         }
 
         try
         {
-            if (database.ContentSha256(db, manifest.BasedOnContent.Tables) != manifest.BasedOnContent.Sha256)
+            if (database.ContentSha256(db, own.Tables) != own.Sha256)
             {
                 return "this station's data has changed since it was sent (something was scanned or edited) — call Franz";
             }
@@ -338,6 +353,25 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
               (drift.Count > 3 ? $" and {(drift.Count - 3).ToString(CultureInfo.InvariantCulture)} more" : "") + ") — call Franz";
     }
 
+    /// <summary>
+    /// What this station's rows looked like when it last sent: kept in the freeze record by the
+    /// station verb, or — after a send by the 0.5.4 PowerShell sender, which cannot read SQLite —
+    /// worked out from the copy of the sent database that sender kept beside it.
+    /// </summary>
+    private StationContent? OwnContent(string stationRoot)
+    {
+        var freeze = StationFreezeRecord.Read(stationRoot);
+        if (freeze?.Content is not null)
+        {
+            return freeze.Content;
+        }
+
+        var sentDb = Path.Combine(stationRoot, StationFreezeRecord.SentDatabaseFileName);
+        return freeze is not null && File.Exists(sentDb) && StationManifestBuilder.Sha256Of(sentDb) == freeze.LiveDbSha256
+            ? database.Content(sentDb)
+            : null;
+    }
+
     /// <summary>Everything new goes into the staging folder first, so a failure here touches nothing live.</summary>
     private string? Stage(StationApplyRequest request, StationManifest manifest, string db, string trash, string staging)
     {
@@ -348,6 +382,19 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
             return "the update's database did not copy intact — call Franz";
         }
 
+        // The arriving database is untrusted (Revision D): checked whole before it is touched,
+        // its tables and indexes must be this version's, and every folder it names must lie in
+        // this station's evidence folder once it is bound.
+        if (!database.IntegrityOk(stagedDb))
+        {
+            return "the update's database failed its integrity check — call Franz";
+        }
+
+        if (database.SchemaProblem(stagedDb, File.Exists(db) ? db : null, manifest.LastMigration) is { } schema)
+        {
+            return $"{schema} — call Franz";
+        }
+
         try
         {
             database.BindToStation(stagedDb, File.Exists(db) ? db : null, trash);
@@ -355,6 +402,11 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
         catch (InvalidDataException ex)
         {
             return $"the update's database cannot be made this station's own ({ex.Message}) — call Franz";
+        }
+
+        if (database.PathOutside(stagedDb, request.EvidenceRoot) is { } outside)
+        {
+            return $"the update names a folder outside this station's evidence folder ({outside}) — call Franz";
         }
 
         if (!database.IntegrityOk(stagedDb))
