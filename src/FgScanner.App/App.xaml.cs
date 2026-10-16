@@ -176,7 +176,8 @@ public partial class App : Application
                         sp.GetRequiredService<AppSettingsService>(), FeatureFlags.AutoOrient, ct)));
                 services.AddSingleton<ProfileOcrTrigger>();
                 services.AddSingleton<OcrWorker>();
-                services.AddSingleton<UpdateService>();
+                services.AddSingleton(sp => new UpdateService(
+                    sp.GetRequiredService<AppSettingsService>(), () => sp.GetRequiredService<ScanViewModel>().CaptureInHand));
                 services.AddSingleton<ActiveGroupStore>();
                 services.AddSingleton<GroupsViewModel>();
                 services.AddSingleton<SearchViewModel>();
