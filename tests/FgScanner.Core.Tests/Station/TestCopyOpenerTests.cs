@@ -67,7 +67,7 @@ public sealed class TestCopyOpenerTests : IDisposable
 
         public string ContentSha256(string database, IReadOnlyList<StationContentTable> tables) => "";
 
-        public void BindToStation(string incoming, string? receiver, string receiverTrash)
+        public void BindToStation(string incoming, string? receiver, string receiverTrash, bool restore = false)
         {
         }
 

@@ -221,6 +221,64 @@ public sealed class TestCopyTests : IDisposable
         Assert.False(File.Exists(Path.Combine(Workspace, "fgscanner.db")));
     }
 
+    /// <summary>Revision C, CR-3: restoring Jim's station from his stick brings back his settings,
+    /// keep-originals among them, and never a command.</summary>
+    [Fact]
+    public async Task A_restore_brings_back_the_settings_but_no_command()
+    {
+        var backup = await JimsBackupFromSettingsAsync(
+            ("Feature.PreserveOriginals", "true"), ("Email.SendWith", "Yahoo"), ("Hook.CommandLine", "evil.exe"));
+        Directory.Move(Evidence, Evidence + ".lost");
+        var restored = Path.Combine(_root, "station-jim-restored");
+
+        var (exit, output) = await RunAsync("station", "apply", backup, "--data-dir", restored, "--restore", "--evidence", Evidence);
+
+        Assert.True(exit == 0, output);
+        var db2 = Path.Combine(restored, "fgscanner.db");
+        Assert.Equal(["true"], Paths(db2, "SELECT Value FROM Settings WHERE Key = 'Feature.PreserveOriginals'"));
+        Assert.Equal(["Yahoo"], Paths(db2, "SELECT Value FROM Settings WHERE Key = 'Email.SendWith'"));
+        Assert.Empty(Paths(db2, "SELECT Value FROM Settings WHERE Key = 'Hook.CommandLine'"));
+    }
+
+    [Fact]
+    public async Task A_restore_takes_only_a_backup_and_only_into_an_empty_station()
+    {
+        var backup = await JimsBackupAsync();
+        var transport = Directory.CreateDirectory(Path.Combine(_root, "to-franz")).FullName;
+        Assert.Equal(0, (await RunAsync("station", "pack", "--data-dir", Jim, "--to", transport, "--evidence", Evidence, "--station", "jim")).Exit);
+        var send = Directory.GetDirectories(transport).Single();
+        Directory.Move(Evidence, Evidence + ".lost");
+
+        var (sendExit, sendOut) = await RunAsync("station", "apply", send, "--data-dir", Path.Combine(_root, "r1"), "--restore", "--evidence", Evidence);
+        var (liveExit, liveOut) = await RunAsync("station", "apply", backup, "--data-dir", Jim, "--restore", "--evidence", Evidence);
+
+        Assert.Equal(1, sendExit);
+        Assert.Contains("only a backup", sendOut);
+        Assert.Equal(1, liveExit);
+        Assert.Contains("empty station", liveOut);
+    }
+
+    private async Task<string> JimsBackupFromSettingsAsync(params (string Key, string Value)[] settings)
+    {
+        Assert.Equal(0, (await RunAsync("scan", "--data-dir", Jim, "--group", Path.Combine(Evidence, "Dental"), "--source", "feeder")).Exit);
+        using (var db = new FgScanner.Data.FgScannerDbContext(FgScanner.Data.DbBootstrapper.BuildOptions(Path.Combine(Jim, "fgscanner.db"))))
+        {
+            db.Profiles.Add(new FgScanner.Data.Profile { Name = "Evidence", BaseDirectory = Evidence });
+            foreach (var (key, value) in settings)
+            {
+                db.Settings.Add(new FgScanner.Data.Setting { Key = key, Value = value });
+            }
+
+            db.SaveChanges();
+        }
+
+        SqliteConnection.ClearAllPools();
+        Directory.CreateDirectory(Stick);
+        var (exit, output) = await RunAsync("station", "backup", "--data-dir", Jim, "--to", Stick, "--evidence", Evidence, "--station", "jim");
+        Assert.True(exit == 0, output);
+        return Directory.GetDirectories(Stick).Single();
+    }
+
     [Fact]
     public async Task A_test_copy_needs_the_folder_named()
     {

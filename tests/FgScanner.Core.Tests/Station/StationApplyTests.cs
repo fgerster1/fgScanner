@@ -605,7 +605,7 @@ public sealed class StationApplyTests : IDisposable
                 .Select(p => $"Groups.DirectoryPath = {p}")
                 .FirstOrDefault();
 
-        public void BindToStation(string incoming, string? receiver, string receiverTrash)
+        public void BindToStation(string incoming, string? receiver, string receiverTrash, bool restore = false)
         {
             var settings = receiver is null
                 ? []

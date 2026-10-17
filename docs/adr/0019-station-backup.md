@@ -35,7 +35,10 @@ return from Franz is checked against.
    the pack's own evidence folder, then moves those paths to the folder Franz names. It writes
    `test-copy.json`; a test copy says so in its title and can never send or return, so scanning in
    it is allowed.
-6. **Restore is `station apply` into an empty station** — a Teams procedure, never a button.
+6. **Restore is `station apply --restore` into an empty station** — a Teams procedure, never a
+   button. It takes only a `-backup` folder and keeps the backup's Settings except every `Hook.*`
+   (Revision C, CR-3, Franz): an ordinary apply into an empty station takes none, which would turn
+   keep-originals off on Jim's evidence station.
 
 ## Alternatives rejected
 

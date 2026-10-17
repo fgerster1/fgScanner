@@ -52,7 +52,7 @@ public sealed class SqliteStationDatabase : IStationDatabase
         return Fingerprint(connection, tables);
     }
 
-    public void BindToStation(string incoming, string? receiver, string receiverTrash)
+    public void BindToStation(string incoming, string? receiver, string receiverTrash, bool restore = false)
     {
         // The receiver is read on a read-only connection of its own: binding must never be able
         // to change the station it is binding to.
@@ -89,7 +89,11 @@ public sealed class SqliteStationDatabase : IStationDatabase
         // Nothing in a pack configures the machine that opens it (Revision D, D1): the sender's
         // Settings include the command line a commit runs. A receiver keeps its own; an empty
         // station starts on defaults.
-        Execute(connection, transaction, "DELETE FROM main.Settings;");
+        // A restore into an empty station keeps the backup's own Settings (keep-originals, the mail
+        // choice) but never a hook: those run a command or call out.
+        Execute(connection, transaction, restore && receiver is null
+            ? "DELETE FROM main.Settings WHERE lower(substr(Key, 1, 5)) = 'hook.';"
+            : "DELETE FROM main.Settings;");
         foreach (var (key, value) in settings)
         {
             using var insert = connection.CreateCommand();
@@ -350,7 +354,12 @@ public sealed class SqliteStationDatabase : IStationDatabase
         name.Length > 0
         && !Path.IsPathRooted(name)
         && !name.Contains(':', StringComparison.Ordinal)
-        && name.Split('\\', '/').All(segment => segment is not (".." or ""));
+        // Windows trims trailing dots and spaces from each segment when it resolves a path, so
+        // ".. " climbs as ".." does: a segment must survive that trim unchanged.
+        && name.Split('\\', '/').All(segment =>
+            segment.TrimEnd('.', ' ') is { Length: > 0 } trimmed
+            && trimmed == segment
+            && segment.IndexOfAny(Path.GetInvalidFileNameChars()) < 0);
 
     public void RerootEvidence(string database, string fromRoot, string toRoot)
     {

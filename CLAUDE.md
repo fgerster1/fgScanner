@@ -219,7 +219,7 @@ the JimsStuff portal (`JimsStuff/pipeline/import_fgscanner.py`) parses committed
   never apply `StationRest` there) and holds OCR/AI through `WorkGate`. A **test copy**
   (`station apply --test-copy --evidence <folder>`) re-roots paths only after proving they lie in
   the pack's own evidence folder, and can never send or return. Restore is `station apply` into an
-  empty station — never a button.
+  empty station with `--restore` (keeps the backup's Settings except `Hook.*`) — never a button.
 - **Updates (ADR-0018):** 0.5.4–0.7.1 are offered updates but cannot install them (NetSparkle's
   generated script never ran the installer); from 0.8.1 (0.8.0 was never published)
   `UpdateInstaller` starts the signature-checked file itself. A release is published as a **pre-release** first and rehearsed

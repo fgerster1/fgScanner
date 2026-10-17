@@ -92,8 +92,9 @@ On Teams, Franz guiding. Nothing is deleted until Jim has worked a day on the re
    `Evidence-Scans.broken-<date>`.
 4. **[Franz]** `"C:\Program Files\FGScanner\cli\fgscanner.exe" station verify
    "<stick>:\FGScanner-Backup\<newest>"` → `OK xxxx-xxxx`; compare with the stick's label.
-5. **[Franz]** `... station apply "<stick>:\FGScanner-Backup\<newest>" --evidence C:\Evidence-Scans`
-   → `OK`.
+5. **[Franz]** `... station apply "<stick>:\FGScanner-Backup\<newest>" --restore --evidence C:\Evidence-Scans`
+   → `OK`. `--restore` keeps the backup's settings (keep-originals, the mail choice), never a commit
+   hook; it takes only a `-backup` folder, and only into an empty station.
 6. **[Jim]** Start FG Scanner; check the group count with Franz.
 7. **[Franz]** After a day's work: delete the `.broken-<date>` folders.
 

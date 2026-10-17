@@ -10,6 +10,8 @@ namespace FgScanner.Core.Station;
 /// that has it.</param>
 /// <param name="ReceiverMigration">The receiving database's own last migration; behind
 /// <paramref name="LatestMigration"/> when the new version was installed but never started.</param>
+/// <param name="Restore">Rebuilding a lost station from its own backup (SPEC-SCANNER-2026-011
+/// Revision C, CR-3): only a backup, only into an empty station, and its Settings are kept.</param>
 public sealed record StationApplyRequest(
     string PackFolder,
     string StationRoot,
@@ -18,7 +20,8 @@ public sealed record StationApplyRequest(
     string LatestMigration,
     DateTimeOffset At,
     string? ReceiverMigration = null,
-    string? ExpectedCode = null);
+    string? ExpectedCode = null,
+    bool Restore = false);
 
 /// <summary>Applied (<see cref="Problem"/> null), still downloading, or refused with nothing changed.</summary>
 public sealed record StationApplyResult(
@@ -86,6 +89,17 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
         }
 
         var manifest = StationManifest.Parse(manifestBytes!);
+        if (request.Restore && File.Exists(db))
+        {
+            return StationApplyResult.Refused("a restore goes only into an empty station — move the damaged one aside first");
+        }
+
+        if (request.Restore && !Path.GetFileName(Path.TrimEndingDirectorySeparator(request.PackFolder))
+                .EndsWith("-" + StationPacker.BackupKind, StringComparison.Ordinal))
+        {
+            return StationApplyResult.Refused("a restore takes only a backup (a folder whose name ends in -backup) — call Franz");
+        }
+
         string? refusal;
         try
         {
@@ -478,7 +492,7 @@ public sealed class StationApplier(Func<bool> isAppOpen, IStationDatabase databa
 
         try
         {
-            database.BindToStation(stagedDb, File.Exists(db) ? db : null, trash);
+            database.BindToStation(stagedDb, File.Exists(db) ? db : null, trash, request.Restore);
         }
         catch (InvalidDataException ex)
         {

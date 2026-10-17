@@ -414,8 +414,8 @@ an older version opens the station unchanged. Backups on the stick stay readable
 4. **[Franz]** Run `"C:\Program Files\FGScanner\cli\fgscanner.exe" station verify
    "<stick>:\FGScanner-Backup\<newest>"` → `OK xxxx-xxxx`; compare with the code on the label or
    in Last backup.
-5. **[Franz]** Run `... station apply "<stick>:\FGScanner-Backup\<newest>" --evidence
-   C:\Evidence-Scans` → `OK`.
+5. **[Franz]** Run `... station apply "<stick>:\FGScanner-Backup\<newest>" --restore --evidence
+   C:\Evidence-Scans` → `OK` (Revision C, CR-3: the backup's Settings are kept, except `Hook.*`).
 6. **[Jim]** Start FG Scanner; check the group count with Franz.
 7. **[Franz]** Only after Jim has worked a day: delete the `.broken-<date>` folders.
 

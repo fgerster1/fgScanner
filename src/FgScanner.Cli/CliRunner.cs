@@ -624,15 +624,16 @@ public static class CliRunner
         var applyEvidenceOption = new Option<string?>("--evidence") { Description = "The evidence folder (default: the one the profiles name; required for an empty station). Undo uses the folder the last apply used." };
         var expectCodeOption = new Option<string?>("--expect-code") { Description = "The code the operator confirmed; the pack must still have it." };
         var testCopyOption = new Option<bool>("--test-copy") { Description = "Open a whole backup into an empty workspace with its scans in the --evidence folder; it can never be sent or returned." };
+        var restoreOption = new Option<bool>("--restore") { Description = "Rebuild a lost station from its own backup: only a backup, only into an empty station; its settings come back, except any that run a command." };
         var apply = new Command("apply", "Install a pack into this station; prints OK and the code to read out.")
         {
-            applyArgument, undoOption, applyEvidenceOption, expectCodeOption, testCopyOption,
+            applyArgument, undoOption, applyEvidenceOption, expectCodeOption, testCopyOption, restoreOption,
         };
         apply.SetAction(parseResult => HoldingTheStation(
             () => ApplyStation(
                 parseResult.GetValue(applyArgument), parseResult.GetValue(undoOption),
                 parseResult.GetValue(applyEvidenceOption), parseResult.GetValue(expectCodeOption), overrides,
-                parseResult.GetValue(testCopyOption)),
+                parseResult.GetValue(testCopyOption), parseResult.GetValue(restoreOption)),
             (overrides?.StationRoot is { } stationRoot ? StationPaths.Resolve(stationRoot) : StationPaths.Default).Root));
 
         return new Command("station", "Move a whole station between machines as verified packs.") { verify, pack, backup, apply };
@@ -669,7 +670,8 @@ public static class CliRunner
     }
 
     private static int ApplyStation(
-        string? packFolder, bool undo, string? evidence, string? expectCode, CliOverrides? overrides, bool testCopy = false)
+        string? packFolder, bool undo, string? evidence, string? expectCode, CliOverrides? overrides, bool testCopy = false,
+        bool restore = false)
     {
         var paths = overrides?.StationRoot is { } root ? StationPaths.Resolve(root) : StationPaths.Default;
         var stationRoot = paths.Root;
@@ -724,7 +726,8 @@ public static class CliRunner
                     migrations.Database.GetMigrations().Last(),
                     DateTimeOffset.Now,
                     File.Exists(database) ? StationFacts.Read(database).LastMigration : null,
-                    expectCode));
+                    expectCode,
+                    restore));
             }
             finally
             {
