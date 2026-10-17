@@ -17,16 +17,22 @@
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <ListBox Grid.Column="0"
-                 Margin="8"
-                 ItemsSource="{Binding Sections}"
-                 SelectedItem="{Binding SelectedSection}">
-            <ListBox.ItemContainerStyle>
-                <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
-                    <Setter Property="Padding" Value="12,10" />
-                </Style>
-            </ListBox.ItemContainerStyle>
-        </ListBox>
+        <DockPanel Grid.Column="0">
+            <StackPanel DockPanel.Dock="Bottom" Margin="8">
+                <Button Content="About" Click="OnAboutClick" HorizontalAlignment="Stretch" />
+                <TextBlock Text="{Binding VersionText}" Margin="0,6,0,0"
+                           HorizontalAlignment="Center" Opacity="0.7" />
+            </StackPanel>
+            <ListBox Margin="8"
+                     ItemsSource="{Binding Sections}"
+                     SelectedItem="{Binding SelectedSection}">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                        <Setter Property="Padding" Value="12,10" />
+                    </Style>
+                </ListBox.ItemContainerStyle>
+            </ListBox>
+        </DockPanel>
 
         <!-- One host for every section; ShowSection sets each section's minimum size. -->
         <controls:SectionScrollHost x:Name="SectionHost" Grid.Column="1" Margin="8" />

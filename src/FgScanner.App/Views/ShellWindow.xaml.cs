@@ -58,6 +58,10 @@ public partial class ShellWindow : Window
         Height = bounds.Height;
     }
 
+    private void OnAboutClick(object sender, RoutedEventArgs e) =>
+        MessageBox.Show(this, _viewModel.AboutText, "About FG Scanner",
+            MessageBoxButton.OK, MessageBoxImage.Information);
+
     /// <summary>Search-result navigation: jump to the Groups section and select the hit's page.</summary>
     private void OpenSearchHit(FgScanner.Data.SearchHit hit)
     {
