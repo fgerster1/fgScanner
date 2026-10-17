@@ -206,6 +206,35 @@ public sealed class ShellTests : IDisposable
         Assert.Equal(station.IndexDrafts, shell.IndexViewModel.DraftDirectory);
     }
 
+    /// <summary>
+    /// Franz moves between the dev PC, the NucBox, the spare and Jim's laptop; the shell shows
+    /// which release each one runs, and About says which data folder it has open.
+    /// </summary>
+    [Fact]
+    public void The_shell_shows_its_version_and_about_names_the_data_folder()
+    {
+        var station = FgScanner.Core.Station.StationPaths.Resolve(Path.Combine(_root, "station-jim"));
+        var appSettings = new AppSettingsService(new TestFactory(_dbPath));
+        var version = typeof(ShellViewModel).Assembly.GetName().Version!.ToString(3);
+
+        var shell = new ShellViewModel(
+            CreateScanViewModel(),
+            new GroupsViewModel(_groupService, _profileService, _indexingService, _trashService, _activeGroup, CreateToolset(), CreateRetroService()),
+            new SearchViewModel(new SearchService(new TestFactory(_dbPath)), _groupService),
+            new TrashViewModel(_trashService, _activeGroup),
+            new SettingsViewModel(
+                _profileService, _trashService, appSettings,
+                new FgScanner.Ocr.LanguageManager(Path.Combine(_root, "tessdata")),
+                new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false),
+                _groupService),
+            appSettings,
+            station);
+
+        Assert.Equal($"Version {version}", shell.VersionText);
+        Assert.Contains($"FG Scanner {version}", shell.AboutText);
+        Assert.Contains(station.Root, shell.AboutText);
+    }
+
     [Fact]
     public void Shell_starts_on_scan_section()
     {

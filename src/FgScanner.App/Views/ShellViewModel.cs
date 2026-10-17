@@ -35,6 +35,12 @@ public sealed partial class ShellViewModel : ObservableObject
 
         WindowTitle = station?.Name is { } name ? $"FG Scanner — station {name}" : "FG Scanner";
 
+        var version = typeof(ShellViewModel).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+        VersionText = $"Version {version}";
+        AboutText = station is null
+            ? $"FG Scanner {version}"
+            : $"FG Scanner {version}\n\nData folder:\n{station.Root}";
+
         // Feature flags (PLAN prompt 10, SPEC-2026-008): a flagged-off section is hidden
         // entirely. The list is rebuilt whenever a flag moves, so the setting no longer
         // waits for a relaunch.
@@ -250,6 +256,12 @@ public sealed partial class ShellViewModel : ObservableObject
     /// <summary>Names a second station's workspace (SPEC-SCANNER-2026-010), so Franz always
     /// sees whose evidence is open.</summary>
     public string WindowTitle { get; }
+
+    /// <summary>Always on screen, so Franz can tell at a glance which release a PC runs — he
+    /// works on several, and Jim's updates arrive as pre-releases first (ADR-0018).</summary>
+    public string VersionText { get; }
+
+    public string AboutText { get; }
 
     public TrashViewModel TrashViewModel { get; }
 
