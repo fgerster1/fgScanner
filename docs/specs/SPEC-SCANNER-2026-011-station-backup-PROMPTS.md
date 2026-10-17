@@ -207,6 +207,15 @@ pack that is not a `*-backup` and a station that is not empty. Docs: the restore
 
 ---
 
+PROMPT 7d — The re-review of Revision C (spec §05 Revision D, RR-1..RR-7)
+Franz stop: none. Failing tests first: a test copy to a Drive folder is not refused by the stick
+guard; a file written while copying refuses the backup and costs no old one; a throwing check
+removes the pack; GatedBatch releases its pass when a claim throws and stops claiming on a hold
+after finishing its batch; an unreadable station beside the workspace refuses the test copy; a
+junction from the scans folder into the workspace is refused.
+
+---
+
 ## Run log
 
 | Prompt | Date | Result |

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Approved |
-| **Revision** | C — 2026-10-17: the Prompt 7/8 reviews' 13 findings (no open items; restore keeps Settings minus commands, Franz) · B — 2026-10-17: Round A approved, every recommendation taken |
+| **Revision** | D — 2026-10-17: the cold re-review of Revision C, 7 findings (no open items) · C — 2026-10-17: the Prompt 7/8 reviews' 13 findings (no open items; restore keeps Settings minus commands, Franz) · B — 2026-10-17: Round A approved, every recommendation taken |
 | **Tier** | Feature |
 | **Author** | Claude, for Franz Gerster |
 | **Date** | 2026-10-17 |
@@ -195,6 +195,22 @@ New ACs: AC-11 a stuck reader turns a backup into NOT OK within the timeout, nev
 AC-12 a restore keeps PreserveOriginals and Email.SendWith and drops `Hook.*` (CR-3);
 AC-13 a crafted pack cannot place a file on a station file name, nor a page file name outside its
 group (SR-1, SR-7).
+
+**Revision D — the cold re-review of Revision C** (2026-10-17)
+
+A cold subagent over `46f159c..0b25f3f`. Every Revision C row checked; the SR-7 name rule was run
+read-only over every real station on FGERSTERPC (Jim's 9/25 copy: 1,368 pages) and refuses none.
+Seven findings, all bugs against this spec in the Revision C fixes themselves; none open.
+
+| # | Finding (file:line) | Kind | Fix | Prompt |
+|---|---|---|---|---|
+| RR-1 | `BackupService.cs:40` the stick guard refuses every Drive target, so "Send a test copy to Franz" always fails | bug against §03 item 6 | the guard applies to stick backups only | 7d |
+| RR-2 | `StationFacts.PageMissingFromPack` sees page rows only; an export or `originals\` file written mid-copy is missed | bug against §16 #2 (CR-5) | after packing, any file now under the evidence or trash folder that the manifest lacks refuses the backup | 7d |
+| RR-3 | no worker-level test of CR-1/CR-6 | bug in the tests | the batch loop moves into `GatedBatch`, used by both workers and tested with fakes | 7d |
+| RR-4 | `CliRunner.OtherEvidenceRoots` skips an unreadable station; a drive-root group throws | bug against SR-3 | moved to `StationFacts.EvidenceRootsBeside`; an unreadable station refuses the test copy; null-safe | 7d |
+| RR-5 | `BackupViewModel.RunAsync` settings calls outside any catch | bug against §14 (CR-2) | catch-all in RunAsync → NOT OK | 7d |
+| RR-6 | `StationBackup.Run` a throwing check leaves an unchecked pack that later counts | bug against AC-3 | a check that throws deletes the pack and refuses | 7d |
+| RR-7 | `TestCopyOpener.Overlap` compares text; a junction into the workspace passes | bug against SR-1 | links resolved before the overlap checks | 7d |
 
 ## 06 · Assumptions
 
