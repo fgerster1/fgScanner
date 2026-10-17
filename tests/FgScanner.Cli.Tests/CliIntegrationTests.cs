@@ -192,6 +192,50 @@ public sealed class CliIntegrationTests : IDisposable
     }
 
     /// <summary>
+    /// SPEC-SCANNER-2026-011: <c>station backup</c> writes a whole, checked copy that
+    /// <c>station verify</c> accepts with the same code, keeps the newest few, and leaves the
+    /// round trip's baseline alone.
+    /// </summary>
+    [Fact]
+    public async Task Station_backup_writes_a_checked_copy_keeps_the_newest_and_leaves_no_baseline()
+    {
+        var station = Path.Combine(_root, "station-jim");
+        var evidence = Path.Combine(_root, "Evidence-Scans");
+        var stick = Directory.CreateDirectory(Path.Combine(_root, "stick")).FullName;
+        Assert.Equal(0, await CliRunner.RunAsync(
+            ["scan", "--data-dir", station, "--group", Path.Combine(evidence, "Dental"), "--source", "feeder"],
+            new CliOverrides(ScanService: new FakeScanService(), TessdataDir: Path.Combine(_root, "tessdata"))));
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+
+        var (exit, output) = await RunStationCapturedAsync(
+            "station", "backup", "--data-dir", station, "--to", stick, "--evidence", evidence, "--station", "jim", "--keep", "1");
+        var first = Directory.GetDirectories(stick).Single();
+        var (verifyExit, verifyOut) = await RunCapturedAsync("station", "verify", first);
+        await Task.Delay(TimeSpan.FromSeconds(61), TestContext.Current.CancellationToken);
+        var (againExit, _) = await RunStationCapturedAsync(
+            "station", "backup", "--data-dir", station, "--to", stick, "--evidence", evidence, "--station", "jim", "--keep", "1");
+
+        Assert.Equal(0, exit);
+        Assert.StartsWith("OK ", output);
+        Assert.Matches("^jim-\\d{4}-\\d{2}-\\d{2}-\\d{4}-backup$", Path.GetFileName(first));
+        Assert.Equal(0, verifyExit);
+        Assert.Equal(output.Split(" · ")[0], verifyOut.Split(" · ")[0]);
+        Assert.False(File.Exists(Path.Combine(station, "station-freeze.json")));
+        Assert.True(File.Exists(Path.Combine(station, "last-backup.json")));
+        Assert.Equal(0, againExit);
+        Assert.NotEqual(first, Assert.Single(Directory.GetDirectories(stick)));
+    }
+
+    [Fact]
+    public async Task Station_pack_does_not_take_the_backup_kind()
+    {
+        var (exit, _) = await RunStationCapturedAsync(
+            "station", "pack", "--to", _root, "--kind", "backup", "--data-dir", Path.Combine(_root, "s"));
+
+        Assert.Equal(2, exit);
+    }
+
+    /// <summary>
     /// SPEC-SCANNER-2026-010 AC-6 through the CLI: a first pack opens into an empty station (as
     /// Franz's workspace receives Jim's first send), and <c>--undo</c> takes it back out.
     /// </summary>

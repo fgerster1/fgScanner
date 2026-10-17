@@ -189,3 +189,4 @@ Checkpoint: every AC green in the Run log; the Latest still 0.5.4 (or whatever P
 | Prompt | Date | Result |
 |---|---|---|
 | P1 | 2026-10-17 | `backup` kind: skips the freeze record, refuses --based-on. 4 tests first-red (the AC-2 apply test failed with "not made from this station's last pack"); suite 1,329 green, 0 warnings, format clean |
+| P2 | 2026-10-17 | `StationBackup` (keep newest N of this station's; a folder with no manifest is cleared, a damaged one is kept and not counted; FAT32 refused before copying), `last-backup.json`, `station backup --to --keep`; `station pack --kind backup` is a usage error. Retention counts a backup complete by manifest + file sizes, not re-hashing (minutes per run on a stick; each was hash-checked when written) - deviation from §08's "verify", recorded here. Suite 1,340 green, 0 warnings |

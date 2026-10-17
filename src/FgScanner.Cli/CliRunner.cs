@@ -595,10 +595,25 @@ public static class CliRunner
         {
             toOption, basedOnOption, kindOption, stationOption, evidenceOption, byOption,
         };
-        pack.SetAction(parseResult => HoldingTheStation(() => PackStation(
+        pack.SetAction(parseResult => parseResult.GetValue(kindOption) == StationPacker.BackupKind
+            ? UsageError("--kind is send or return; a backup is `station backup`.")
+            : HoldingTheStation(() => PackStation(
             parseResult.GetValue(toOption)!, parseResult.GetValue(basedOnOption), parseResult.GetValue(kindOption)!,
             parseResult.GetValue(stationOption), parseResult.GetValue(evidenceOption),
             parseResult.GetValue(byOption) ?? Environment.UserName, overrides)));
+
+        var backupToOption = new Option<string>("--to") { Description = "The folder on the USB stick; the backup becomes a new folder inside it.", Required = true };
+        var keepOption = new Option<int>("--keep") { Description = "How many of this station's backups stay in that folder.", DefaultValueFactory = _ => StationBackup.DefaultKeep };
+        var backupStationOption = new Option<string?>("--station") { Description = "Name on the backup folder (default: the workspace's, else this computer's)." };
+        var backupEvidenceOption = new Option<string?>("--evidence") { Description = "The evidence folder (default: the one the profiles name)." };
+        var backup = new Command("backup", "Copy this whole station to a folder (a USB stick) and check the copy; prints OK and its code.")
+        {
+            backupToOption, keepOption, backupStationOption, backupEvidenceOption,
+        };
+        backup.SetAction(parseResult => HoldingTheStation(() => PackStation(
+            parseResult.GetValue(backupToOption)!, null, StationPacker.BackupKind,
+            parseResult.GetValue(backupStationOption), parseResult.GetValue(backupEvidenceOption),
+            Environment.UserName, overrides, parseResult.GetValue(keepOption))));
 
         var applyArgument = new Argument<string?>("pack-folder")
         {
@@ -618,7 +633,7 @@ public static class CliRunner
                 parseResult.GetValue(applyEvidenceOption), parseResult.GetValue(expectCodeOption), overrides),
             (overrides?.StationRoot is { } stationRoot ? StationPaths.Resolve(stationRoot) : StationPaths.Default).Root));
 
-        return new Command("station", "Move a whole station between machines as verified packs.") { verify, pack, apply };
+        return new Command("station", "Move a whole station between machines as verified packs.") { verify, pack, backup, apply };
     }
 
     private static readonly SqliteStationDatabase StationDatabase = new();
@@ -771,9 +786,11 @@ public static class CliRunner
             or System.Text.Json.JsonException or InvalidOperationException;
 
     private static int PackStation(
-        string to, string? basedOn, string kind, string? stationName, string? evidence, string by, CliOverrides? overrides)
+        string to, string? basedOn, string kind, string? stationName, string? evidence, string by, CliOverrides? overrides,
+        int keep = StationBackup.DefaultKeep)
     {
-        if (kind is not ("send" or "return"))
+        // A backup comes only through its own verb, which also clears old backups away.
+        if (kind is not ("send" or "return" or StationPacker.BackupKind))
         {
             Console.Error.WriteLine($"--kind is send or return, not \"{kind}\".");
             return 2;
@@ -873,10 +890,19 @@ public static class CliRunner
             ]);
 
         StationPackResult result;
+        IReadOnlyList<string> removed = [];
         KeepAwake(true);
         try
         {
-            result = packer.Pack(request);
+            if (kind == StationPacker.BackupKind)
+            {
+                var backup = new StationBackup(packer, DriveFormatOf).Run(request, keep);
+                (result, removed) = (backup.Pack, backup.Removed);
+            }
+            else
+            {
+                result = packer.Pack(request);
+            }
         }
         finally
         {
@@ -894,7 +920,30 @@ public static class CliRunner
         Console.WriteLine(StationManifestVerifier.Summary(new StationVerifyResult(
             StationVerifyStatus.Ok, result.Code, result.ShippedFiles + 1, packedBytes, [])));
         Console.WriteLine(result.PackFolder);
+        foreach (var old in removed)
+        {
+            Console.WriteLine($"removed the older backup {old}");
+        }
+
         return 0;
+    }
+
+    private static int UsageError(string message)
+    {
+        Console.Error.WriteLine(message);
+        return 2;
+    }
+
+    private static string? DriveFormatOf(string folder)
+    {
+        try
+        {
+            return new DriveInfo(Path.GetPathRoot(Path.GetFullPath(folder))!).DriveFormat;
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     /// <summary>SQLite's backup API: a consistent copy even of a database another reader has open.</summary>
