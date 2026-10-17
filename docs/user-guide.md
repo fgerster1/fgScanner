@@ -312,6 +312,20 @@ The page keys — Delete, undo/redo and rotate — act only on the screen that i
 
 The scan, save, commit and profile keys work from any screen.
 
+## Backing up to a USB stick
+
+1. Plug in your USB stick.
+2. Press **Back up…** at the bottom of the left column.
+3. Pick the stick in the list (it is remembered next time) and press **Back up**.
+4. Leave the stick in until the window says **OK** and a code, like `OK 9012-edf9`.
+5. Write the code on the stick's label.
+
+The newest three backups stay on the stick. The line under the button says when you last backed
+up. If it says **NOT OK**, nothing on the computer was changed — read the reason to Franz.
+
+**Send a test copy to Franz** in the same window puts the same checked copy in the shared Google
+Drive folder for Franz to test with. Read him the code.
+
 ## Your data
 
 The SQLite database (`%APPDATA%\FGScanner\fgscanner.db`) is yours to query —

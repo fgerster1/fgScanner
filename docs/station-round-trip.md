@@ -65,6 +65,38 @@ The same, with the shortcuts only: Jim's "Send my scans to Franz" ships only wha
 workspace (`station apply <pack> --data-dir <workspace>`), processes, returns.
 A release is published only when a cycle's return needs it.
 
+## Backups (from 0.8.2)
+
+Jim presses **Back up…** at the bottom of the left column, picks his stick, and reads
+`OK xxxx-xxxx`; he writes the code on the stick's label. The newest three backups stay in
+`<stick>:\FGScanner-Backup`. The update offer names the last backup and offers one first.
+A backup never touches the round trip: a send or return is checked exactly as before.
+
+**A test copy for Franz:** Jim presses **Send a test copy to Franz** in the same window; it lands
+in `<drive>\to-franz\copies` (only the newest stays). On Franz's PC:
+
+1. **[Claude]** `fgscanner station verify "<drive>\to-franz\copies\<copy>"` → `OK` with the code
+   Jim read out.
+2. **[Claude]** `fgscanner station apply "<copy>" --data-dir "%APPDATA%\FGScanner.test-jim-<date>"
+   --test-copy --evidence C:\Evidence-Scans-test-<date>` (both folders new and empty) → `OK`.
+3. **[Franz]** `FgScanner.exe --data-dir "%APPDATA%\FGScanner.test-jim-<date>"`; the title says
+   TEST COPY. Scanning is allowed there; it can never be sent or returned.
+
+## Restoring Jim's station from his stick
+
+On Teams, Franz guiding. Nothing is deleted until Jim has worked a day on the restored station.
+
+1. **[Jim]** Plug in the stick. Close FG Scanner.
+2. **[Franz]** On "give control", open a command window.
+3. **[Franz]** Rename `%APPDATA%\FGScanner` to `FGScanner.broken-<date>` and `C:\Evidence-Scans` to
+   `Evidence-Scans.broken-<date>`.
+4. **[Franz]** `"C:\Program Files\FGScanner\cli\fgscanner.exe" station verify
+   "<stick>:\FGScanner-Backup\<newest>"` → `OK xxxx-xxxx`; compare with the stick's label.
+5. **[Franz]** `... station apply "<stick>:\FGScanner-Backup\<newest>" --evidence C:\Evidence-Scans`
+   → `OK`.
+6. **[Jim]** Start FG Scanner; check the group count with Franz.
+7. **[Franz]** After a day's work: delete the `.broken-<date>` folders.
+
 ## When something says NOT OK
 
 | Message | Meaning | What to do |
