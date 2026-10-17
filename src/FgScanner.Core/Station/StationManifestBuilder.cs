@@ -116,8 +116,11 @@ public static class StationManifestBuilder
 
     public static string Sha256Of(string path)
     {
+        // Shared for writing: the Back up button hashes the database the open app holds for writing
+        // (SPEC-SCANNER-2026-011). What a pack records is the hash of its own copy, and every pack
+        // is re-verified after it is written, so a file changing here is caught there.
         using var stream = new FileStream(
-            path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20, FileOptions.SequentialScan);
+            path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 1 << 20, FileOptions.SequentialScan);
         return Convert.ToHexStringLower(SHA256.HashData(stream));
     }
 }

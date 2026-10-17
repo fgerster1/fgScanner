@@ -46,11 +46,15 @@ public sealed record StationPackResult(
 /// <param name="copyDatabase">Copies the database consistently (SQLite's backup API in the CLI).</param>
 /// <param name="freeBytes">Free space on the destination's drive.</param>
 /// <param name="onFileWritten">Observes each evidence or manifest file as it lands (tests).</param>
+/// <param name="restProblem">Replaces the closed-station check for a caller that is the open app
+/// itself (the Back up button, SPEC-SCANNER-2026-011): its database is open in WAL mode and its
+/// live scan session keeps an index, so "closed cleanly" can never hold — it answers instead.</param>
 public sealed class StationPacker(
     Func<bool> isAppOpen,
     Action<string, string> copyDatabase,
     Func<string, long> freeBytes,
-    Action<string>? onFileWritten = null)
+    Action<string>? onFileWritten = null,
+    Func<string?>? restProblem = null)
 {
     public const string BackupKind = "backup";
 
@@ -160,7 +164,7 @@ public sealed class StationPacker(
     private string? RefusalOf(StationPackRequest request)
     {
         var source = request.Source;
-        if (StationRest.Problem(isAppOpen, source.Database, request.StationRoot, "pack") is { } notAtRest)
+        if ((restProblem is null ? StationRest.Problem(isAppOpen, source.Database, request.StationRoot, "pack") : restProblem()) is { } notAtRest)
         {
             return notAtRest;
         }

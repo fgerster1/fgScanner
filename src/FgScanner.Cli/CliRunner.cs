@@ -815,7 +815,7 @@ public static class CliRunner
             return 1;
         }
 
-        evidence ??= facts.BaseDirectories.Count == 1 ? facts.BaseDirectories[0] : null;
+        evidence = facts.EvidenceRoot(evidence);
         if (evidence is null)
         {
             Console.WriteLine("NOT OK — say which folder holds the evidence: --evidence <folder>");
@@ -830,10 +830,7 @@ public static class CliRunner
 
         // A group outside the evidence folder would not travel, and the other side's database
         // would point at a folder that is not there.
-        var evidenceRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(evidence)) + Path.DirectorySeparatorChar;
-        var outside = facts.GroupDirectories.FirstOrDefault(d =>
-            !(Path.TrimEndingDirectorySeparator(Path.GetFullPath(d)) + Path.DirectorySeparatorChar)
-                .StartsWith(evidenceRoot, StringComparison.OrdinalIgnoreCase));
+        var outside = facts.GroupOutside(evidence);
         if (outside is not null)
         {
             Console.WriteLine($"NOT OK — a group lives outside the evidence folder {evidence}: {outside}");
@@ -862,7 +859,7 @@ public static class CliRunner
 
         var packer = new StationPacker(
             isAppOpen: () => false,
-            copyDatabase: BackUpDatabase,
+            copyDatabase: StationFacts.CopyDatabase,
             freeBytes: folder => new DriveInfo(Path.GetPathRoot(Path.GetFullPath(folder))!).AvailableFreeSpace);
         var request = new StationPackRequest(
             new StationSource(
@@ -946,74 +943,11 @@ public static class CliRunner
         }
     }
 
-    /// <summary>SQLite's backup API: a consistent copy even of a database another reader has open.</summary>
-    private static void BackUpDatabase(string from, string to)
-    {
-        using (var source = new SqliteConnection(new SqliteConnectionStringBuilder
-        {
-            DataSource = from,
-            Mode = SqliteOpenMode.ReadOnly,
-            Pooling = false,
-        }.ToString()))
-        using (var target = new SqliteConnection(new SqliteConnectionStringBuilder
-        {
-            DataSource = to,
-            Pooling = false,
-        }.ToString()))
-        {
-            source.Open();
-            target.Open();
-            source.BackupDatabase(target);
-        }
-    }
-
     /// <summary>Jim's laptop sleeps on its own; a pack interrupted by sleep is a pack to redo.</summary>
     private static void KeepAwake(bool on) =>
         _ = NativeMethods.SetThreadExecutionState(on
             ? NativeMethods.EsContinuous | NativeMethods.EsSystemRequired
             : NativeMethods.EsContinuous);
-
-    /// <summary>What packing needs from the database, read without migrating it: pack must never
-    /// change the station it is backing up.</summary>
-    private sealed record StationFacts(
-        string? LastMigration,
-        int PendingReadingJobs,
-        IReadOnlyList<string> BaseDirectories,
-        IReadOnlyList<string> GroupDirectories)
-    {
-        public static StationFacts Read(string database)
-        {
-            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
-            {
-                DataSource = database,
-                Mode = SqliteOpenMode.ReadOnly,
-                Pooling = false,
-            }.ToString());
-            connection.Open();
-            return new StationFacts(
-                Strings(connection, "SELECT MigrationId FROM __EFMigrationsHistory ORDER BY MigrationId DESC LIMIT 1")
-                    .FirstOrDefault(),
-                // JobType.Ocr = 0; JobState Pending = 0, InFlight = 1 (stored as integers).
-                int.Parse(Strings(connection, "SELECT count(*) FROM Jobs WHERE Type = 0 AND State IN (0, 1)")[0],
-                    CultureInfo.InvariantCulture),
-                Strings(connection, "SELECT DISTINCT BaseDirectory FROM Profiles WHERE BaseDirectory <> ''"),
-                Strings(connection, "SELECT DirectoryPath FROM Groups"));
-        }
-
-        private static List<string> Strings(SqliteConnection connection, string sql)
-        {
-            using var command = connection.CreateCommand();
-            command.CommandText = sql;
-            using var reader = command.ExecuteReader();
-            var values = new List<string>();
-            while (reader.Read())
-            {
-                values.Add(Convert.ToString(reader.GetValue(0), CultureInfo.InvariantCulture)!);
-            }
-
-            return values;
-        }
-    }
 
     private static ScanDriver ParseDriver(string value) => value.ToUpperInvariant() switch
     {

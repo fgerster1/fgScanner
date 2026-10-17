@@ -22,6 +22,7 @@ public sealed class AiWorker : IDisposable
     private readonly IndexingService _indexing;
     private readonly ActiveGroupStore _activeGroup;
     private readonly CredentialStore _credentials;
+    private readonly WorkGate _gate;
     private readonly SemaphoreSlim _wake = new(0);
     private readonly CancellationTokenSource _stop = new();
     private Task? _loop;
@@ -32,13 +33,15 @@ public sealed class AiWorker : IDisposable
         AppSettingsService settings,
         IndexingService indexing,
         ActiveGroupStore activeGroup,
-        CredentialStore credentials)
+        CredentialStore credentials,
+        WorkGate gate)
     {
         _queue = queue;
         _settings = settings;
         _indexing = indexing;
         _activeGroup = activeGroup;
         _credentials = credentials;
+        _gate = gate;
         queue.JobsEnqueued += () => _wake.Release();
     }
 
@@ -98,9 +101,13 @@ public sealed class AiWorker : IDisposable
                 continue;
             }
 
+            // A job holds the gate from claim to finish, so a backup waits for it and no new one
+            // starts while the station is being copied.
+            var pass = await _gate.EnterAsync(_stop.Token);
             var job = await _queue.ClaimNextAsync(_stop.Token);
             if (job is null)
             {
+                pass.Dispose();
                 break;
             }
 
@@ -109,13 +116,23 @@ public sealed class AiWorker : IDisposable
                 touchedGroups.Add(job.GroupId);
             }
 
-            running.Add(Task.Run(() => ProcessAsync(provider, job, model), _stop.Token));
+            running.Add(Task.Run(async () =>
+            {
+                using (pass)
+                {
+                    await ProcessAsync(provider, job, model);
+                }
+            }, _stop.Token));
         }
 
         await Task.WhenAll(running);
-        foreach (var groupId in touchedGroups)
+        if (touchedGroups.Count > 0)
         {
-            await _indexing.ReexportIfCommittedAsync(groupId, _stop.Token);
+            using var reexport = await _gate.EnterAsync(_stop.Token);
+            foreach (var groupId in touchedGroups)
+            {
+                await _indexing.ReexportIfCommittedAsync(groupId, _stop.Token);
+            }
         }
 
         if (touchedGroups.Count > 0)

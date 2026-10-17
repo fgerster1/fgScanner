@@ -19,6 +19,7 @@ public sealed class OcrWorker : IDisposable
     private readonly ActiveGroupStore _activeGroup;
     private readonly AppSettingsService _settings;
     private readonly ReorderService _reorder;
+    private readonly WorkGate _gate;
     private readonly SemaphoreSlim _wake = new(0);
     private readonly CancellationTokenSource _stop = new();
     private Task? _loop;
@@ -30,7 +31,8 @@ public sealed class OcrWorker : IDisposable
         TrashService trash,
         ActiveGroupStore activeGroup,
         AppSettingsService settings,
-        ReorderService reorder)
+        ReorderService reorder,
+        WorkGate gate)
     {
         _queue = queue;
         _pipeline = pipeline;
@@ -39,6 +41,7 @@ public sealed class OcrWorker : IDisposable
         _activeGroup = activeGroup;
         _settings = settings;
         _reorder = reorder;
+        _gate = gate;
         queue.JobsEnqueued += () => _wake.Release();
     }
 
@@ -57,15 +60,27 @@ public sealed class OcrWorker : IDisposable
             try
             {
                 var touchedGroups = new HashSet<Guid>();
-                while (await _queue.ClaimNextAsync(_stop.Token) is { } job)
+                // Each page, and the re-export after, runs inside the gate: a backup copying the
+                // station must not see a sidecar or index file change under it.
+                while (true)
                 {
+                    using var pass = await _gate.EnterAsync(_stop.Token);
+                    if (await _queue.ClaimNextAsync(_stop.Token) is not { } job)
+                    {
+                        break;
+                    }
+
                     await ProcessAsync(job);
                     touchedGroups.Add(job.GroupId);
                 }
 
-                foreach (var groupId in touchedGroups)
+                if (touchedGroups.Count > 0)
                 {
-                    await _indexing.ReexportIfCommittedAsync(groupId, _stop.Token);
+                    using var pass = await _gate.EnterAsync(_stop.Token);
+                    foreach (var groupId in touchedGroups)
+                    {
+                        await _indexing.ReexportIfCommittedAsync(groupId, _stop.Token);
+                    }
                 }
 
                 if (touchedGroups.Count > 0)
