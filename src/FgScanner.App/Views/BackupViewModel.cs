@@ -103,15 +103,7 @@ public sealed partial class BackupViewModel(
     private bool CanBackup() => SelectedTarget is not null && !IsRunning;
 
     [RelayCommand(CanExecute = nameof(CanBackup))]
-    private async Task BackupAsync()
-    {
-        var keep = int.TryParse(
-            await settings.GetAsync(KeepSettingKey, FgScanner.Core.Station.StationBackup.DefaultKeep.ToString(CultureInfo.InvariantCulture)),
-            NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n > 0
-            ? n
-            : FgScanner.Core.Station.StationBackup.DefaultKeep;
-        await RunAsync(SelectedTarget!.Folder, keep, toFranz: false);
-    }
+    private Task BackupAsync() => RunAsync(SelectedTarget!.Folder, keep: null, toFranz: false);
 
     private bool CanSendTestCopy() => testCopyFolder is not null && !IsRunning;
 
@@ -119,7 +111,8 @@ public sealed partial class BackupViewModel(
     [RelayCommand(CanExecute = nameof(CanSendTestCopy))]
     private Task SendTestCopyAsync() => RunAsync(testCopyFolder!, keep: 1, toFranz: true);
 
-    private async Task RunAsync(string folder, int keep, bool toFranz)
+    /// <param name="keep">Null for a stick backup: <see cref="KeepSettingKey"/> decides.</param>
+    private async Task RunAsync(string folder, int? keep, bool toFranz)
     {
         IsRunning = true;
         Succeeded = false;
@@ -127,6 +120,11 @@ public sealed partial class BackupViewModel(
         StatusText = "Backing up — leave the stick in until this says OK.";
         try
         {
+            keep ??= int.TryParse(
+                await settings.GetAsync(KeepSettingKey, FgScanner.Core.Station.StationBackup.DefaultKeep.ToString(CultureInfo.InvariantCulture)),
+                NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n > 0
+                ? n
+                : FgScanner.Core.Station.StationBackup.DefaultKeep;
             var refusal = whyNotNow();
             if (refusal is null && !TryCreate(folder, out var problem))
             {
@@ -134,7 +132,7 @@ public sealed partial class BackupViewModel(
             }
 
             var outcome = refusal is null
-                ? await backup.BackupAsync(folder, null, CancellationToken.None, keep, recordAsLast: !toFranz)
+                ? await backup.BackupAsync(folder, null, CancellationToken.None, keep.Value, recordAsLast: !toFranz)
                 : BackupOutcome.Refused(refusal);
             Succeeded = outcome.Problem is null;
             if (Succeeded)
@@ -159,6 +157,14 @@ public sealed partial class BackupViewModel(
                 ResultText = $"NOT OK — {outcome.Problem}";
                 StatusText = "Nothing on this computer was changed.";
             }
+        }
+        catch (Exception ex)
+        {
+            // A command that throws ends the app; Jim reads a reason instead (Revision D, RR-5).
+            Serilog.Log.Error(ex, "Backup to {Folder}", folder);
+            Succeeded = false;
+            ResultText = $"NOT OK — {ex.Message}";
+            StatusText = "Read this to Franz.";
         }
         finally
         {

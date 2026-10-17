@@ -200,6 +200,27 @@ public sealed class SqliteStationDatabaseTests : IDisposable
         Assert.Equal("0", Scalar(incoming, "SELECT count(*) FROM Settings WHERE lower(substr(Key, 1, 5)) = 'hook.'"));
     }
 
+    /// <summary>SPEC-SCANNER-2026-011 Revision D, RR-4: the evidence folders of the stations beside a
+    /// workspace; one that cannot be read refuses rather than leaving its folder unguarded.</summary>
+    [Fact]
+    public void The_stations_beside_a_workspace_name_their_evidence_folders()
+    {
+        var appData = Directory.CreateDirectory(Path.Combine(_root, "AppData")).FullName;
+        var jim = Directory.CreateDirectory(Path.Combine(appData, "FGScanner.jim-workspace")).FullName;
+        var db = Fixture("current");
+        Execute(db, $"UPDATE Profiles SET BaseDirectory = '{Path.Combine(_root, "Evidence-Scans")}'");
+        File.Copy(db, Path.Combine(jim, "fgscanner.db"));
+        Directory.CreateDirectory(Path.Combine(appData, "FGScanner.test-new"));
+
+        var roots = StationFacts.EvidenceRootsBeside(Path.Combine(appData, "FGScanner.test-new"));
+
+        Assert.Contains(Path.Combine(_root, "Evidence-Scans"), roots);
+
+        File.WriteAllText(Path.Combine(Directory.CreateDirectory(Path.Combine(appData, "FGScanner.broken")).FullName, "fgscanner.db"), "not a database");
+        var ex = Assert.Throws<InvalidDataException>(() => StationFacts.EvidenceRootsBeside(Path.Combine(appData, "FGScanner.test-new")));
+        Assert.Contains("FGScanner.broken", ex.Message);
+    }
+
     /// <summary>Revision D, P10-2: a path in the arriving database decides where future scans and
     /// exports are written; one outside the evidence folder, or on a share, refuses the update.</summary>
     [Theory]

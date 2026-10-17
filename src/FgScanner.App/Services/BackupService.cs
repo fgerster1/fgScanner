@@ -37,7 +37,9 @@ public sealed class BackupService(StationPaths station, WorkGate gate, TimeSpan?
             return BackupOutcome.Refused(whyNotNow);
         }
 
-        if (NotOnThisComputer(folder))
+        // Only a backup to the stick: the copy for Franz goes to the shared Drive folder on purpose
+        // (Revision D, RR-1).
+        if (recordAsLast && NotOnThisComputer(folder))
         {
             return BackupOutcome.Refused("the backup must go to a USB stick or a folder on this computer, not a network or Google Drive folder");
         }

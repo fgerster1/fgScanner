@@ -92,7 +92,7 @@ public sealed class TestCopyOpener(IStationDatabase database, Action<string>? on
 
         // The scans' folder and the workspace apart, both ways: a file placed beside the database
         // could take a station file's name (Revision C, SR-1).
-        if (Overlap(target, workspace))
+        if (Overlap(target, workspace) || Overlap(Full(StationPacker.Resolved(target)), Full(StationPacker.Resolved(workspace))))
         {
             return StationApplyResult.Refused($"the test copy's scans folder {evidenceRoot} must be apart from the workspace {stationRoot}");
         }

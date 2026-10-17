@@ -60,22 +60,23 @@ public sealed class OcrWorker : IDisposable
             try
             {
                 var touchedGroups = new HashSet<Guid>();
-                // One gate pass per batch, released however the batch ends: a backup waits for the
-                // page in hand, then the batch stops claiming and re-exports what it touched before
-                // giving way, so the copy never holds a stale index (SPEC-SCANNER-2026-011 Revision C).
-                using (await _gate.EnterAsync(_stop.Token))
-                {
-                    while (!_gate.HoldRequested && await _queue.ClaimNextAsync(_stop.Token) is { } job)
+                // A backup waits for the page in hand and the re-export after it (GatedBatch).
+                await GatedBatch.RunAsync(
+                    _gate,
+                    _queue.ClaimNextAsync,
+                    async job =>
                     {
                         await ProcessAsync(job);
                         touchedGroups.Add(job.GroupId);
-                    }
-
-                    foreach (var groupId in touchedGroups)
+                    },
+                    async () =>
                     {
-                        await _indexing.ReexportIfCommittedAsync(groupId, _stop.Token);
-                    }
-                }
+                        foreach (var groupId in touchedGroups)
+                        {
+                            await _indexing.ReexportIfCommittedAsync(groupId, _stop.Token);
+                        }
+                    },
+                    _stop.Token);
 
                 if (touchedGroups.Count > 0)
                 {

@@ -260,7 +260,7 @@ public sealed class StationPacker(
     }
 
     /// <summary>The path with every junction or symbolic link along it followed to its target.</summary>
-    private static string Resolved(string path, int depth = 0)
+    internal static string Resolved(string path, int depth = 0)
     {
         var tail = new Stack<string>();
         for (var current = new DirectoryInfo(Path.GetFullPath(path)); current is not null; current = current.Parent)

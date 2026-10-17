@@ -50,7 +50,19 @@ public sealed partial class StationBackup(
             return new StationBackupResult(pack, []);
         }
 
-        if (check?.Invoke(pack.PackFolder!) is { } refused)
+        string? refused;
+        try
+        {
+            refused = LateFile(request.Source, pack.PackFolder!) ?? check?.Invoke(pack.PackFolder!);
+        }
+        catch (Exception ex)
+        {
+            // A check that could not run is no check: the pack would later count as a good backup
+            // (Revision D, RR-6).
+            refused = $"the backup could not be checked ({ex.Message}) — back up again";
+        }
+
+        if (refused is not null)
         {
             Directory.Delete(pack.PackFolder!, recursive: true);
             return new StationBackupResult(StationPackResult.Refused(refused), []);
@@ -64,6 +76,35 @@ public sealed partial class StationBackup(
         var damaged = new List<string>();
         var removed = RemoveOld(request.Destination, request.Source.Station, pack.PackFolder!, Math.Max(1, keep), damaged);
         return new StationBackupResult(pack, removed, damaged);
+    }
+
+    /// <summary>
+    /// A file on the station now that the backup lacks: written while it was copied — a commit's
+    /// index, an archived original, a page (Revision D, RR-2). The manifest lists the station as it
+    /// was before copying, so anything newer is missing from the backup, and restoring it would
+    /// bring back a station without that file.
+    /// </summary>
+    private static string? LateFile(StationSource source, string pack)
+    {
+        var packed = StationManifest.Parse(File.ReadAllBytes(Path.Combine(pack, StationManifest.FileName)))
+            .Files.Select(f => f.Rel).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var (root, prefix) in new[] { (source.EvidenceRoot, StationManifest.EvidenceFolder), (source.Trash, StationManifest.TrashFolder) })
+        {
+            if (!Directory.Exists(root))
+            {
+                continue;
+            }
+
+            foreach (var path in StationManifestBuilder.FilesUnder(root))
+            {
+                if (!packed.Contains(prefix + "/" + StationManifestBuilder.RelativeOf(root, path)))
+                {
+                    return $"the station changed while it was copied ({path}) — back up again";
+                }
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

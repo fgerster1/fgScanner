@@ -151,6 +151,45 @@ public sealed class StationBackupTests : IDisposable
         Assert.Equal(At.AddMinutes(2), LastBackupRecord.Read(Station)!.At);
     }
 
+    /// <summary>Revision D, RR-2: a file written while the station was copied (a commit's index, an
+    /// archived original) is not in the backup; the backup is refused before any old one goes.</summary>
+    [Fact]
+    public void A_file_written_while_copying_refuses_the_backup()
+    {
+        for (var i = 0; i < 3; i++)
+        {
+            Backup().Run(Request(i));
+        }
+
+        var written = false;
+        var packer = new StationPacker(() => false, File.Copy, _ => _freeBytes, onFileWritten: _ =>
+        {
+            if (!written)
+            {
+                written = true;
+                Write(Path.Combine(Evidence, "Dental", "index.json"), "{}");
+            }
+        });
+
+        var result = new StationBackup(packer, _ => "exFAT").Run(Request(3));
+
+        Assert.Contains("changed while it was copied", result.Pack.Problem);
+        Assert.Contains("index.json", result.Pack.Problem);
+        Assert.Equal(["jim-2026-10-17-0900-backup", "jim-2026-10-17-0901-backup", "jim-2026-10-17-0902-backup"], Backups());
+    }
+
+    /// <summary>Revision D, RR-6: a check that could not run is no check; the pack goes.</summary>
+    [Fact]
+    public void A_check_that_throws_removes_the_backup()
+    {
+        var result = new StationBackup(new StationPacker(() => false, File.Copy, _ => _freeBytes), _ => "exFAT",
+            check: _ => throw new IOException("the temp copy was locked")).Run(Request(0));
+
+        Assert.Contains("could not be checked", result.Pack.Problem);
+        Assert.Empty(Backups());
+        Assert.Null(LastBackupRecord.Read(Station));
+    }
+
     [Fact]
     public void A_damaged_backup_is_left_alone_and_not_counted()
     {

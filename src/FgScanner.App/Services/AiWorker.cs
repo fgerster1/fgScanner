@@ -92,38 +92,40 @@ public sealed class AiWorker : IDisposable
         var touchedGroups = new HashSet<Guid>();
         var running = new List<Task>();
 
-        // One gate pass for the whole drain, released however it ends: a backup waits for the jobs
-        // in flight and the re-export after them; meanwhile no new job is claimed
-        // (SPEC-SCANNER-2026-011 Revision C, CR-1 and CR-6).
-        using var pass = await _gate.EnterAsync(_stop.Token);
-        while (!_stop.IsCancellationRequested && !_gate.HoldRequested)
-        {
-            running.RemoveAll(t => t.IsCompleted);
-            if (running.Count >= Volatile.Read(ref _concurrencyLimit))
+        // A backup waits for the jobs in flight and the re-export after them (GatedBatch). A job is
+        // started, not awaited, so up to the concurrency limit run at once.
+        await GatedBatch.RunAsync(
+            _gate,
+            async token =>
             {
-                await Task.WhenAny(running);
-                continue;
-            }
+                running.RemoveAll(t => t.IsCompleted);
+                while (running.Count >= Volatile.Read(ref _concurrencyLimit))
+                {
+                    await Task.WhenAny(running);
+                    running.RemoveAll(t => t.IsCompleted);
+                }
 
-            var job = await _queue.ClaimNextAsync(_stop.Token);
-            if (job is null)
+                return await _queue.ClaimNextAsync(token);
+            },
+            job =>
             {
-                break;
-            }
+                lock (touchedGroups)
+                {
+                    touchedGroups.Add(job.GroupId);
+                }
 
-            lock (touchedGroups)
+                running.Add(Task.Run(() => ProcessAsync(provider, job, model), _stop.Token));
+                return Task.CompletedTask;
+            },
+            async () =>
             {
-                touchedGroups.Add(job.GroupId);
-            }
-
-            running.Add(Task.Run(() => ProcessAsync(provider, job, model), _stop.Token));
-        }
-
-        await Task.WhenAll(running);
-        foreach (var groupId in touchedGroups)
-        {
-            await _indexing.ReexportIfCommittedAsync(groupId, _stop.Token);
-        }
+                await Task.WhenAll(running);
+                foreach (var groupId in touchedGroups)
+                {
+                    await _indexing.ReexportIfCommittedAsync(groupId, _stop.Token);
+                }
+            },
+            _stop.Token);
 
         if (touchedGroups.Count > 0)
         {

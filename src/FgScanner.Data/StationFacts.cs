@@ -104,6 +104,52 @@ public sealed record StationFacts(
         return null;
     }
 
+    /// <summary>
+    /// The evidence folders of the stations beside <paramref name="stationRoot"/> (the
+    /// <c>FGScanner*</c> folders in <paramref name="parent"/>, its own folder by default). A test
+    /// copy's scans must stay out of all of them (SPEC-SCANNER-2026-011 SR-3); a station that cannot
+    /// be read refuses rather than leaving its folder unguarded (Revision D, RR-4).
+    /// </summary>
+    /// <exception cref="InvalidDataException">A station's database cannot be read.</exception>
+    public static List<string> EvidenceRootsBeside(string stationRoot, string? parent = null)
+    {
+        var self = Path.TrimEndingDirectorySeparator(Path.GetFullPath(stationRoot));
+        parent ??= Path.GetDirectoryName(self);
+        var roots = new List<string>();
+        if (parent is null || !Directory.Exists(parent))
+        {
+            return roots;
+        }
+
+        foreach (var folder in Directory.EnumerateDirectories(parent, "FGScanner*"))
+        {
+            var database = Path.Combine(folder, "fgscanner.db");
+            if (string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder)), self, StringComparison.OrdinalIgnoreCase)
+                || !File.Exists(database))
+            {
+                continue;
+            }
+
+            StationFacts facts;
+            try
+            {
+                facts = Read(database);
+            }
+            catch (SqliteException ex)
+            {
+                throw new InvalidDataException($"the station in {folder} cannot be read ({ex.Message}), so its scans folder cannot be kept apart", ex);
+            }
+
+            roots.AddRange(facts.BaseDirectories);
+            roots.AddRange(facts.GroupDirectories
+                .Select(d => Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(d)))
+                .OfType<string>()
+                .Where(d => Path.GetPathRoot(d) != d));
+        }
+
+        return roots;
+    }
+
     /// <summary>SQLite's backup API: a consistent copy even of a database the app has open. No
     /// pooling, so no handle on either file outlives the copy — a pooled one kept the copy locked
     /// against the check and the clean-up that follow.</summary>

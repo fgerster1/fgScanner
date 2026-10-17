@@ -110,6 +110,22 @@ public sealed class TestCopyOpenerTests : IDisposable
         Assert.True(markedFirst);
     }
 
+    /// <summary>Revision D, RR-7: a scans folder that is a junction into the workspace is inside it,
+    /// whatever its name says.</summary>
+    [Fact]
+    public void A_scans_folder_linked_into_the_workspace_is_refused()
+    {
+        var pack = Backup();
+        Directory.CreateDirectory(Workspace);
+        var link = Path.Combine(_root, "scans-link");
+        StationManifestTests.Junction(link, Workspace);
+
+        var result = new TestCopyOpener(new PassingDatabase()).Open(pack, Workspace, link, At);
+
+        Assert.Contains("apart from the workspace", result.Problem);
+        Directory.Delete(link);
+    }
+
     /// <summary>SR-3: the pack's own evidence path is only text it chose; the scans' folder must also
     /// stay out of every evidence folder this PC's stations really use.</summary>
     [Fact]

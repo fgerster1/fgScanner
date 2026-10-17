@@ -134,6 +134,16 @@ public sealed class BackupServiceTests : IDisposable
         Assert.Contains("on this computer", outcome.Problem);
     }
 
+    /// <summary>Revision D, RR-1: the copy for Franz goes to Drive on purpose; only a backup to
+    /// the stick is kept off network and Drive folders.</summary>
+    [Fact]
+    public async Task A_test_copy_is_not_held_to_the_sticks_rule()
+    {
+        var outcome = await Service().BackupAsync(@"\\nas\share\to-franz\copies", null, Token, keep: 1, recordAsLast: false);
+
+        Assert.DoesNotContain("USB stick or a folder on this computer", outcome.Problem ?? "");
+    }
+
     [Fact]
     public async Task A_second_backup_while_one_runs_is_refused_not_a_crash()
     {
