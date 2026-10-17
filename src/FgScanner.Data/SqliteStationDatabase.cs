@@ -243,8 +243,114 @@ public sealed class SqliteStationDatabase : IStationDatabase
             }
         }
 
+        return FileNameOutside(connection);
+    }
+
+    /// <summary>
+    /// File names are joined to their group's folder (a page, a trashed file, a page restored from
+    /// the trash), so one that is rooted, names a drive or climbs with <c>..</c> reaches any file on
+    /// the machine (SPEC-SCANNER-2026-011 Revision C, SR-7).
+    /// </summary>
+    private static readonly string[] TrashNameColumns = ["FilesJson", "PayloadJson"];
+
+    private static string? FileNameOutside(SqliteConnection connection)
+    {
+        if (Columns(connection, "Pages").Contains("FileName", StringComparer.Ordinal))
+        {
+            using var pages = connection.CreateCommand();
+            pages.CommandText = "SELECT FileName FROM Pages";
+            using var reader = pages.ExecuteReader();
+            while (reader.Read())
+            {
+                if (!reader.IsDBNull(0) && !PlainName(reader.GetString(0)))
+                {
+                    return $"Pages.FileName = {reader.GetString(0)}";
+                }
+            }
+        }
+
+        var trashColumns = Columns(connection, "TrashItems");
+        foreach (var column in TrashNameColumns.Where(c => trashColumns.Contains(c, StringComparer.Ordinal)))
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT \"{column}\" FROM TrashItems";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                if (reader.IsDBNull(0))
+                {
+                    continue;
+                }
+
+                var json = reader.GetString(0);
+                try
+                {
+                    using var document = System.Text.Json.JsonDocument.Parse(json);
+                    if (FileNames(document.RootElement, column == "FilesJson").FirstOrDefault(n => !PlainName(n)) is { } bad)
+                    {
+                        return $"TrashItems.{column} = {bad}";
+                    }
+                }
+                catch (System.Text.Json.JsonException)
+                {
+                    return $"TrashItems.{column} = {json}";
+                }
+            }
+        }
+
         return null;
     }
+
+    /// <summary>Every string of a file list, or every <c>fileName</c> value anywhere in a payload.</summary>
+    private static IEnumerable<string> FileNames(System.Text.Json.JsonElement element, bool isList)
+    {
+        switch (element.ValueKind)
+        {
+            case System.Text.Json.JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (isList && item.ValueKind == System.Text.Json.JsonValueKind.String)
+                    {
+                        yield return item.GetString()!;
+                    }
+                    else
+                    {
+                        foreach (var name in FileNames(item, false))
+                        {
+                            yield return name;
+                        }
+                    }
+                }
+
+                break;
+            case System.Text.Json.JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (property.Name.Equals("fileName", StringComparison.OrdinalIgnoreCase)
+                        && property.Value.ValueKind == System.Text.Json.JsonValueKind.String)
+                    {
+                        yield return property.Value.GetString()!;
+                    }
+                    else
+                    {
+                        foreach (var name in FileNames(property.Value, false))
+                        {
+                            yield return name;
+                        }
+                    }
+                }
+
+                break;
+        }
+    }
+
+    /// <summary>A name inside its folder: not rooted, no drive, no <c>..</c> (an <c>originals\</c>
+    /// subfolder is allowed — the archive keeps first captures there).</summary>
+    private static bool PlainName(string name) =>
+        name.Length > 0
+        && !Path.IsPathRooted(name)
+        && !name.Contains(':', StringComparison.Ordinal)
+        && name.Split('\\', '/').All(segment => segment is not (".." or ""));
 
     public void RerootEvidence(string database, string fromRoot, string toRoot)
     {

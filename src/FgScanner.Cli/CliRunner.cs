@@ -697,7 +697,8 @@ public static class CliRunner
                 return 1;
             }
 
-            result = new TestCopyOpener(StationDatabase).Open(packFolder, stationRoot, evidence, DateTimeOffset.Now);
+            result = new TestCopyOpener(StationDatabase).Open(
+                packFolder, stationRoot, evidence, DateTimeOffset.Now, OtherEvidenceRoots(stationRoot), expectCode);
         }
         else if (undo)
         {
@@ -742,6 +743,44 @@ public static class CliRunner
         }
 
         return result.Problem is null ? 0 : result.StillArriving ? 3 : 1;
+    }
+
+    /// <summary>
+    /// The evidence folders of this PC's other stations: the default one and every
+    /// <c>%APPDATA%\FGScanner*</c> workspace beside it. A test copy's scans must stay out of all of
+    /// them, whatever the pack says its own folder is (SPEC-SCANNER-2026-011 Revision C, SR-3).
+    /// </summary>
+    private static List<string> OtherEvidenceRoots(string stationRoot)
+    {
+        var roots = new List<string>();
+        var parent = Path.GetDirectoryName(StationPaths.Default.Root)!;
+        if (!Directory.Exists(parent))
+        {
+            return roots;
+        }
+
+        foreach (var folder in Directory.EnumerateDirectories(parent, "FGScanner*"))
+        {
+            var database = Path.Combine(folder, StationManifest.DatabaseFileName);
+            if (string.Equals(Path.GetFullPath(folder), Path.GetFullPath(stationRoot), StringComparison.OrdinalIgnoreCase)
+                || !File.Exists(database))
+            {
+                continue;
+            }
+
+            try
+            {
+                var facts = StationFacts.Read(database);
+                roots.AddRange(facts.BaseDirectories);
+                roots.AddRange(facts.GroupDirectories.Select(d => Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(d))!).Where(d => d.Length > 3));
+            }
+            catch (SqliteException)
+            {
+                // A station that cannot be read names no folder; the others still count.
+            }
+        }
+
+        return roots;
     }
 
     /// <summary>A share, a network drive or a device path (UNC, <c>\\?\</c>, <c>\\.\</c>), judged after

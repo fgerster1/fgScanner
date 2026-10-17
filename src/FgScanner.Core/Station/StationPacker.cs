@@ -169,10 +169,11 @@ public sealed class StationPacker(
             return notAtRest;
         }
 
-        // Nothing done in a test copy may reach the station it came from (SPEC-SCANNER-2026-011 Q6).
-        if (request.Kind != BackupKind && TestCopyMarker.IsTestCopy(request.StationRoot))
+        // Nothing done in a test copy may reach the station it came from (SPEC-SCANNER-2026-011 Q6),
+        // and a backup of one would carry no marker: restored, it could send (Revision C, SR-4).
+        if (TestCopyMarker.IsTestCopy(request.StationRoot))
         {
-            return "this is a test copy — it can never be sent or returned";
+            return "this is a test copy — it can never be sent, returned or backed up";
         }
 
         // A backup must restore on its own; a delta needs the pack it was based on, which may be

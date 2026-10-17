@@ -44,9 +44,16 @@ public sealed record TestCopyMarker(string From, string Code, string EvidenceRoo
 /// as apply, proves every stored path lies in the pack's own evidence folder, and only then moves
 /// those paths to the named one.
 /// </summary>
-public sealed class TestCopyOpener(IStationDatabase database)
+/// <param name="onPlaced">Observes each file as it lands (tests).</param>
+public sealed class TestCopyOpener(IStationDatabase database, Action<string>? onPlaced = null)
 {
-    public StationApplyResult Open(string packFolder, string stationRoot, string evidenceRoot, DateTimeOffset at)
+    /// <param name="otherEvidenceRoots">The evidence folders this PC's stations really use. The
+    /// pack's own evidence path is only text it chose, so it cannot be the whole guard
+    /// (Revision C, SR-3).</param>
+    /// <param name="expectedCode">The code Franz read out; the copy must still be the one with it.</param>
+    public StationApplyResult Open(
+        string packFolder, string stationRoot, string evidenceRoot, DateTimeOffset at,
+        IReadOnlyList<string>? otherEvidenceRoots = null, string? expectedCode = null)
     {
         var verified = StationManifestVerifier.Verify(packFolder, out var manifestBytes);
         if (verified.Status == StationVerifyStatus.StillArriving)
@@ -59,10 +66,21 @@ public sealed class TestCopyOpener(IStationDatabase database)
             return StationApplyResult.Refused($"the copy is damaged ({verified.Problems[0]})");
         }
 
+        if (expectedCode is not null && expectedCode != verified.Code)
+        {
+            return StationApplyResult.Refused(
+                $"the copy is not the one whose code you checked ({expectedCode}; it is now {verified.Code}) — nothing was changed");
+        }
+
         var manifest = StationManifest.Parse(manifestBytes!);
-        var db = Path.Combine(stationRoot, StationManifest.DatabaseFileName);
-        var trash = Path.Combine(stationRoot, StationManifest.TrashFolder);
-        if (File.Exists(db))
+        var workspace = Full(stationRoot);
+        var target = Full(evidenceRoot);
+        var db = Path.Combine(workspace, StationManifest.DatabaseFileName);
+        var trash = Path.Combine(workspace, StationManifest.TrashFolder);
+
+        // A -wal or -shm left beside the database is replayed into it by SQLite when it opens, after
+        // every check here (Revision C, SR-1).
+        if (new[] { db, db + "-wal", db + "-shm", db + "-journal" }.Any(File.Exists))
         {
             return StationApplyResult.Refused($"{stationRoot} already has a station — a test copy opens only into an empty workspace");
         }
@@ -72,28 +90,37 @@ public sealed class TestCopyOpener(IStationDatabase database)
             return StationApplyResult.Refused("this pack only fills in a station that already has the earlier data — a test copy needs a whole backup");
         }
 
-        if (Holds(evidenceRoot) || Holds(trash))
+        // The scans' folder and the workspace apart, both ways: a file placed beside the database
+        // could take a station file's name (Revision C, SR-1).
+        if (Overlap(target, workspace))
         {
-            return StationApplyResult.Refused($"the folder {evidenceRoot} already holds files, and a test copy must start empty");
+            return StationApplyResult.Refused($"the test copy's scans folder {evidenceRoot} must be apart from the workspace {stationRoot}");
         }
 
-        var target = Path.TrimEndingDirectorySeparator(Path.GetFullPath(evidenceRoot));
-        var source = Path.TrimEndingDirectorySeparator(Path.GetFullPath(manifest.EvidenceRoot));
-        if (target.Equals(source, StringComparison.OrdinalIgnoreCase)
-            || target.StartsWith(source + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
-            || source.StartsWith(target + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        if (Overlap(target, Full(manifest.EvidenceRoot)))
         {
             return StationApplyResult.Refused($"the test copy's folder must be apart from {manifest.EvidenceRoot}, where the station it came from keeps its scans");
         }
 
-        Directory.CreateDirectory(stationRoot);
-        var staging = Path.Combine(stationRoot, "test-copy-staging");
+        if ((otherEvidenceRoots ?? []).FirstOrDefault(other => Overlap(target, Full(other))) is { } taken)
+        {
+            return StationApplyResult.Refused($"the test copy's folder {evidenceRoot} overlaps {taken}, where another station on this PC keeps its scans");
+        }
+
+        if (Holds(target) || Holds(trash))
+        {
+            return StationApplyResult.Refused($"the folder {evidenceRoot} already holds files, and a test copy must start empty");
+        }
+
+        Directory.CreateDirectory(workspace);
+        var staging = Path.Combine(workspace, "test-copy-staging");
         if (Directory.Exists(staging))
         {
             Directory.Delete(staging, recursive: true);
         }
 
         Directory.CreateDirectory(staging);
+        var placed = new List<string>();
         try
         {
             if (Stage(packFolder, manifest, staging, target, trash) is { } problem)
@@ -102,21 +129,36 @@ public sealed class TestCopyOpener(IStationDatabase database)
                 return StationApplyResult.Refused(problem);
             }
 
+            // The marker first: whatever lands after it is already a test copy, so a failure part-way
+            // can never leave a station that sends (Revision C, CR-4).
+            TestCopyMarker.Write(workspace, new TestCopyMarker(Path.GetFileName(Path.TrimEndingDirectorySeparator(packFolder)), verified.Code!, target, at));
             foreach (var file in manifest.Files)
             {
-                var placed = PlaceOf(file.Rel, target, trash);
-                Directory.CreateDirectory(Path.GetDirectoryName(placed)!);
-                File.Move(Path.Combine(staging, ToPath(file.Rel)), placed);
+                var place = PlaceOf(file.Rel, target, trash);
+                Directory.CreateDirectory(Path.GetDirectoryName(place)!);
+                File.Move(Path.Combine(staging, ToPath(file.Rel)), place);
+                placed.Add(place);
+                onPlaced?.Invoke(place);
+            }
+
+            // A move across drives is a copy; read every placed file back before the station exists.
+            if (manifest.Files.FirstOrDefault(f => StationManifestBuilder.Sha256Of(PlaceOf(f.Rel, target, trash)) != f.Sha256) is { } bad)
+            {
+                throw new IOException($"{bad.Rel} did not land intact");
             }
 
             File.Move(Path.Combine(staging, StationManifest.DatabaseFileName), db);
             Directory.Delete(staging, recursive: true);
-            TestCopyMarker.Write(stationRoot, new TestCopyMarker(Path.GetFileName(Path.TrimEndingDirectorySeparator(packFolder)), verified.Code!, target, at));
             return new StationApplyResult(verified.Code, null);
         }
         catch
         {
-            // Leave nothing that looks like a station; the evidence folder was empty before.
+            // Leave nothing that looks like a station: the folders were empty before.
+            foreach (var file in placed.Append(db).Append(Path.Combine(workspace, TestCopyMarker.FileName)))
+            {
+                File.Delete(file);
+            }
+
             if (Directory.Exists(staging))
             {
                 Directory.Delete(staging, recursive: true);
@@ -125,6 +167,14 @@ public sealed class TestCopyOpener(IStationDatabase database)
             throw;
         }
     }
+
+    private static string Full(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+
+    /// <summary>The same folder, or one inside the other.</summary>
+    private static bool Overlap(string a, string b) =>
+        a.Equals(b, StringComparison.OrdinalIgnoreCase)
+        || a.StartsWith(b + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+        || b.StartsWith(a + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 
     private string? Stage(string packFolder, StationManifest manifest, string staging, string target, string trash)
     {

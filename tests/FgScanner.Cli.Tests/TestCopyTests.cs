@@ -170,6 +170,57 @@ public sealed class TestCopyTests : IDisposable
         Assert.Equal(before, Hashes(Workspace, TestEvidence));
     }
 
+    /// <summary>Revision C SR-1: the scans' folder must be apart from the workspace, or a pack could
+    /// plant a file beside the database (a -wal SQLite replays, or the database itself).</summary>
+    [Theory]
+    [InlineData("same")]
+    [InlineData("parent")]
+    [InlineData("inside")]
+    public async Task A_test_copy_refuses_a_scans_folder_that_overlaps_the_workspace(string how)
+    {
+        var backup = await JimsBackupAsync();
+        var evidence = how switch
+        {
+            "same" => Workspace,
+            "parent" => Path.Combine(_root, "both"),
+            _ => Path.Combine(Workspace, "scans"),
+        };
+        var workspace = how == "parent" ? Path.Combine(_root, "both", "ws") : Workspace;
+
+        var (exit, output) = await RunAsync("station", "apply", backup, "--data-dir", workspace, "--test-copy", "--evidence", evidence);
+
+        Assert.Equal(1, exit);
+        Assert.Contains("apart from the workspace", output);
+        Assert.False(File.Exists(Path.Combine(workspace, "fgscanner.db")));
+    }
+
+    [Fact]
+    public async Task A_test_copy_refuses_a_workspace_with_a_leftover_journal()
+    {
+        var backup = await JimsBackupAsync();
+        Directory.CreateDirectory(Workspace);
+        File.WriteAllText(Path.Combine(Workspace, "fgscanner.db-wal"), "planted");
+
+        var (exit, output) = await RunAsync("station", "apply", backup, "--data-dir", Workspace, "--test-copy", "--evidence", TestEvidence);
+
+        Assert.Equal(1, exit);
+        Assert.Contains("already has a station", output);
+    }
+
+    /// <summary>Revision C SR-5: the code Franz read out is the copy that opens.</summary>
+    [Fact]
+    public async Task A_test_copy_refuses_a_code_that_is_not_the_one_checked()
+    {
+        var backup = await JimsBackupAsync();
+
+        var (exit, output) = await RunAsync(
+            "station", "apply", backup, "--data-dir", Workspace, "--test-copy", "--evidence", TestEvidence, "--expect-code", "0000-0000");
+
+        Assert.Equal(1, exit);
+        Assert.Contains("not the one whose code you checked", output);
+        Assert.False(File.Exists(Path.Combine(Workspace, "fgscanner.db")));
+    }
+
     [Fact]
     public async Task A_test_copy_needs_the_folder_named()
     {

@@ -187,6 +187,12 @@ public sealed class SqliteStationDatabaseTests : IDisposable
     [InlineData("UPDATE Profiles SET BaseDirectory = '\\\\attacker@SSL\\x'", "Profiles.BaseDirectory")]
     [InlineData("UPDATE Groups SET DirectoryPath = 'C:\\Users\\Jim\\Startup'", "Groups.DirectoryPath")]
     [InlineData("UPDATE TrashItems SET GroupDirectoryPath = 'D:\\elsewhere'", "TrashItems.GroupDirectoryPath")]
+    // SPEC-SCANNER-2026-011 Revision C, SR-7: a file name is joined to its group's folder, so one
+    // that climbs out or carries a drive reaches any file on the machine.
+    [InlineData("UPDATE Pages SET FileName = '..\\..\\Users\\fgers\\Documents\\x.jpg'", "Pages.FileName")]
+    [InlineData("UPDATE Pages SET FileName = 'C:\\Windows\\win.ini'", "Pages.FileName")]
+    [InlineData("UPDATE TrashItems SET FilesJson = '[\"..\\\\..\\\\x.jpg\"]'", "TrashItems.FilesJson")]
+    [InlineData("UPDATE TrashItems SET PayloadJson = '{\"pages\":[{\"fileName\":\"..\\\\x.jpg\"}]}'", "TrashItems.PayloadJson")]
     public void A_path_outside_the_evidence_folder_is_named(string sql, string column)
     {
         var db = Fixture("current");

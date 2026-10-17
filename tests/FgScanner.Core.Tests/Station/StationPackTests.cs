@@ -344,6 +344,18 @@ public sealed class StationPackTests : IDisposable
         Directory.Delete(link);
     }
 
+    /// <summary>Revision C SR-4: a backup of a test copy carries no marker, so restored it could
+    /// send; a test copy packs nothing at all.</summary>
+    [Fact]
+    public void A_test_copy_packs_nothing_not_even_a_backup()
+    {
+        TestCopyMarker.Write(Station, new TestCopyMarker("jim-backup", "ab12-cd34", Evidence, SentAt));
+
+        var result = Packer().Pack(Request(destination: _root, kind: "backup"));
+
+        Assert.Contains("test copy", result.Problem);
+    }
+
     [Fact]
     public void A_refusal_leaves_nothing_behind()
     {
