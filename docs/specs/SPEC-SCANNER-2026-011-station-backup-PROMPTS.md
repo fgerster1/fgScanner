@@ -188,3 +188,4 @@ Checkpoint: every AC green in the Run log; the Latest still 0.5.4 (or whatever P
 
 | Prompt | Date | Result |
 |---|---|---|
+| P1 | 2026-10-17 | `backup` kind: skips the freeze record, refuses --based-on. 4 tests first-red (the AC-2 apply test failed with "not made from this station's last pack"); suite 1,329 green, 0 warnings, format clean |

@@ -151,6 +151,25 @@ public sealed class StationApplyTests : IDisposable
         Assert.Equal("Jim's draft", File.ReadAllText(Path.Combine(Jim, "index-drafts", "draft.json")));
     }
 
+    /// <summary>SPEC-SCANNER-2026-011 AC-2: Jim backs up to his stick while Franz works on the send;
+    /// the return still installs.</summary>
+    [Fact]
+    public void A_backup_between_send_and_return_changes_nothing_the_return_is_checked_against()
+    {
+        var pack = RoundTrip();
+        var stick = Path.Combine(_root, "stick");
+        Directory.CreateDirectory(stick);
+        var backup = Packer().Pack(new StationPackRequest(
+            new StationSource("jim", Path.Combine(Jim, "fgscanner.db"), Evidence, Path.Combine(Jim, "trash"),
+                "0.8.0", "M2", null, At.AddMinutes(30)),
+            Jim, stick, null, "backup", 0, null, _database.Content(Path.Combine(Jim, "fgscanner.db"))));
+        Assert.Null(backup.Problem);
+
+        var result = Applier().Apply(ApplyRequest(pack));
+
+        Assert.Null(result.Problem);
+    }
+
     [Fact]
     public void Nothing_is_erased_replaced_and_deleted_files_are_kept_aside()
     {

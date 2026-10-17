@@ -54,7 +54,8 @@ public sealed class StationPackTests : IDisposable
     private StationPacker Packer() => new(() => _appOpen, File.Copy, _ => _freeBytes);
 
     private StationPackRequest Request(
-        string? basedOn = null, string? destination = null, int pendingReads = 0, DateTimeOffset? at = null) => new(
+        string? basedOn = null, string? destination = null, int pendingReads = 0, DateTimeOffset? at = null,
+        string kind = "send") => new(
         new StationSource(
             Station: "jim",
             Database: Path.Combine(Station, "fgscanner.db"),
@@ -67,7 +68,7 @@ public sealed class StationPackTests : IDisposable
         StationRoot: Station,
         Destination: destination ?? Transport,
         BasedOnManifest: basedOn,
-        Kind: "send",
+        Kind: kind,
         PendingReadingJobs: pendingReads);
 
     private static StationManifest ManifestOf(StationPackResult result) =>
@@ -218,6 +219,55 @@ public sealed class StationPackTests : IDisposable
         Assert.Equal(
             File.ReadAllBytes(Path.Combine(result.PackFolder!, StationManifest.FileName)),
             File.ReadAllBytes(Path.Combine(Station, StationFreezeRecord.SentManifestFileName)));
+    }
+
+    /// <summary>The round trip's baseline files, by name and bytes; absent ones are absent.</summary>
+    private SortedDictionary<string, string> Baseline() => new(
+        new[] { StationFreezeRecord.FileName, StationFreezeRecord.SentManifestFileName, StationFreezeRecord.SentDatabaseFileName }
+            .Where(name => File.Exists(Path.Combine(Station, name)))
+            .ToDictionary(name => name, name => Convert.ToBase64String(File.ReadAllBytes(Path.Combine(Station, name)))),
+        StringComparer.Ordinal);
+
+    /// <summary>SPEC-SCANNER-2026-011 AC-1: a backup is the whole station, checked — and it is never
+    /// the round trip's baseline, or Franz's next return would be refused as "not made from this
+    /// station's last pack".</summary>
+    [Fact]
+    public void A_backup_never_moves_the_round_trips_baseline()
+    {
+        Assert.Null(Packer().Pack(Request()).Problem);
+        var before = Baseline();
+
+        var backup = Packer().Pack(Request(destination: _root, at: SentAt.AddMinutes(5), kind: "backup"));
+
+        Assert.Null(backup.Problem);
+        Assert.Equal(Path.Combine(_root, "jim-2026-10-16-0910-backup"), backup.PackFolder);
+        Assert.Equal(3, backup.ShippedFiles);
+        Assert.Equal(StationVerifyStatus.Ok, StationManifestVerifier.Verify(backup.PackFolder!).Status);
+        Assert.Equal(before, Baseline());
+    }
+
+    [Fact]
+    public void A_backup_of_a_station_that_never_sent_leaves_no_baseline()
+    {
+        var backup = Packer().Pack(Request(kind: "backup"));
+
+        Assert.Null(backup.Problem);
+        Assert.Empty(Baseline());
+    }
+
+    /// <summary>A backup restores on its own (spec §03 non-goals): a delta would need the pack it
+    /// was based on, which may be the one that is lost.</summary>
+    [Fact]
+    public void A_backup_is_never_based_on_another_pack()
+    {
+        var first = Packer().Pack(Request(kind: "backup"));
+
+        var second = Packer().Pack(Request(
+            basedOn: Path.Combine(first.PackFolder!, StationManifest.FileName), at: SentAt.AddMinutes(1), kind: "backup"));
+
+        Assert.NotNull(second.Problem);
+        Assert.Contains("whole station", second.Problem);
+        Assert.Single(Directory.GetDirectories(Transport));
     }
 
     [Fact]

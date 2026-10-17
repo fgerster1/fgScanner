@@ -5,7 +5,8 @@ namespace FgScanner.Core.Station;
 /// <summary>What to pack, and the station-state facts only the caller can read from the database.</summary>
 /// <param name="BasedOnManifest">The manifest of the last pack the receiver applied or verified;
 /// its files are what the receiver already holds. Null for a first pack, which ships everything.</param>
-/// <param name="Kind"><c>send</c> (Jim to Franz) or <c>return</c> (Franz to Jim) — names the folder.</param>
+/// <param name="Kind"><c>send</c> (Jim to Franz), <c>return</c> (Franz to Jim) or <c>backup</c> (a
+/// whole, checked copy to a USB stick or Franz's test folder, SPEC-SCANNER-2026-011) — names the folder.</param>
 /// <param name="BasedOnContent">The fingerprint of the database the receiver holds — what its apply
 /// compares its own rows against. Null for a first pack.</param>
 /// <param name="LiveContent">This station's own fingerprint now, kept in the freeze record.</param>
@@ -51,6 +52,8 @@ public sealed class StationPacker(
     Func<string, long> freeBytes,
     Action<string>? onFileWritten = null)
 {
+    public const string BackupKind = "backup";
+
     /// <summary>Drive's local cache holds the pack until it uploads, so it needs this much spare.</summary>
     private const long Headroom = 1L << 30;
 
@@ -135,9 +138,15 @@ public sealed class StationPacker(
                     $"the pack did not verify after copying ({string.Join("; ", verified.Problems)}) — pack again");
             }
 
-            StationFreezeRecord.Write(request.StationRoot, new StationFreezeRecord(
-                Path.GetFileName(pack), verified.Code!, manifest.SentAt, liveDbSha256,
-                StationManifest.HashOf(manifestBytes), request.LiveContent), manifestBytes);
+            // A backup is never what the other station holds: recording it as the baseline would
+            // refuse Franz's next return as "not made from this station's last pack".
+            if (request.Kind != BackupKind)
+            {
+                StationFreezeRecord.Write(request.StationRoot, new StationFreezeRecord(
+                    Path.GetFileName(pack), verified.Code!, manifest.SentAt, liveDbSha256,
+                    StationManifest.HashOf(manifestBytes), request.LiveContent), manifestBytes);
+            }
+
             return new StationPackResult(pack, verified.Code, shipped.Count, shipped.Sum(f => f.Size), null);
         }
         catch
@@ -154,6 +163,13 @@ public sealed class StationPacker(
         if (StationRest.Problem(isAppOpen, source.Database, request.StationRoot, "pack") is { } notAtRest)
         {
             return notAtRest;
+        }
+
+        // A backup must restore on its own; a delta needs the pack it was based on, which may be
+        // the one that is lost.
+        if (request.Kind == BackupKind && request.BasedOnManifest is not null)
+        {
+            return "a backup is always the whole station, never based on another pack";
         }
 
         if ((request.Reports ?? []).FirstOrDefault(r => !StationManifest.ReportNames.Contains(r.Name, StringComparer.Ordinal)) is { } unknown)
