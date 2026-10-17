@@ -133,6 +133,45 @@ public sealed class BackupViewModelTests : IDisposable
         Assert.False(vm.SendTestCopyCommand.CanExecute(null));
     }
 
+    /// <summary>Revision C CR-7: the setting the spec names decides how many stay.</summary>
+    [Fact]
+    public async Task Backup_Keep_decides_how_many_backups_stay()
+    {
+        await _settings.SetAsync(BackupViewModel.KeepSettingKey, "1", Token);
+        var vm = ViewModel();
+        await vm.LoadAsync(Token);
+        vm.SelectedTarget = vm.Targets.Single();
+
+        await vm.BackupCommand.ExecuteAsync(null);
+        await vm.BackupCommand.ExecuteAsync(null);
+
+        Assert.Single(Directory.GetDirectories(Path.Combine(StickRoot, BackupViewModel.FolderName)));
+    }
+
+    /// <summary>Revision C SR-6: Browse cannot pick a share or the Google Drive mount — the backup
+    /// would upload Jim's evidence.</summary>
+    [Theory]
+    [InlineData(@"\\nas\share")]
+    public async Task Browse_refuses_a_network_folder(string folder)
+    {
+        var vm = ViewModel();
+        await vm.LoadAsync(Token);
+
+        Assert.False(vm.UseFolder(folder));
+        Assert.DoesNotContain(vm.Targets, t => t.Folder == folder);
+        Assert.Contains("on this computer", vm.StatusText);
+    }
+
+    [Fact]
+    public void The_drives_offered_leave_out_the_ones_holding_the_station()
+    {
+        Assert.False(BackupViewModel.Offered(@"C:\", DriveType.Fixed, "OS", @"C:\", [@"D:\"]));
+        Assert.False(BackupViewModel.Offered(@"D:\", DriveType.Fixed, "DATA", @"C:\", [@"D:\Evidence-Scans"]));
+        Assert.False(BackupViewModel.Offered(@"G:\", DriveType.Fixed, "Google Drive", @"C:\", []));
+        Assert.False(BackupViewModel.Offered(@"Z:\", DriveType.Network, "nas", @"C:\", []));
+        Assert.True(BackupViewModel.Offered(@"E:\", DriveType.Removable, "SANDISK", @"C:\", [@"C:\Evidence-Scans"]));
+    }
+
     [Fact]
     public async Task With_no_stick_it_says_to_plug_one_in()
     {

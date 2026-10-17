@@ -71,6 +71,23 @@ public sealed class WorkGateTests
         (await gate.EnterAsync(Token).WaitAsync(TimeSpan.FromSeconds(5), Token)).Dispose();
     }
 
+    /// <summary>Revision C CR-6: a reader inside the gate sees a hold coming, so it can finish what
+    /// it owes (a committed group's index) before it yields.</summary>
+    [Fact]
+    public async Task A_reader_inside_sees_a_hold_requested()
+    {
+        var gate = new WorkGate();
+        var working = await gate.EnterAsync(Token);
+        Assert.False(gate.HoldRequested);
+
+        var holding = gate.HoldAsync(Token);
+
+        Assert.True(gate.HoldRequested);
+        working.Dispose();
+        (await holding).Dispose();
+        Assert.False(gate.HoldRequested);
+    }
+
     [Fact]
     public async Task Only_one_hold_at_a_time()
     {

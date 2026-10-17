@@ -7,7 +7,9 @@ using Serilog;
 namespace FgScanner.App.Services;
 
 /// <summary>What a backup ended with: the folder and code, or the reason in Jim's words.</summary>
-public sealed record BackupOutcome(string? Folder, string? Code, int Files, long Bytes, string? Problem)
+/// <param name="Damaged">Earlier backups in the folder whose files are missing; kept for Franz.</param>
+public sealed record BackupOutcome(
+    string? Folder, string? Code, int Files, long Bytes, string? Problem, IReadOnlyList<string>? Damaged = null)
 {
     public static BackupOutcome Refused(string problem) => new(null, null, 0, 0, problem);
 }
@@ -18,7 +20,9 @@ public sealed record BackupOutcome(string? Folder, string? Code, int Files, long
 /// running app, so it checks for itself that nothing is in hand, holds the background readers
 /// out (<see cref="WorkGate"/>), and copies the database through SQLite's backup API.
 /// </summary>
-public sealed class BackupService(StationPaths station, WorkGate gate)
+/// <param name="holdTimeout">How long to wait for the readers to pause; a parameter only so a test
+/// need not wait the real two minutes.</param>
+public sealed class BackupService(StationPaths station, WorkGate gate, TimeSpan? holdTimeout = null)
 {
     /// <param name="whyNotNow">The Scan page's reason a backup cannot start (paper in hand,
     /// unsaved pages), or null.</param>
@@ -33,9 +37,47 @@ public sealed class BackupService(StationPaths station, WorkGate gate)
             return BackupOutcome.Refused(whyNotNow);
         }
 
+        if (NotOnThisComputer(folder))
+        {
+            return BackupOutcome.Refused("the backup must go to a USB stick or a folder on this computer, not a network or Google Drive folder");
+        }
+
         Log.Information("Backup to {Folder} starting", folder);
-        using var hold = await gate.HoldAsync(cancellationToken);
-        var outcome = await Task.Run(() => Run(folder, keep, recordAsLast), cancellationToken);
+        BackupOutcome outcome;
+        IDisposable hold;
+        try
+        {
+            // A reader that never lets go must end as NOT OK, never as a window that cannot close
+            // (Revision C, CR-1).
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(holdTimeout ?? TimeSpan.FromMinutes(2));
+            hold = await gate.HoldAsync(timeout.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            outcome = BackupOutcome.Refused("page reading did not pause in time — wait a minute, then back up again");
+            Log.Warning("Backup to {Folder} refused: {Problem}", folder, outcome.Problem);
+            return outcome;
+        }
+        catch (InvalidOperationException)
+        {
+            return BackupOutcome.Refused("a backup is already running — wait for it to say OK");
+        }
+
+        using (hold)
+        {
+            try
+            {
+                outcome = await Task.Run(() => Run(folder, keep, recordAsLast), cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                // Whatever went wrong, Jim reads a reason, never a crash (Revision C, CR-2).
+                Log.Error(ex, "Backup to {Folder}", folder);
+                outcome = BackupOutcome.Refused($"the backup stopped ({ex.Message}) — check the stick is plugged in, then try again");
+            }
+        }
+
         if (outcome.Problem is null)
         {
             Log.Information("Backup {Code} written to {Folder}: {Files} files, {Bytes} bytes", outcome.Code, outcome.Folder, outcome.Files, outcome.Bytes);
@@ -46,6 +88,41 @@ public sealed class BackupService(StationPaths station, WorkGate gate)
         }
 
         return outcome;
+    }
+
+    /// <summary>The folders a backup must not share a disk with: the station and its evidence.</summary>
+    public IReadOnlyList<string> StationFolders()
+    {
+        try
+        {
+            return StationFacts.Read(station.Database).EvidenceRoot(null) is { } evidence ? [station.Root, evidence] : [station.Root];
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or IOException)
+        {
+            return [station.Root];
+        }
+    }
+
+    /// <summary>A share, a mapped network drive, or the Google Drive mount: a backup there would
+    /// send Jim's evidence off the computer.</summary>
+    public static bool NotOnThisComputer(string folder)
+    {
+        try
+        {
+            var full = Path.GetFullPath(folder);
+            if (full.StartsWith(@"\\", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            var drive = new DriveInfo(Path.GetPathRoot(full)!);
+            return drive.DriveType == DriveType.Network
+                || (drive.IsReady && drive.VolumeLabel.Contains("Google Drive", StringComparison.OrdinalIgnoreCase));
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            return true;
+        }
     }
 
     private BackupOutcome Run(string folder, int keep, bool recordAsLast)
@@ -100,7 +177,13 @@ public sealed class BackupService(StationPaths station, WorkGate gate)
         _ = SetThreadExecutionState(EsContinuous | EsSystemRequired);
         try
         {
-            var result = new StationBackup(packer, DriveFormatOf).Run(request, keep, recordAsLast);
+            // Work the gate does not hold (an import or a commit already under way) can save a
+            // page while the station is copied; the copy then names a file it lacks (Revision C, CR-5).
+            var result = new StationBackup(packer, DriveFormatOf, check: pack =>
+                    StationFacts.PageMissingFromPack(pack, evidence) is { } missing
+                        ? $"the station changed while it was copied ({missing}) — back up again"
+                        : null)
+                .Run(request, keep, recordAsLast);
             if (result.Pack.Problem is { } problem)
             {
                 return BackupOutcome.Refused(problem);
@@ -111,8 +194,13 @@ public sealed class BackupService(StationPaths station, WorkGate gate)
                 Log.Information("Removed the older backup {Folder}", removed);
             }
 
+            foreach (var damaged in result.Damaged)
+            {
+                Log.Warning("A damaged backup is kept for Franz: {Folder}", damaged);
+            }
+
             var bytes = new FileInfo(Path.Combine(result.Pack.PackFolder!, StationManifest.DatabaseFileName)).Length + result.Pack.ShippedBytes;
-            return new BackupOutcome(result.Pack.PackFolder, result.Pack.Code, result.Pack.ShippedFiles + 1, bytes, null);
+            return new BackupOutcome(result.Pack.PackFolder, result.Pack.Code, result.Pack.ShippedFiles + 1, bytes, null, result.Damaged);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

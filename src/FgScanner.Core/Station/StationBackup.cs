@@ -4,8 +4,15 @@ using System.Text.RegularExpressions;
 
 namespace FgScanner.Core.Station;
 
-/// <summary>A finished backup (or the packer's refusal) and the old backups it cleared away.</summary>
-public sealed record StationBackupResult(StationPackResult Pack, IReadOnlyList<string> Removed);
+/// <summary>A finished backup (or the packer's refusal), the old backups it cleared away, and the
+/// damaged ones it left for Franz.</summary>
+public sealed record StationBackupResult(StationPackResult Pack, IReadOnlyList<string> Removed, IReadOnlyList<string> Damaged)
+{
+    public StationBackupResult(StationPackResult pack, IReadOnlyList<string> removed)
+        : this(pack, removed, [])
+    {
+    }
+}
 
 /// <summary>
 /// A whole, checked copy of a station on Jim's USB stick (SPEC-SCANNER-2026-011): a
@@ -15,8 +22,13 @@ public sealed record StationBackupResult(StationPackResult Pack, IReadOnlyList<s
 /// </summary>
 /// <param name="driveFormat">The file system of the target's drive ("FAT32", "exFAT", "NTFS"), or null.</param>
 /// <param name="fat32Limit">The largest file FAT32 holds; a parameter only so a test need not write 4 GB.</param>
+/// <param name="check">A last word on the written backup, before any old one is cleared; its
+/// reason refuses the backup, which is then removed.</param>
 public sealed partial class StationBackup(
-    StationPacker packer, Func<string, string?> driveFormat, long fat32Limit = StationBackup.Fat32FileLimit)
+    StationPacker packer,
+    Func<string, string?> driveFormat,
+    long fat32Limit = StationBackup.Fat32FileLimit,
+    Func<string, string?>? check = null)
 {
     public const long Fat32FileLimit = uint.MaxValue;
 
@@ -38,12 +50,20 @@ public sealed partial class StationBackup(
             return new StationBackupResult(pack, []);
         }
 
+        if (check?.Invoke(pack.PackFolder!) is { } refused)
+        {
+            Directory.Delete(pack.PackFolder!, recursive: true);
+            return new StationBackupResult(StationPackResult.Refused(refused), []);
+        }
+
         if (recordAsLast)
         {
             LastBackupRecord.Write(request.StationRoot, new LastBackupRecord(pack.PackFolder!, pack.Code!, request.Source.SentAt));
         }
 
-        return new StationBackupResult(pack, RemoveOld(request.Destination, request.Source.Station, pack.PackFolder!, Math.Max(1, keep)));
+        var damaged = new List<string>();
+        var removed = RemoveOld(request.Destination, request.Source.Station, pack.PackFolder!, Math.Max(1, keep), damaged);
+        return new StationBackupResult(pack, removed, damaged);
     }
 
     /// <summary>
@@ -73,8 +93,9 @@ public sealed partial class StationBackup(
     /// stick was pulled) and is removed; one whose manifest names files that are missing is
     /// damaged — kept for Franz to look at, but never counted as one of the backups.
     /// </summary>
-    private static List<string> RemoveOld(string destination, string station, string made, int keep)
+    private static List<string> RemoveOld(string destination, string station, string made, int keep, List<string> damaged)
     {
+        var madeAt = Directory.GetCreationTimeUtc(made);
         var complete = new List<(string Folder, string SentAt)>();
         var removed = new List<string>();
         foreach (var folder in Directory.EnumerateDirectories(destination))
@@ -89,7 +110,8 @@ public sealed partial class StationBackup(
             var manifestPath = Path.Combine(folder, StationManifest.FileName);
             if (!File.Exists(manifestPath))
             {
-                if (TryDelete(folder))
+                // Only one cut short before this backup began; anything newer is not ours to judge.
+                if (Directory.GetCreationTimeUtc(folder) <= madeAt && TryDelete(folder))
                 {
                     removed.Add(folder);
                 }
@@ -100,6 +122,10 @@ public sealed partial class StationBackup(
             if (CompleteSentAt(folder, manifestPath) is { } sentAt)
             {
                 complete.Add((folder, sentAt));
+            }
+            else
+            {
+                damaged.Add(folder);
             }
         }
 

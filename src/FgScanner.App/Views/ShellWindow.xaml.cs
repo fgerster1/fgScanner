@@ -67,7 +67,8 @@ public partial class ShellWindow : Window
     public bool ShowBackup()
     {
         var succeeded = Dialogs.BackupWindow.Show(this, new BackupViewModel(
-            _backup, _settings, () => _viewModel.BackupBlockedReason, BackupViewModel.FindDrives, TestCopyFolder()));
+            _backup, _settings, () => _viewModel.BackupBlockedReason,
+            () => BackupViewModel.FindDrives(_backup.StationFolders()), TestCopyFolder()));
         _viewModel.RefreshLastBackup();
         return succeeded;
     }

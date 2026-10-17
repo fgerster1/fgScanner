@@ -47,6 +47,63 @@ public sealed record StationFacts(
                 .StartsWith(root, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// A page the pack's database names whose file is on the station now but not in the pack: it
+    /// was saved while the station was copied (SPEC-SCANNER-2026-011 Revision C, CR-5). A page whose
+    /// file is missing from the station too went missing long before, and is not this copy's fault.
+    /// </summary>
+    public static string? PageMissingFromPack(string packFolder, string evidenceRoot)
+    {
+        var manifest = Core.Station.StationManifest.Parse(File.ReadAllBytes(Path.Combine(packFolder, Core.Station.StationManifest.FileName)));
+        var packed = manifest.Files.Select(f => f.Rel).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(evidenceRoot)) + Path.DirectorySeparatorChar;
+
+        // Read from a copy: opening the pack's own database (WAL mode, as EF made it) leaves -wal and
+        // -shm files in the pack, which its verification then refuses as files it does not list.
+        var copy = Path.Combine(Path.GetTempPath(), $"fgscanner-check-{Guid.NewGuid():N}.db");
+        File.Copy(Path.Combine(packFolder, Core.Station.StationManifest.DatabaseFileName), copy);
+        try
+        {
+            return MissingIn(copy, packed, root);
+        }
+        finally
+        {
+            foreach (var file in new[] { copy, copy + "-wal", copy + "-shm" })
+            {
+                File.Delete(file);
+            }
+        }
+    }
+
+    private static string? MissingIn(string database, HashSet<string> packed, string root)
+    {
+        using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = database,
+            Pooling = false,
+        }.ToString());
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT g.DirectoryPath, p.FileName FROM Pages p JOIN Documents d ON p.DocumentId = d.Id JOIN Groups g ON d.GroupId = g.Id";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var file = Path.GetFullPath(Path.Combine(reader.GetString(0), reader.GetString(1)));
+            if (!file.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var rel = Core.Station.StationManifest.EvidenceFolder + "/" + file[root.Length..].Replace(Path.DirectorySeparatorChar, '/');
+            if (!packed.Contains(rel) && File.Exists(file))
+            {
+                return file;
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>SQLite's backup API: a consistent copy even of a database the app has open. No
     /// pooling, so no handle on either file outlives the copy — a pooled one kept the copy locked
     /// against the check and the clean-up that follow.</summary>

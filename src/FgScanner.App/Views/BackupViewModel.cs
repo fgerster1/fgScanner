@@ -32,6 +32,9 @@ public sealed partial class BackupViewModel(
 
     public const string FolderSettingKey = "Backup.Folder";
 
+    /// <summary>How many backups stay on the stick (spec §07); not shown in Settings.</summary>
+    public const string KeepSettingKey = "Backup.Keep";
+
     /// <summary>Not cleared on reload: the drive list binds SelectedItem (CLAUDE.md, never clear a
     /// collection bound to a Selector).</summary>
     public ObservableCollection<BackupTarget> Targets { get; } = [];
@@ -76,9 +79,16 @@ public sealed partial class BackupViewModel(
             : "Leave the stick in until this says OK.";
     }
 
-    /// <summary>A folder chosen with Browse.</summary>
-    public void UseFolder(string folder)
+    /// <summary>A folder chosen with Browse; false (and why, in <see cref="StatusText"/>) for a
+    /// share or the Google Drive mount, which the drive list leaves out for the same reason.</summary>
+    public bool UseFolder(string folder)
     {
+        if (BackupService.NotOnThisComputer(folder))
+        {
+            StatusText = "Choose a USB stick or a folder on this computer — a network or Google Drive folder would send your scans away.";
+            return false;
+        }
+
         var target = Targets.FirstOrDefault(t => SameFolder(t.Folder, folder)) ?? new BackupTarget(folder, folder);
         if (!Targets.Contains(target))
         {
@@ -87,12 +97,21 @@ public sealed partial class BackupViewModel(
 
         SelectedTarget = target;
         StatusText = "Leave the stick in until this says OK.";
+        return true;
     }
 
     private bool CanBackup() => SelectedTarget is not null && !IsRunning;
 
     [RelayCommand(CanExecute = nameof(CanBackup))]
-    private Task BackupAsync() => RunAsync(SelectedTarget!.Folder, FgScanner.Core.Station.StationBackup.DefaultKeep, toFranz: false);
+    private async Task BackupAsync()
+    {
+        var keep = int.TryParse(
+            await settings.GetAsync(KeepSettingKey, FgScanner.Core.Station.StationBackup.DefaultKeep.ToString(CultureInfo.InvariantCulture)),
+            NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n > 0
+            ? n
+            : FgScanner.Core.Station.StationBackup.DefaultKeep;
+        await RunAsync(SelectedTarget!.Folder, keep, toFranz: false);
+    }
 
     private bool CanSendTestCopy() => testCopyFolder is not null && !IsRunning;
 
@@ -130,6 +149,10 @@ public sealed partial class BackupViewModel(
                 StatusText = toFranz
                     ? "Read the code to Franz. Leave the laptop on until Google Drive says it is done."
                     : "Write the code on the stick's label.";
+                if (outcome.Damaged is { Count: > 0 } damaged)
+                {
+                    StatusText += $" {damaged.Count.ToString(CultureInfo.InvariantCulture)} older backup(s) on the stick are damaged — tell Franz.";
+                }
             }
             else
             {
@@ -162,10 +185,17 @@ public sealed partial class BackupViewModel(
         string.Equals(Path.TrimEndingDirectorySeparator(a), Path.TrimEndingDirectorySeparator(b), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Sticks, and the non-system disks a USB drive may show up as. The system drive is left out:
-    /// a backup on the same disk as the station is lost with it.
+    /// Whether a drive is offered: a stick, or a non-system disk a USB drive may show up as — never
+    /// the system disk or one holding the station or its scans (a backup there is lost with them),
+    /// and never Google Drive's mount, which would upload Jim's evidence by accident.
     /// </summary>
-    public static IReadOnlyList<BackupTarget> FindDrives()
+    public static bool Offered(string root, DriveType type, string label, string? systemRoot, IReadOnlyList<string> stationFolders) =>
+        type is DriveType.Removable or DriveType.Fixed
+        && !string.Equals(root, systemRoot, StringComparison.OrdinalIgnoreCase)
+        && !label.Contains("Google Drive", StringComparison.OrdinalIgnoreCase)
+        && !stationFolders.Any(f => string.Equals(Path.GetPathRoot(Path.GetFullPath(f)), root, StringComparison.OrdinalIgnoreCase));
+
+    public static IReadOnlyList<BackupTarget> FindDrives(IReadOnlyList<string> stationFolders)
     {
         var system = Path.GetPathRoot(Environment.SystemDirectory);
         var targets = new List<BackupTarget>();
@@ -173,11 +203,7 @@ public sealed partial class BackupViewModel(
         {
             try
             {
-                // Google Drive for desktop mounts as a fixed disk; a backup there would upload Jim's
-                // evidence by accident. The test copy for Franz goes to Drive on purpose, elsewhere.
-                if (!drive.IsReady || drive.DriveType is not (DriveType.Removable or DriveType.Fixed)
-                    || string.Equals(drive.RootDirectory.FullName, system, StringComparison.OrdinalIgnoreCase)
-                    || drive.VolumeLabel.Contains("Google Drive", StringComparison.OrdinalIgnoreCase))
+                if (!drive.IsReady || !Offered(drive.RootDirectory.FullName, drive.DriveType, drive.VolumeLabel, system, stationFolders))
                 {
                     continue;
                 }

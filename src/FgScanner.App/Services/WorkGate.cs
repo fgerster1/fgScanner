@@ -14,6 +14,19 @@ public sealed class WorkGate
     private TaskCompletionSource _released = Completed();
     private TaskCompletionSource? _drained;
 
+    /// <summary>A backup is waiting or holding. A reader already inside finishes what it owes (a
+    /// committed group's index) and stops claiming work, so the copy is not of a half-done state.</summary>
+    public bool HoldRequested
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _held;
+            }
+        }
+    }
+
     public async Task<IDisposable> EnterAsync(CancellationToken cancellationToken)
     {
         while (true)

@@ -50,7 +50,8 @@ public sealed class BackupServiceTests : IDisposable
 
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
-    private BackupService Service(WorkGate? gate = null) => new(Station, gate ?? new WorkGate());
+    private BackupService Service(WorkGate? gate = null, TimeSpan? holdTimeout = null) =>
+        new(Station, gate ?? new WorkGate(), holdTimeout);
 
     [Fact]
     public async Task A_backup_writes_a_checked_copy_and_records_it()
@@ -107,6 +108,66 @@ public sealed class BackupServiceTests : IDisposable
         var outcome = await Service().BackupAsync(Stick, whyNotNow: null, Token);
 
         Assert.Null(outcome.Problem);
+    }
+
+    /// <summary>Revision C CR-1: a reader that never lets go turns the backup into NOT OK, never a
+    /// window that cannot be closed.</summary>
+    [Fact]
+    public async Task A_reader_that_never_lets_go_is_NOT_OK_not_a_hang()
+    {
+        var gate = new WorkGate();
+        using var stuck = await gate.EnterAsync(Token);
+
+        var outcome = await Service(gate, TimeSpan.FromMilliseconds(200)).BackupAsync(Stick, null, Token)
+            .WaitAsync(TimeSpan.FromSeconds(10), Token);
+
+        Assert.Contains("reading", outcome.Problem);
+        Assert.False(gate.HoldRequested);
+    }
+
+    /// <summary>Revision C CR-2: whatever goes wrong is a NOT OK line, never a crash.</summary>
+    [Fact]
+    public async Task A_network_folder_is_refused_not_a_crash()
+    {
+        var outcome = await Service().BackupAsync(@"\\nas\share\FGScanner-Backup", null, Token);
+
+        Assert.Contains("on this computer", outcome.Problem);
+    }
+
+    [Fact]
+    public async Task A_second_backup_while_one_runs_is_refused_not_a_crash()
+    {
+        var gate = new WorkGate();
+        using var held = await gate.HoldAsync(Token);
+
+        var outcome = await Service(gate).BackupAsync(Stick, null, Token);
+
+        Assert.Contains("already", outcome.Problem);
+    }
+
+    /// <summary>Revision C CR-5: a page saved while the station was copied is in the database but
+    /// not the pack; a page whose image went missing long ago is not this backup's fault.</summary>
+    [Fact]
+    public async Task Pages_the_pack_lacks_refuse_only_when_the_file_is_there_now()
+    {
+        var outcome = await Service().BackupAsync(Stick, null, Token);
+        var packedDb = Path.Combine(outcome.Folder!, "fgscanner.db");
+        using (var db = new FgScannerDbContext(DbBootstrapper.BuildOptions(packedDb)))
+        {
+            var group = new Group { Name = "Dental", DirectoryPath = Path.Combine(Evidence, "Dental"), ProfileId = db.Profiles.Single().Id };
+            var lost = new Document { Group = group };
+            lost.Pages.Add(new Page { FileName = "scan_00009.jpg", Checksum = "x" });
+            db.Groups.Add(group);
+            db.Documents.Add(lost);
+            db.SaveChanges();
+        }
+
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        Assert.Null(StationFacts.PageMissingFromPack(outcome.Folder!, Evidence));
+
+        File.WriteAllText(Path.Combine(Evidence, "Dental", "scan_00009.jpg"), "saved mid-copy");
+
+        Assert.Contains("scan_00009.jpg", StationFacts.PageMissingFromPack(outcome.Folder!, Evidence));
     }
 
     [Fact]

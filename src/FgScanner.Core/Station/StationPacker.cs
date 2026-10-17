@@ -196,10 +196,13 @@ public sealed class StationPacker(
 
         // A pack inside a live folder would be packed into the next pack, and a sync client
         // watching it could carry a deletion back into the station (§03 C2).
+        // Links resolved first: a folder that is a junction into the evidence is inside it, whatever
+        // its name says (SPEC-SCANNER-2026-011 Revision C, SR-6).
         var destination = Path.GetFullPath(request.Destination);
+        var resolved = Resolved(destination);
         foreach (var live in new[] { request.StationRoot, source.EvidenceRoot })
         {
-            if (IsInside(destination, Path.GetFullPath(live)))
+            if (IsInside(destination, Path.GetFullPath(live)) || IsInside(resolved, Resolved(Path.GetFullPath(live))))
             {
                 return $"the pack destination is inside the station's own folders: {destination}";
             }
@@ -253,6 +256,24 @@ public sealed class StationPacker(
         var slash = rel.IndexOf('/', StringComparison.Ordinal);
         var root = rel[..slash] == StationManifest.TrashFolder ? source.Trash : source.EvidenceRoot;
         return Path.Combine(root, rel[(slash + 1)..].Replace('/', Path.DirectorySeparatorChar));
+    }
+
+    /// <summary>The path with every junction or symbolic link along it followed to its target.</summary>
+    private static string Resolved(string path, int depth = 0)
+    {
+        var tail = new Stack<string>();
+        for (var current = new DirectoryInfo(Path.GetFullPath(path)); current is not null; current = current.Parent)
+        {
+            if (depth < 16 && current.Exists && current.LinkTarget is not null
+                && current.ResolveLinkTarget(returnFinalTarget: true) is { } target)
+            {
+                return Path.Combine([Resolved(target.FullName, depth + 1), .. tail]);
+            }
+
+            tail.Push(current.Name);
+        }
+
+        return Path.GetFullPath(path);
     }
 
     private static bool IsInside(string path, string folder)

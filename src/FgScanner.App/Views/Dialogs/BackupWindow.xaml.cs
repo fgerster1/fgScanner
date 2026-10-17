@@ -36,7 +36,7 @@ public partial class BackupWindow : Window
         var dialog = new OpenFolderDialog { Title = "Choose the folder to back up to" };
         if (dialog.ShowDialog(this) == true)
         {
-            _viewModel.UseFolder(dialog.FolderName);
+            _ = _viewModel.UseFolder(dialog.FolderName);
         }
     }
 

@@ -329,6 +329,21 @@ public sealed class StationPackTests : IDisposable
         Assert.Empty(Directory.EnumerateFileSystemEntries(Transport));
     }
 
+    /// <summary>SPEC-SCANNER-2026-011 SR-6: a destination that is a junction into the evidence folder
+    /// would put the pack inside what the next pack carries.</summary>
+    [Fact]
+    public void A_destination_that_links_into_the_live_folders_is_refused()
+    {
+        var link = Path.Combine(_root, "stick-link");
+        StationManifestTests.Junction(link, Evidence);
+
+        var result = Packer().Pack(Request(destination: link, kind: "backup"));
+
+        Assert.Contains("inside the station's own folders", result.Problem);
+        Assert.Equal(["Dental"], Directory.GetDirectories(Evidence).Select(Path.GetFileName));
+        Directory.Delete(link);
+    }
+
     [Fact]
     public void A_refusal_leaves_nothing_behind()
     {

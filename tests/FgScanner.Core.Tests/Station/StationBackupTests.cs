@@ -107,6 +107,50 @@ public sealed class StationBackupTests : IDisposable
 
     /// <summary>A backup whose manifest is there but whose files are not is kept for Franz to look at,
     /// and not counted as one of the three.</summary>
+    /// <summary>Revision C CR-7: only a folder cut short before this backup began is cleared.</summary>
+    [Fact]
+    public void A_stranded_folder_newer_than_the_backup_is_left_alone()
+    {
+        var made = Backup().Run(Request(0)).Pack.PackFolder!;
+        var stranded = Path.Combine(Stick, "jim-2026-10-17-0905-backup");
+        Write(Path.Combine(stranded, "fgscanner.db"), "half");
+        Directory.SetCreationTimeUtc(stranded, Directory.GetCreationTimeUtc(made).AddHours(1));
+
+        Backup().Run(Request(1));
+
+        Assert.True(Directory.Exists(stranded));
+    }
+
+    /// <summary>Revision C CR-7: damaged backups are kept for Franz, and the result says they are there.</summary>
+    [Fact]
+    public void Damaged_backups_are_named_in_the_result()
+    {
+        var damaged = Backup().Run(Request(0)).Pack.PackFolder!;
+        File.Delete(Path.Combine(damaged, "evidence", "Dental", "scan_00001.jpg"));
+
+        var next = Backup().Run(Request(1));
+
+        Assert.Equal([damaged], next.Damaged);
+    }
+
+    /// <summary>Revision C CR-5: a page saved while the backup copied is in the database but not
+    /// in the pack. The check runs before old backups are cleared, so a refused one costs none.</summary>
+    [Fact]
+    public void A_backup_the_check_refuses_is_removed_and_costs_no_old_backup()
+    {
+        for (var i = 0; i < 3; i++)
+        {
+            Backup().Run(Request(i));
+        }
+
+        var refused = new StationBackup(new StationPacker(() => false, File.Copy, _ => _freeBytes), _ => "exFAT",
+            check: _ => "the station changed while it was copied — back up again").Run(Request(3));
+
+        Assert.Equal("the station changed while it was copied — back up again", refused.Pack.Problem);
+        Assert.Equal(["jim-2026-10-17-0900-backup", "jim-2026-10-17-0901-backup", "jim-2026-10-17-0902-backup"], Backups());
+        Assert.Equal(At.AddMinutes(2), LastBackupRecord.Read(Station)!.At);
+    }
+
     [Fact]
     public void A_damaged_backup_is_left_alone_and_not_counted()
     {
