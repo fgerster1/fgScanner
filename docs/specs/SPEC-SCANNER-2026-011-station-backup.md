@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Draft |
-| **Revision** | A |
+| **Status** | Approved |
+| **Revision** | B — 2026-10-17: Round A approved, every recommendation taken |
 | **Tier** | Feature |
 | **Author** | Claude, for Franz Gerster |
 | **Date** | 2026-10-17 |
@@ -126,7 +126,7 @@ button for every cycle after that.
 
 ## 05 · Questions for Franz
 
-Answered on the review page (Round A). Already answered on 2026-10-17 in the terminal:
+**Answered 2026-10-17 in Round A** (https://claude.ai/artifact/Qdunwnh6FxJBVM984KjiNj): every item (a) — Q1 newest 3 · Q2 left column · Q3 Last backup + update offer · Q4 offered, skippable · Q5 own workspace, relocated, TEST COPY · Q6 capture allowed in a test copy · Q7 no encryption; my calls C1–C5 agreed. Already answered on 2026-10-17 in the terminal:
 - **Timing** — P12 goes ahead now with the USB copy made by the existing script; this button
   ships in the first release after P12 (with the About button).
 - **Test copy** — the same backup, delivered through the shared Google Drive folder.
@@ -446,7 +446,7 @@ spare (physical); UAC on the spare in Prompt 9.
 
 | | |
 |---|---|
-| **Review round answered** | ☐ date: — |
-| **Franz approved** | ☐ date: |
+| **Review round answered** | ☑ 2026-10-17 — https://claude.ai/artifact/Qdunwnh6FxJBVM984KjiNj |
+| **Franz approved** | ☑ 2026-10-17 (Round A, verdict approve) |
 | **Built** | ☐ date: |
 | **Verified in production** | ☐ date: |
