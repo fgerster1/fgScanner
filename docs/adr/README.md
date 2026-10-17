@@ -23,3 +23,4 @@ Write the ADR in the same commit as the code that implements the decision.
 | [0016](0016-typed-names-and-undated.md) | Jim may type a missing person (a proposal, never a person); a page may be answered "undated" |
 | [0017](0017-station-packs.md) | Stations travel as verified, content-addressed packs; apply trusts nothing that arrives |
 | [0018](0018-updater-starts-the-installer-itself.md) | The updater starts the verified installer itself; every release is rehearsed as a pre-release |
+| [0019](0019-station-backup.md) | A backup is a whole station pack that never moves the round trip's baseline |

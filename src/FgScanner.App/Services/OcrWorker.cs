@@ -19,6 +19,7 @@ public sealed class OcrWorker : IDisposable
     private readonly ActiveGroupStore _activeGroup;
     private readonly AppSettingsService _settings;
     private readonly ReorderService _reorder;
+    private readonly WorkGate _gate;
     private readonly SemaphoreSlim _wake = new(0);
     private readonly CancellationTokenSource _stop = new();
     private Task? _loop;
@@ -30,7 +31,8 @@ public sealed class OcrWorker : IDisposable
         TrashService trash,
         ActiveGroupStore activeGroup,
         AppSettingsService settings,
-        ReorderService reorder)
+        ReorderService reorder,
+        WorkGate gate)
     {
         _queue = queue;
         _pipeline = pipeline;
@@ -39,6 +41,7 @@ public sealed class OcrWorker : IDisposable
         _activeGroup = activeGroup;
         _settings = settings;
         _reorder = reorder;
+        _gate = gate;
         queue.JobsEnqueued += () => _wake.Release();
     }
 
@@ -57,16 +60,23 @@ public sealed class OcrWorker : IDisposable
             try
             {
                 var touchedGroups = new HashSet<Guid>();
-                while (await _queue.ClaimNextAsync(_stop.Token) is { } job)
-                {
-                    await ProcessAsync(job);
-                    touchedGroups.Add(job.GroupId);
-                }
-
-                foreach (var groupId in touchedGroups)
-                {
-                    await _indexing.ReexportIfCommittedAsync(groupId, _stop.Token);
-                }
+                // A backup waits for the page in hand and the re-export after it (GatedBatch).
+                await GatedBatch.RunAsync(
+                    _gate,
+                    _queue.ClaimNextAsync,
+                    async job =>
+                    {
+                        await ProcessAsync(job);
+                        touchedGroups.Add(job.GroupId);
+                    },
+                    async () =>
+                    {
+                        foreach (var groupId in touchedGroups)
+                        {
+                            await _indexing.ReexportIfCommittedAsync(groupId, _stop.Token);
+                        }
+                    },
+                    _stop.Token);
 
                 if (touchedGroups.Count > 0)
                 {

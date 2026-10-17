@@ -595,10 +595,25 @@ public static class CliRunner
         {
             toOption, basedOnOption, kindOption, stationOption, evidenceOption, byOption,
         };
-        pack.SetAction(parseResult => HoldingTheStation(() => PackStation(
+        pack.SetAction(parseResult => parseResult.GetValue(kindOption) == StationPacker.BackupKind
+            ? UsageError("--kind is send or return; a backup is `station backup`.")
+            : HoldingTheStation(() => PackStation(
             parseResult.GetValue(toOption)!, parseResult.GetValue(basedOnOption), parseResult.GetValue(kindOption)!,
             parseResult.GetValue(stationOption), parseResult.GetValue(evidenceOption),
             parseResult.GetValue(byOption) ?? Environment.UserName, overrides)));
+
+        var backupToOption = new Option<string>("--to") { Description = "The folder on the USB stick; the backup becomes a new folder inside it.", Required = true };
+        var keepOption = new Option<int>("--keep") { Description = "How many of this station's backups stay in that folder.", DefaultValueFactory = _ => StationBackup.DefaultKeep };
+        var backupStationOption = new Option<string?>("--station") { Description = "Name on the backup folder (default: the workspace's, else this computer's)." };
+        var backupEvidenceOption = new Option<string?>("--evidence") { Description = "The evidence folder (default: the one the profiles name)." };
+        var backup = new Command("backup", "Copy this whole station to a folder (a USB stick) and check the copy; prints OK and its code.")
+        {
+            backupToOption, keepOption, backupStationOption, backupEvidenceOption,
+        };
+        backup.SetAction(parseResult => HoldingTheStation(() => PackStation(
+            parseResult.GetValue(backupToOption)!, null, StationPacker.BackupKind,
+            parseResult.GetValue(backupStationOption), parseResult.GetValue(backupEvidenceOption),
+            Environment.UserName, overrides, parseResult.GetValue(keepOption))));
 
         var applyArgument = new Argument<string?>("pack-folder")
         {
@@ -608,17 +623,20 @@ public static class CliRunner
         var undoOption = new Option<bool>("--undo") { Description = "Put the station back as it was before the last apply." };
         var applyEvidenceOption = new Option<string?>("--evidence") { Description = "The evidence folder (default: the one the profiles name; required for an empty station). Undo uses the folder the last apply used." };
         var expectCodeOption = new Option<string?>("--expect-code") { Description = "The code the operator confirmed; the pack must still have it." };
+        var testCopyOption = new Option<bool>("--test-copy") { Description = "Open a whole backup into an empty workspace with its scans in the --evidence folder; it can never be sent or returned." };
+        var restoreOption = new Option<bool>("--restore") { Description = "Rebuild a lost station from its own backup: only a backup, only into an empty station; its settings come back, except any that run a command." };
         var apply = new Command("apply", "Install a pack into this station; prints OK and the code to read out.")
         {
-            applyArgument, undoOption, applyEvidenceOption, expectCodeOption,
+            applyArgument, undoOption, applyEvidenceOption, expectCodeOption, testCopyOption, restoreOption,
         };
         apply.SetAction(parseResult => HoldingTheStation(
             () => ApplyStation(
                 parseResult.GetValue(applyArgument), parseResult.GetValue(undoOption),
-                parseResult.GetValue(applyEvidenceOption), parseResult.GetValue(expectCodeOption), overrides),
+                parseResult.GetValue(applyEvidenceOption), parseResult.GetValue(expectCodeOption), overrides,
+                parseResult.GetValue(testCopyOption), parseResult.GetValue(restoreOption)),
             (overrides?.StationRoot is { } stationRoot ? StationPaths.Resolve(stationRoot) : StationPaths.Default).Root));
 
-        return new Command("station", "Move a whole station between machines as verified packs.") { verify, pack, apply };
+        return new Command("station", "Move a whole station between machines as verified packs.") { verify, pack, backup, apply };
     }
 
     private static readonly SqliteStationDatabase StationDatabase = new();
@@ -651,7 +669,9 @@ public static class CliRunner
             : null;
     }
 
-    private static int ApplyStation(string? packFolder, bool undo, string? evidence, string? expectCode, CliOverrides? overrides)
+    private static int ApplyStation(
+        string? packFolder, bool undo, string? evidence, string? expectCode, CliOverrides? overrides, bool testCopy = false,
+        bool restore = false)
     {
         var paths = overrides?.StationRoot is { } root ? StationPaths.Resolve(root) : StationPaths.Default;
         var stationRoot = paths.Root;
@@ -671,7 +691,29 @@ public static class CliRunner
         }
 
         StationApplyResult result;
-        if (undo)
+        if (testCopy)
+        {
+            if (packFolder is null || evidence is null || undo)
+            {
+                Console.WriteLine("NOT OK — a test copy needs the backup folder and --evidence <an empty folder for its scans>");
+                return 1;
+            }
+
+            List<string> others;
+            try
+            {
+                others = OtherEvidenceRoots(stationRoot);
+            }
+            catch (InvalidDataException ex)
+            {
+                Console.WriteLine($"NOT OK — {ex.Message}");
+                return 1;
+            }
+
+            result = new TestCopyOpener(StationDatabase).Open(
+                packFolder, stationRoot, evidence, DateTimeOffset.Now, others, expectCode);
+        }
+        else if (undo)
         {
             result = applier.Undo(stationRoot);
         }
@@ -695,7 +737,8 @@ public static class CliRunner
                     migrations.Database.GetMigrations().Last(),
                     DateTimeOffset.Now,
                     File.Exists(database) ? StationFacts.Read(database).LastMigration : null,
-                    expectCode));
+                    expectCode,
+                    restore));
             }
             finally
             {
@@ -714,6 +757,20 @@ public static class CliRunner
         }
 
         return result.Problem is null ? 0 : result.StillArriving ? 3 : 1;
+    }
+
+    /// <summary>
+    /// The evidence folders of this PC's other stations: the default one and every
+    /// <c>%APPDATA%\FGScanner*</c> workspace beside it. A test copy's scans must stay out of all of
+    /// them, whatever the pack says its own folder is (SPEC-SCANNER-2026-011 Revision C, SR-3).
+    /// </summary>
+    /// <exception cref="InvalidDataException">A station beside it cannot be read (Revision D, RR-4).</exception>
+    private static List<string> OtherEvidenceRoots(string stationRoot)
+    {
+        // Beside the workspace, and beside the default station, which may be somewhere else.
+        var roots = StationFacts.EvidenceRootsBeside(stationRoot);
+        roots.AddRange(StationFacts.EvidenceRootsBeside(stationRoot, Path.GetDirectoryName(StationPaths.Default.Root)));
+        return roots;
     }
 
     /// <summary>A share, a network drive or a device path (UNC, <c>\\?\</c>, <c>\\.\</c>), judged after
@@ -771,9 +828,11 @@ public static class CliRunner
             or System.Text.Json.JsonException or InvalidOperationException;
 
     private static int PackStation(
-        string to, string? basedOn, string kind, string? stationName, string? evidence, string by, CliOverrides? overrides)
+        string to, string? basedOn, string kind, string? stationName, string? evidence, string by, CliOverrides? overrides,
+        int keep = StationBackup.DefaultKeep)
     {
-        if (kind is not ("send" or "return"))
+        // A backup comes only through its own verb, which also clears old backups away.
+        if (kind is not ("send" or "return" or StationPacker.BackupKind))
         {
             Console.Error.WriteLine($"--kind is send or return, not \"{kind}\".");
             return 2;
@@ -798,7 +857,7 @@ public static class CliRunner
             return 1;
         }
 
-        evidence ??= facts.BaseDirectories.Count == 1 ? facts.BaseDirectories[0] : null;
+        evidence = facts.EvidenceRoot(evidence);
         if (evidence is null)
         {
             Console.WriteLine("NOT OK — say which folder holds the evidence: --evidence <folder>");
@@ -813,10 +872,7 @@ public static class CliRunner
 
         // A group outside the evidence folder would not travel, and the other side's database
         // would point at a folder that is not there.
-        var evidenceRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(evidence)) + Path.DirectorySeparatorChar;
-        var outside = facts.GroupDirectories.FirstOrDefault(d =>
-            !(Path.TrimEndingDirectorySeparator(Path.GetFullPath(d)) + Path.DirectorySeparatorChar)
-                .StartsWith(evidenceRoot, StringComparison.OrdinalIgnoreCase));
+        var outside = facts.GroupOutside(evidence);
         if (outside is not null)
         {
             Console.WriteLine($"NOT OK — a group lives outside the evidence folder {evidence}: {outside}");
@@ -845,7 +901,7 @@ public static class CliRunner
 
         var packer = new StationPacker(
             isAppOpen: () => false,
-            copyDatabase: BackUpDatabase,
+            copyDatabase: StationFacts.CopyDatabase,
             freeBytes: folder => new DriveInfo(Path.GetPathRoot(Path.GetFullPath(folder))!).AvailableFreeSpace);
         var request = new StationPackRequest(
             new StationSource(
@@ -873,10 +929,19 @@ public static class CliRunner
             ]);
 
         StationPackResult result;
+        IReadOnlyList<string> removed = [];
         KeepAwake(true);
         try
         {
-            result = packer.Pack(request);
+            if (kind == StationPacker.BackupKind)
+            {
+                var backup = new StationBackup(packer, DriveFormatOf).Run(request, keep);
+                (result, removed) = (backup.Pack, backup.Removed);
+            }
+            else
+            {
+                result = packer.Pack(request);
+            }
         }
         finally
         {
@@ -894,27 +959,29 @@ public static class CliRunner
         Console.WriteLine(StationManifestVerifier.Summary(new StationVerifyResult(
             StationVerifyStatus.Ok, result.Code, result.ShippedFiles + 1, packedBytes, [])));
         Console.WriteLine(result.PackFolder);
+        foreach (var old in removed)
+        {
+            Console.WriteLine($"removed the older backup {old}");
+        }
+
         return 0;
     }
 
-    /// <summary>SQLite's backup API: a consistent copy even of a database another reader has open.</summary>
-    private static void BackUpDatabase(string from, string to)
+    private static int UsageError(string message)
     {
-        using (var source = new SqliteConnection(new SqliteConnectionStringBuilder
+        Console.Error.WriteLine(message);
+        return 2;
+    }
+
+    private static string? DriveFormatOf(string folder)
+    {
+        try
         {
-            DataSource = from,
-            Mode = SqliteOpenMode.ReadOnly,
-            Pooling = false,
-        }.ToString()))
-        using (var target = new SqliteConnection(new SqliteConnectionStringBuilder
+            return new DriveInfo(Path.GetPathRoot(Path.GetFullPath(folder))!).DriveFormat;
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
         {
-            DataSource = to,
-            Pooling = false,
-        }.ToString()))
-        {
-            source.Open();
-            target.Open();
-            source.BackupDatabase(target);
+            return null;
         }
     }
 
@@ -923,48 +990,6 @@ public static class CliRunner
         _ = NativeMethods.SetThreadExecutionState(on
             ? NativeMethods.EsContinuous | NativeMethods.EsSystemRequired
             : NativeMethods.EsContinuous);
-
-    /// <summary>What packing needs from the database, read without migrating it: pack must never
-    /// change the station it is backing up.</summary>
-    private sealed record StationFacts(
-        string? LastMigration,
-        int PendingReadingJobs,
-        IReadOnlyList<string> BaseDirectories,
-        IReadOnlyList<string> GroupDirectories)
-    {
-        public static StationFacts Read(string database)
-        {
-            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
-            {
-                DataSource = database,
-                Mode = SqliteOpenMode.ReadOnly,
-                Pooling = false,
-            }.ToString());
-            connection.Open();
-            return new StationFacts(
-                Strings(connection, "SELECT MigrationId FROM __EFMigrationsHistory ORDER BY MigrationId DESC LIMIT 1")
-                    .FirstOrDefault(),
-                // JobType.Ocr = 0; JobState Pending = 0, InFlight = 1 (stored as integers).
-                int.Parse(Strings(connection, "SELECT count(*) FROM Jobs WHERE Type = 0 AND State IN (0, 1)")[0],
-                    CultureInfo.InvariantCulture),
-                Strings(connection, "SELECT DISTINCT BaseDirectory FROM Profiles WHERE BaseDirectory <> ''"),
-                Strings(connection, "SELECT DirectoryPath FROM Groups"));
-        }
-
-        private static List<string> Strings(SqliteConnection connection, string sql)
-        {
-            using var command = connection.CreateCommand();
-            command.CommandText = sql;
-            using var reader = command.ExecuteReader();
-            var values = new List<string>();
-            while (reader.Read())
-            {
-                values.Add(Convert.ToString(reader.GetValue(0), CultureInfo.InvariantCulture)!);
-            }
-
-            return values;
-        }
-    }
 
     private static ScanDriver ParseDriver(string value) => value.ToUpperInvariant() switch
     {

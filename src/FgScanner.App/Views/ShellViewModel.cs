@@ -33,10 +33,18 @@ public sealed partial class ShellViewModel : ObservableObject
                 ExtractDirectory = station.IndexPackages,
             };
 
-        WindowTitle = station?.Name is { } name ? $"FG Scanner — station {name}" : "FG Scanner";
+        // A test copy may be scanned into (SPEC-SCANNER-2026-011 Q6), so it must never be mistaken
+        // for Jim's round-trip workspace.
+        WindowTitle = station?.Name is not { } name
+            ? "FG Scanner"
+            : FgScanner.Core.Station.TestCopyMarker.Read(station.Root) is { } copy
+                ? $"FG Scanner — TEST COPY of {copy.From} — station {name}"
+                : $"FG Scanner — station {name}";
 
         var version = typeof(ShellViewModel).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
         VersionText = $"Version {version}";
+        _station = station;
+        RefreshLastBackup();
         AboutText = station is null
             ? $"FG Scanner {version}"
             : $"FG Scanner {version}\n\nData folder:\n{station.Root}";
@@ -262,6 +270,29 @@ public sealed partial class ShellViewModel : ObservableObject
     public string VersionText { get; }
 
     public string AboutText { get; }
+
+    private readonly FgScanner.Core.Station.StationPaths? _station;
+
+    /// <summary>Under the Back up button (SPEC-SCANNER-2026-011 AC-9). Read from the station's own
+    /// record, so it shows with the stick unplugged; a station that never backed up says so.</summary>
+    [ObservableProperty]
+    private string _lastBackupText = "";
+
+    public void RefreshLastBackup() =>
+        LastBackupText = _station is null
+            ? ""
+            : FgScanner.Core.Station.LastBackupRecord.Read(_station.Root) is { } last
+                ? $"Last backup: {last.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture)}"
+                : "Last backup: never";
+
+    /// <summary>Why a backup cannot start now: paper in hand, or pages on the Scan page not yet in a
+    /// group. Either would be missing from the copy, or change under it.</summary>
+    public string? BackupBlockedReason =>
+        ScanViewModel.CaptureInHand
+            ? "a sheet is being scanned or is half done — finish or cancel it first"
+            : ScanViewModel.Pages.Count > 0
+                ? "the Scan page has pages not yet saved — save or discard them first"
+                : null;
 
     public TrashViewModel TrashViewModel { get; }
 

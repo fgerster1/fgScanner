@@ -181,12 +181,60 @@ public sealed class SqliteStationDatabaseTests : IDisposable
         Assert.StartsWith(Path.Combine(_root, "franz", "trash"), Scalar(incoming, "SELECT TrashFolderPath FROM TrashItems LIMIT 1"));
     }
 
+    /// <summary>SPEC-SCANNER-2026-011 Revision C, CR-3 (Franz): a restore from Jim's own backup keeps
+    /// his settings — keep-originals and his mail choice among them — but never one that runs a
+    /// command or calls out.</summary>
+    [Fact]
+    public void A_restore_keeps_the_backups_settings_except_the_ones_that_run_or_call_out()
+    {
+        var incoming = Fixture("current");
+        Execute(incoming, "INSERT OR REPLACE INTO Settings (Key, Value) VALUES ('Feature.PreserveOriginals', 'true')");
+        Execute(incoming, "INSERT OR REPLACE INTO Settings (Key, Value) VALUES ('Email.SendWith', 'Yahoo')");
+        Execute(incoming, "INSERT OR REPLACE INTO Settings (Key, Value) VALUES ('Hook.CommandLine', 'powershell -c evil')");
+        Execute(incoming, "INSERT OR REPLACE INTO Settings (Key, Value) VALUES ('hook.WebhookUrl', 'https://attacker')");
+
+        _database.BindToStation(incoming, null, Path.Combine(_root, "jim", "trash"), restore: true);
+
+        Assert.Equal("true", Scalar(incoming, "SELECT Value FROM Settings WHERE Key = 'Feature.PreserveOriginals'"));
+        Assert.Equal("Yahoo", Scalar(incoming, "SELECT Value FROM Settings WHERE Key = 'Email.SendWith'"));
+        Assert.Equal("0", Scalar(incoming, "SELECT count(*) FROM Settings WHERE lower(substr(Key, 1, 5)) = 'hook.'"));
+    }
+
+    /// <summary>SPEC-SCANNER-2026-011 Revision D, RR-4: the evidence folders of the stations beside a
+    /// workspace; one that cannot be read refuses rather than leaving its folder unguarded.</summary>
+    [Fact]
+    public void The_stations_beside_a_workspace_name_their_evidence_folders()
+    {
+        var appData = Directory.CreateDirectory(Path.Combine(_root, "AppData")).FullName;
+        var jim = Directory.CreateDirectory(Path.Combine(appData, "FGScanner.jim-workspace")).FullName;
+        var db = Fixture("current");
+        Execute(db, $"UPDATE Profiles SET BaseDirectory = '{Path.Combine(_root, "Evidence-Scans")}'");
+        File.Copy(db, Path.Combine(jim, "fgscanner.db"));
+        Directory.CreateDirectory(Path.Combine(appData, "FGScanner.test-new"));
+
+        var roots = StationFacts.EvidenceRootsBeside(Path.Combine(appData, "FGScanner.test-new"));
+
+        Assert.Contains(Path.Combine(_root, "Evidence-Scans"), roots);
+
+        File.WriteAllText(Path.Combine(Directory.CreateDirectory(Path.Combine(appData, "FGScanner.broken")).FullName, "fgscanner.db"), "not a database");
+        var ex = Assert.Throws<InvalidDataException>(() => StationFacts.EvidenceRootsBeside(Path.Combine(appData, "FGScanner.test-new")));
+        Assert.Contains("FGScanner.broken", ex.Message);
+    }
+
     /// <summary>Revision D, P10-2: a path in the arriving database decides where future scans and
     /// exports are written; one outside the evidence folder, or on a share, refuses the update.</summary>
     [Theory]
     [InlineData("UPDATE Profiles SET BaseDirectory = '\\\\attacker@SSL\\x'", "Profiles.BaseDirectory")]
     [InlineData("UPDATE Groups SET DirectoryPath = 'C:\\Users\\Jim\\Startup'", "Groups.DirectoryPath")]
     [InlineData("UPDATE TrashItems SET GroupDirectoryPath = 'D:\\elsewhere'", "TrashItems.GroupDirectoryPath")]
+    // SPEC-SCANNER-2026-011 Revision C, SR-7: a file name is joined to its group's folder, so one
+    // that climbs out or carries a drive reaches any file on the machine.
+    [InlineData("UPDATE Pages SET FileName = '..\\..\\Users\\fgers\\Documents\\x.jpg'", "Pages.FileName")]
+    [InlineData("UPDATE Pages SET FileName = 'C:\\Windows\\win.ini'", "Pages.FileName")]
+    [InlineData("UPDATE Pages SET FileName = '.. \\.. \\Users\\x.jpg'", "Pages.FileName")]
+    [InlineData("UPDATE Pages SET FileName = '...\\x.jpg'", "Pages.FileName")]
+    [InlineData("UPDATE TrashItems SET FilesJson = '[\"..\\\\..\\\\x.jpg\"]'", "TrashItems.FilesJson")]
+    [InlineData("UPDATE TrashItems SET PayloadJson = '{\"pages\":[{\"fileName\":\"..\\\\x.jpg\"}]}'", "TrashItems.PayloadJson")]
     public void A_path_outside_the_evidence_folder_is_named(string sql, string column)
     {
         var db = Fixture("current");
