@@ -33,6 +33,15 @@ is never edited — a refused one is made again.
 
 ## Cycle 1 (Jim on 0.5.4)
 
+0. **[Jim]** Plug in the USB stick (at least 3 GB free; the pack is about 1.6 GB). **[Franz]** On
+   "give control" create `<stick>:\FGScanner-Backup` and run
+   `Send-ToFranz-0.5.4.ps1 -To "<stick>:\FGScanner-Backup"` — **before** step 1, never after:
+   each run records itself as the copy Franz's update is checked against, so the Drive run must
+   be the last. It ends with `OK xxxx-xxxx` (ignore its Google Drive wording); write that code on
+   the stick's label. This copy stays with Jim, so an update can never lose his work even if
+   Drive and Franz's PC both fail. Once he is on 0.8.1, `cli\fgscanner.exe station verify
+   <stick>:\FGScanner-Backup\<pack>` checks it at any time. Rehearsed on the spare 2026-10-17 on
+   a copy of his 9/25 station: both copies verify, and the freeze record names the Drive copy.
 1. **[Franz]** Copy `build/station/Send-ToFranz-0.5.4.ps1` to Jim's desktop; on "give control"
    run it with `-To "G:\My Drive\FGScanner-Jim\to-franz"`. It says
    `OK xxxx-xxxx - leave the laptop on until Google Drive says it's done`. Jim reads the code out.
