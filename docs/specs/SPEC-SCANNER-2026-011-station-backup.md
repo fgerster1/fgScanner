@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Approved |
-| **Revision** | B — 2026-10-17: Round A approved, every recommendation taken |
+| **Revision** | C — 2026-10-17: the Prompt 7/8 reviews' 13 findings (no open items; restore keeps Settings minus commands, Franz) · B — 2026-10-17: Round A approved, every recommendation taken |
 | **Tier** | Feature |
 | **Author** | Claude, for Franz Gerster |
 | **Date** | 2026-10-17 |
@@ -166,6 +166,35 @@ button for every cycle after that.
    backup waits for the current page to finish, holds new jobs, and releases them after.
 3. A test copy brings Jim's Settings with it — *proceeding as if:* no; an empty station takes no
    Settings (SPEC-010 rule), so the test copy uses Franz's defaults.
+
+**Revision C — the Prompt 7/8 reviews** (2026-10-17)
+
+`/code-review` (cold subagent) and a security review (cold subagent) over `origin/main..a2cdd82`,
+plus the automated commit review on P5. Every finding was checked at its line. All hold. One went
+to Franz (restore and Settings, answered in the terminal 2026-10-17: **keep the backup's Settings
+except any that runs a command**); every other one is a bug against this spec or SPEC-010.
+
+| # | Finding (file:line) | Kind | Fix | Prompt |
+|---|---|---|---|---|
+| CR-1 | `AiWorker.cs:106` a failed claim leaks a gate pass; the next backup hangs, readers stop | bug against §08 (WorkGate) | one pass per drain cycle, disposed on every path; hold with a timeout → NOT OK | 7a |
+| CR-2 | `BackupService.cs:117`, `BackupViewModel.cs` RunAsync: non-IO exceptions (UNC `DriveInfo`, SqliteException, gate held) crash the app | bug against §14 / AC-4 | catch all in the service, log, NOT OK; refuse UNC/network targets | 7a |
+| CR-3 | restore = apply into empty station drops all Settings (PreserveOriginals OFF, Yahoo, …) | **spec wrong** (§03 item 8) — Franz: (a) | `station apply --restore`: a `*-backup` pack into an empty station keeps its Settings except `Hook.*` | 7c |
+| CR-4 / SR-2 / auto | `TestCopyOpener.cs:105-125` marker written last; failure leaves an unmarked station; placed files not cleaned | bug against §13, Q6 | marker first; on failure remove the database and every placed file; post-place hash check | 7b |
+| CR-5 | group import/commit/export in flight is not blocked; a backup can name files it lacks | bug against §16 #2 | long group operations enter the WorkGate; the backup waits for them | 7a |
+| CR-6 | `OcrWorker.cs:65`, `AiWorker.cs`: a hold between jobs leaves a committed group's `index.json` stale | bug against §16 #3 | a worker that sees a hold requested stops claiming, re-exports inside its pass, then yields | 7a |
+| CR-7 | `Backup.Keep` never read; stranded folders deleted regardless of age; damaged backups never reported; evidence drive offered | bug against §07, AC-3, §08 | read `Backup.Keep`; delete only stranded folders older than the new backup; result names damaged backups; leave out the drives holding the station and evidence | 7a |
+| SR-1 / auto | `TestCopyOpener.cs:75-112` `--evidence` equal to / around the workspace lets a pack plant `fgscanner.db(-wal)` | bug against §13 | refuse overlap with the workspace (both ways); refuse WAL/SHM present; a placed file may never land on a station file name | 7b |
+| SR-3 | `TestCopyOpener.cs:80` trusts `manifest.EvidenceRoot` as text; a test copy can land inside the round-trip workspace's evidence | bug against Q6 | also refuse targets inside/around any evidence folder named by this PC's stations (`%APPDATA%\FGScanner*`) | 7b |
+| SR-4 | `StationPacker.cs:173` a backup from a test copy carries no marker; restored, it can send | bug against Q6 | a test copy packs nothing, backups included | 7b |
+| SR-5 | `CliRunner.cs` `--test-copy` ignores `--expect-code` | bug against SPEC-010 D3 | same refusal as apply | 7b |
+| SR-6 | `StationPacker.IsInside` text-only; Browse accepts UNC, Drive, junctions | bug against §12 | resolve link targets before the inside check; Browse refuses network and Google Drive | 7a |
+| SR-7 | `Pages.FileName`, `TrashItems.FilesJson`/`PayloadJson` from an untrusted database never checked (pre-existing, SPEC-010) | bug against SPEC-010 §13 (everything in a pack is untrusted) | `PathOutside` refuses a file name that is rooted, has a drive, or a `..` segment | 7b |
+
+**My calls:** the fixes above. **Open:** none (CR-3 answered).
+New ACs: AC-11 a stuck reader turns a backup into NOT OK within the timeout, never a hang (CR-1);
+AC-12 a restore keeps PreserveOriginals and Email.SendWith and drops `Hook.*` (CR-3);
+AC-13 a crafted pack cannot place a file on a station file name, nor a page file name outside its
+group (SR-1, SR-7).
 
 ## 06 · Assumptions
 

@@ -184,6 +184,29 @@ Checkpoint: every AC green in the Run log; the Latest still 0.5.4 (or whatever P
 
 ---
 
+**Revision C fix prompts** (spec §05 Revision C, 2026-10-17; no decline; CR-3 decided by Franz).
+
+PROMPT 7a — The backup in the running app (CR-1, CR-2, CR-5, CR-6, CR-7, SR-6)
+Franz stop: none. Opens with failing tests: a claim that throws leaves the gate free; a hold
+times out to NOT OK; a UNC target and a thrown SqliteException are NOT OK, not a crash; a group
+operation holds the gate; a worker re-exports before yielding; `Backup.Keep` read; a stranded
+folder newer than the backup is kept; damaged backups named; the station's own drives not offered;
+a junction target into the evidence folder refused.
+
+PROMPT 7b — The test copy and untrusted names (CR-4, SR-1, SR-2, SR-3, SR-4, SR-5, SR-7)
+Franz stop: none. Failing tests first: `--evidence` = workspace / parent refused; WAL present
+refused; a pack file named `fgscanner.db` never lands on the station's; failure leaves no database
+and no placed file; marker written before anything lands; target inside another station's evidence
+refused; a test copy refuses backup too; `--expect-code` mismatch refused; `Pages.FileName` with
+`..` refused by apply.
+
+PROMPT 7c — Restore keeps Settings minus commands (CR-3)
+Franz stop: none. Failing test first: `station apply --restore <backup>` into an empty station
+keeps `Feature.PreserveOriginals` and `Email.SendWith`, drops `Hook.*`; `--restore` refuses a
+pack that is not a `*-backup` and a station that is not empty. Docs: the restore steps use it.
+
+---
+
 ## Run log
 
 | Prompt | Date | Result |
