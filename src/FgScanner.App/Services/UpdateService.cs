@@ -14,7 +14,13 @@ namespace FgScanner.App.Services;
 /// <see cref="UpdateInstaller"/> runs the Inno installer /VERYSILENT /NORESTART. Strict Ed25519
 /// verification: an unsigned appcast is never accepted.
 /// </summary>
-public sealed class UpdateService(AppSettingsService settings, Func<bool> captureInHand) : IDisposable
+/// <param name="lastBackup">The station's last backup, named in the offer (SPEC-SCANNER-2026-011).</param>
+/// <param name="backUp">Opens the Back up window on the UI thread; true when it ended with OK.</param>
+public sealed class UpdateService(
+    AppSettingsService settings,
+    Func<bool> captureInHand,
+    Func<FgScanner.Core.Station.LastBackupRecord?>? lastBackup = null,
+    Func<bool>? backUp = null) : IDisposable
 {
     public const string NoUpdatePromptKey = "Update.NoUpdatePrompt";
     public const string AppcastUrl =
@@ -70,13 +76,19 @@ public sealed class UpdateService(AppSettingsService settings, Func<bool> captur
 
             var latest = updates.Updates[0];
             var answer = System.Windows.MessageBox.Show(
-                $"FG Scanner {latest.Version} is available (you have {typeof(App).Assembly.GetName().Version?.ToString(3)}).\n\n" +
-                "Download and install now? The app closes briefly during the update.",
+                UpdateOffer.Text(latest.Version ?? "?", typeof(App).Assembly.GetName().Version?.ToString(3) ?? "?", lastBackup?.Invoke()),
                 "FG Scanner update",
-                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxButton.YesNoCancel,
                 System.Windows.MessageBoxImage.Information);
-            if (answer != System.Windows.MessageBoxResult.Yes)
+            var choice = answer switch
             {
+                System.Windows.MessageBoxResult.Yes => UpdateChoice.BackUpFirst,
+                System.Windows.MessageBoxResult.No => UpdateChoice.InstallNow,
+                _ => UpdateChoice.Later,
+            };
+            if (!UpdateOffer.InstallAfter(choice, () => backUp is not null && Application.Current.Dispatcher.Invoke(backUp)))
+            {
+                Log.Information("Update {Version} not installed now ({Choice})", latest.Version, choice);
                 return;
             }
 

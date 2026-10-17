@@ -10,13 +10,15 @@ public partial class ShellWindow : Window
 {
     private readonly ShellViewModel _viewModel;
     private readonly AppSettingsService _settings;
+    private readonly FgScanner.App.Services.BackupService _backup;
     private readonly Dictionary<string, FrameworkElement> _sections;
 
-    public ShellWindow(ShellViewModel viewModel, AppSettingsService settings)
+    public ShellWindow(ShellViewModel viewModel, AppSettingsService settings, FgScanner.App.Services.BackupService backup)
     {
         InitializeComponent();
         _viewModel = viewModel;
         _settings = settings;
+        _backup = backup;
         DataContext = viewModel;
         _sections = new Dictionary<string, FrameworkElement>
         {
@@ -56,6 +58,18 @@ public partial class ShellWindow : Window
         Top = bounds.Top;
         Width = bounds.Width;
         Height = bounds.Height;
+    }
+
+    private void OnBackupClick(object sender, RoutedEventArgs e) => ShowBackup();
+
+    /// <summary>The Back up window over this one; true when it ended with a backup that checked
+    /// out. The update offer's "back up first" comes through here too.</summary>
+    public bool ShowBackup()
+    {
+        var succeeded = Dialogs.BackupWindow.Show(this, new BackupViewModel(
+            _backup, _settings, () => _viewModel.BackupBlockedReason, BackupViewModel.FindDrives));
+        _viewModel.RefreshLastBackup();
+        return succeeded;
     }
 
     private void OnAboutClick(object sender, RoutedEventArgs e) =>
