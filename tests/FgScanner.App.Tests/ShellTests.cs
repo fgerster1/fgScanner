@@ -269,6 +269,20 @@ public sealed class ShellTests : IDisposable
         Assert.Equal($"Last backup: {at.ToLocalTime():yyyy-MM-dd HH:mm}", shell.LastBackupText);
     }
 
+    /// <summary>SPEC-SCANNER-2026-011 Q6: Franz may scan into a test copy, so the title must say
+    /// plainly that it is one and not Jim's round-trip workspace.</summary>
+    [Fact]
+    public void A_test_copy_says_so_in_the_title()
+    {
+        var station = FgScanner.Core.Station.StationPaths.Resolve(Path.Combine(_root, "station-jim-test"));
+        Directory.CreateDirectory(station.Root);
+        FgScanner.Core.Station.TestCopyMarker.Write(station.Root, new("jim-2026-10-17-0900-backup", "ab12-cd34", @"C:\Evidence-Scans-test", DateTimeOffset.Now));
+
+        var shell = CreateStationShell(station);
+
+        Assert.Equal("FG Scanner — TEST COPY of jim-2026-10-17-0900-backup — station station-jim-test", shell.WindowTitle);
+    }
+
     [Fact]
     public async Task A_backup_is_refused_while_the_Scan_page_holds_unsaved_pages()
     {

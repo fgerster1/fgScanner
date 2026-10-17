@@ -30,6 +30,8 @@
                        AutomationProperties.Name="Result" Margin="0,0,0,12" />
         </StackPanel>
         <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Send a _test copy to Franz" MinWidth="90" Margin="0,0,18,0" Command="{Binding SendTestCopyCommand}"
+                    ToolTip="The same checked copy, to Franz's shared Google Drive folder, so he can test with your work." />
             <Button Content="Back _up" IsDefault="True" MinWidth="90" Margin="0,0,6,0" Command="{Binding BackupCommand}" />
             <Button x:Name="CloseButton" Content="Close" IsCancel="True" MinWidth="80"
                     IsEnabled="{Binding IsIdle}" />

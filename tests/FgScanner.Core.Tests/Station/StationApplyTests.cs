@@ -615,5 +615,9 @@ public sealed class StationApplyTests : IDisposable
         }
 
         public bool IntegrityOk(string database) => !File.ReadAllText(database).Contains("corrupt");
+
+        public void RerootEvidence(string database, string fromRoot, string toRoot) =>
+            File.WriteAllLines(database, File.ReadAllLines(database).Select(l =>
+                l.StartsWith("path:" + fromRoot, StringComparison.OrdinalIgnoreCase) ? "path:" + toRoot + l[("path:" + fromRoot).Length..] : l));
     }
 }

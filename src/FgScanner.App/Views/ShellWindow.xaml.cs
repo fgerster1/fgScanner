@@ -67,9 +67,23 @@ public partial class ShellWindow : Window
     public bool ShowBackup()
     {
         var succeeded = Dialogs.BackupWindow.Show(this, new BackupViewModel(
-            _backup, _settings, () => _viewModel.BackupBlockedReason, BackupViewModel.FindDrives));
+            _backup, _settings, () => _viewModel.BackupBlockedReason, BackupViewModel.FindDrives, TestCopyFolder()));
         _viewModel.RefreshLastBackup();
         return succeeded;
+    }
+
+    /// <summary><c>to-franz\copies</c> in the Drive folder chosen at setup ("This is Jim's station"
+    /// writes it beside the station scripts); null on a station that has none.</summary>
+    private static string? TestCopyFolder()
+    {
+        var setting = System.IO.Path.Combine(AppContext.BaseDirectory, "station", "drive-folder.txt");
+        if (!System.IO.File.Exists(setting))
+        {
+            return null;
+        }
+
+        var drive = System.IO.File.ReadAllText(setting).Trim();
+        return drive.Length == 0 ? null : System.IO.Path.Combine(drive, "to-franz", "copies");
     }
 
     private void OnAboutClick(object sender, RoutedEventArgs e) =>

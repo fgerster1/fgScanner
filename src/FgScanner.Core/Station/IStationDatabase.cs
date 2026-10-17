@@ -46,4 +46,11 @@ public interface IStationDatabase
     void BindToStation(string incoming, string? receiver, string receiverTrash);
 
     bool IntegrityOk(string database);
+
+    /// <summary>
+    /// Moves every stored evidence path from <paramref name="fromRoot"/> to <paramref name="toRoot"/>,
+    /// for a test copy opened beside the station it came from (SPEC-SCANNER-2026-011). Called only
+    /// once <see cref="PathOutside"/> has found every path inside <paramref name="fromRoot"/>.
+    /// </summary>
+    void RerootEvidence(string database, string fromRoot, string toRoot);
 }

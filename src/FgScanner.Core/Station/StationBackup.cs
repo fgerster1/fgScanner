@@ -22,7 +22,9 @@ public sealed partial class StationBackup(
 
     public const int DefaultKeep = 3;
 
-    public StationBackupResult Run(StationPackRequest request, int keep = DefaultKeep)
+    /// <param name="recordAsLast">False for a test copy sent to Franz: "Last backup" speaks only of
+    /// Jim's own stick.</param>
+    public StationBackupResult Run(StationPackRequest request, int keep = DefaultKeep, bool recordAsLast = true)
     {
         request = request with { Kind = StationPacker.BackupKind };
         if (TooBigForFat32(request) is { } refusal)
@@ -36,7 +38,11 @@ public sealed partial class StationBackup(
             return new StationBackupResult(pack, []);
         }
 
-        LastBackupRecord.Write(request.StationRoot, new LastBackupRecord(pack.PackFolder!, pack.Code!, request.Source.SentAt));
+        if (recordAsLast)
+        {
+            LastBackupRecord.Write(request.StationRoot, new LastBackupRecord(pack.PackFolder!, pack.Code!, request.Source.SentAt));
+        }
+
         return new StationBackupResult(pack, RemoveOld(request.Destination, request.Source.Station, pack.PackFolder!, Math.Max(1, keep)));
     }
 

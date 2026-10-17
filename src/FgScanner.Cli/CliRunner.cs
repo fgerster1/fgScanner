@@ -623,14 +623,16 @@ public static class CliRunner
         var undoOption = new Option<bool>("--undo") { Description = "Put the station back as it was before the last apply." };
         var applyEvidenceOption = new Option<string?>("--evidence") { Description = "The evidence folder (default: the one the profiles name; required for an empty station). Undo uses the folder the last apply used." };
         var expectCodeOption = new Option<string?>("--expect-code") { Description = "The code the operator confirmed; the pack must still have it." };
+        var testCopyOption = new Option<bool>("--test-copy") { Description = "Open a whole backup into an empty workspace with its scans in the --evidence folder; it can never be sent or returned." };
         var apply = new Command("apply", "Install a pack into this station; prints OK and the code to read out.")
         {
-            applyArgument, undoOption, applyEvidenceOption, expectCodeOption,
+            applyArgument, undoOption, applyEvidenceOption, expectCodeOption, testCopyOption,
         };
         apply.SetAction(parseResult => HoldingTheStation(
             () => ApplyStation(
                 parseResult.GetValue(applyArgument), parseResult.GetValue(undoOption),
-                parseResult.GetValue(applyEvidenceOption), parseResult.GetValue(expectCodeOption), overrides),
+                parseResult.GetValue(applyEvidenceOption), parseResult.GetValue(expectCodeOption), overrides,
+                parseResult.GetValue(testCopyOption)),
             (overrides?.StationRoot is { } stationRoot ? StationPaths.Resolve(stationRoot) : StationPaths.Default).Root));
 
         return new Command("station", "Move a whole station between machines as verified packs.") { verify, pack, backup, apply };
@@ -666,7 +668,8 @@ public static class CliRunner
             : null;
     }
 
-    private static int ApplyStation(string? packFolder, bool undo, string? evidence, string? expectCode, CliOverrides? overrides)
+    private static int ApplyStation(
+        string? packFolder, bool undo, string? evidence, string? expectCode, CliOverrides? overrides, bool testCopy = false)
     {
         var paths = overrides?.StationRoot is { } root ? StationPaths.Resolve(root) : StationPaths.Default;
         var stationRoot = paths.Root;
@@ -686,7 +689,17 @@ public static class CliRunner
         }
 
         StationApplyResult result;
-        if (undo)
+        if (testCopy)
+        {
+            if (packFolder is null || evidence is null || undo)
+            {
+                Console.WriteLine("NOT OK — a test copy needs the backup folder and --evidence <an empty folder for its scans>");
+                return 1;
+            }
+
+            result = new TestCopyOpener(StationDatabase).Open(packFolder, stationRoot, evidence, DateTimeOffset.Now);
+        }
+        else if (undo)
         {
             result = applier.Undo(stationRoot);
         }

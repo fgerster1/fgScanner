@@ -22,7 +22,11 @@ public sealed class BackupService(StationPaths station, WorkGate gate)
 {
     /// <param name="whyNotNow">The Scan page's reason a backup cannot start (paper in hand,
     /// unsaved pages), or null.</param>
-    public async Task<BackupOutcome> BackupAsync(string folder, string? whyNotNow, CancellationToken cancellationToken)
+    /// <param name="keep">How many of this station's backups stay in <paramref name="folder"/>.</param>
+    /// <param name="recordAsLast">False for a test copy sent to Franz, which is not Jim's backup.</param>
+    public async Task<BackupOutcome> BackupAsync(
+        string folder, string? whyNotNow, CancellationToken cancellationToken,
+        int keep = StationBackup.DefaultKeep, bool recordAsLast = true)
     {
         if (whyNotNow is not null)
         {
@@ -31,7 +35,7 @@ public sealed class BackupService(StationPaths station, WorkGate gate)
 
         Log.Information("Backup to {Folder} starting", folder);
         using var hold = await gate.HoldAsync(cancellationToken);
-        var outcome = await Task.Run(() => Run(folder), cancellationToken);
+        var outcome = await Task.Run(() => Run(folder, keep, recordAsLast), cancellationToken);
         if (outcome.Problem is null)
         {
             Log.Information("Backup {Code} written to {Folder}: {Files} files, {Bytes} bytes", outcome.Code, outcome.Folder, outcome.Files, outcome.Bytes);
@@ -44,7 +48,7 @@ public sealed class BackupService(StationPaths station, WorkGate gate)
         return outcome;
     }
 
-    private BackupOutcome Run(string folder)
+    private BackupOutcome Run(string folder, int keep, bool recordAsLast)
     {
         StationFacts facts;
         try
@@ -96,7 +100,7 @@ public sealed class BackupService(StationPaths station, WorkGate gate)
         _ = SetThreadExecutionState(EsContinuous | EsSystemRequired);
         try
         {
-            var result = new StationBackup(packer, DriveFormatOf).Run(request);
+            var result = new StationBackup(packer, DriveFormatOf).Run(request, keep, recordAsLast);
             if (result.Pack.Problem is { } problem)
             {
                 return BackupOutcome.Refused(problem);

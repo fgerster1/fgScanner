@@ -19,11 +19,14 @@ public sealed record BackupTarget(string Label, string Folder)
 /// code — or NOT OK and why. Backups go into a <see cref="FolderName"/> folder on the stick so they
 /// never mix with whatever else is on it, and the folder used is remembered for next time.
 /// </summary>
+/// <param name="testCopyFolder">Where a test copy for Franz goes (<c>to-franz\copies</c> in the shared
+/// Drive folder), or null on a station whose Drive folder was never set up.</param>
 public sealed partial class BackupViewModel(
     BackupService backup,
     AppSettingsService settings,
     Func<string?> whyNotNow,
-    Func<IReadOnlyList<BackupTarget>> findTargets) : ObservableObject
+    Func<IReadOnlyList<BackupTarget>> findTargets,
+    string? testCopyFolder = null) : ObservableObject
 {
     public const string FolderName = "FGScanner-Backup";
 
@@ -39,6 +42,7 @@ public sealed partial class BackupViewModel(
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(BackupCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SendTestCopyCommand))]
     [NotifyPropertyChangedFor(nameof(IsIdle))]
     private bool _isRunning;
 
@@ -88,9 +92,16 @@ public sealed partial class BackupViewModel(
     private bool CanBackup() => SelectedTarget is not null && !IsRunning;
 
     [RelayCommand(CanExecute = nameof(CanBackup))]
-    private async Task BackupAsync()
+    private Task BackupAsync() => RunAsync(SelectedTarget!.Folder, FgScanner.Core.Station.StationBackup.DefaultKeep, toFranz: false);
+
+    private bool CanSendTestCopy() => testCopyFolder is not null && !IsRunning;
+
+    /// <summary>The same checked copy, to Franz through Drive; only the newest stays there.</summary>
+    [RelayCommand(CanExecute = nameof(CanSendTestCopy))]
+    private Task SendTestCopyAsync() => RunAsync(testCopyFolder!, keep: 1, toFranz: true);
+
+    private async Task RunAsync(string folder, int keep, bool toFranz)
     {
-        var target = SelectedTarget!;
         IsRunning = true;
         Succeeded = false;
         ResultText = "";
@@ -98,21 +109,27 @@ public sealed partial class BackupViewModel(
         try
         {
             var refusal = whyNotNow();
-            if (refusal is null && !TryCreate(target.Folder, out var problem))
+            if (refusal is null && !TryCreate(folder, out var problem))
             {
                 refusal = problem;
             }
 
             var outcome = refusal is null
-                ? await backup.BackupAsync(target.Folder, null, CancellationToken.None)
+                ? await backup.BackupAsync(folder, null, CancellationToken.None, keep, recordAsLast: !toFranz)
                 : BackupOutcome.Refused(refusal);
             Succeeded = outcome.Problem is null;
             if (Succeeded)
             {
-                await settings.SetAsync(FolderSettingKey, target.Folder);
+                if (!toFranz)
+                {
+                    await settings.SetAsync(FolderSettingKey, folder);
+                }
+
                 ResultText = $"OK {outcome.Code} — {outcome.Files.ToString("N0", CultureInfo.InvariantCulture)} files, " +
                              $"{(outcome.Bytes / (double)(1L << 20)).ToString("N0", CultureInfo.InvariantCulture)} MB";
-                StatusText = "Write the code on the stick's label.";
+                StatusText = toFranz
+                    ? "Read the code to Franz. Leave the laptop on until Google Drive says it is done."
+                    : "Write the code on the stick's label.";
             }
             else
             {

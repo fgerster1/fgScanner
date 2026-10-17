@@ -246,6 +246,53 @@ public sealed class SqliteStationDatabase : IStationDatabase
         return null;
     }
 
+    public void RerootEvidence(string database, string fromRoot, string toRoot)
+    {
+        var from = Path.TrimEndingDirectorySeparator(Path.GetFullPath(fromRoot));
+        var to = Path.TrimEndingDirectorySeparator(Path.GetFullPath(toRoot));
+        using var connection = Open(database, SqliteOpenMode.ReadWrite);
+        using var transaction = connection.BeginTransaction();
+        foreach (var (table, column) in new[] { ("Profiles", "BaseDirectory"), ("Groups", "DirectoryPath"), ("TrashItems", "GroupDirectoryPath") })
+        {
+            if (!Columns(connection, table).Contains(column, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            var moved = new List<(object Key, string Path)>();
+            using (var read = connection.CreateCommand())
+            {
+                read.Transaction = transaction;
+                read.CommandText = $"SELECT rowid, \"{column}\" FROM \"{table}\" WHERE \"{column}\" IS NOT NULL AND \"{column}\" <> ''";
+                using var reader = read.ExecuteReader();
+                while (reader.Read())
+                {
+                    var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(reader.GetString(1)));
+                    if (full.Equals(from, StringComparison.OrdinalIgnoreCase))
+                    {
+                        moved.Add((reader.GetValue(0), to));
+                    }
+                    else if (full.StartsWith(from + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                    {
+                        moved.Add((reader.GetValue(0), to + full[from.Length..]));
+                    }
+                }
+            }
+
+            foreach (var (key, path) in moved)
+            {
+                using var update = connection.CreateCommand();
+                update.Transaction = transaction;
+                update.CommandText = $"UPDATE \"{table}\" SET \"{column}\" = @path WHERE rowid = @key";
+                update.Parameters.AddWithValue("@path", path);
+                update.Parameters.AddWithValue("@key", key);
+                update.ExecuteNonQuery();
+            }
+        }
+
+        transaction.Commit();
+    }
+
     private static bool Inside(string path, string root, bool rootItself)
     {
         string full;

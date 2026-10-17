@@ -33,7 +33,13 @@ public sealed partial class ShellViewModel : ObservableObject
                 ExtractDirectory = station.IndexPackages,
             };
 
-        WindowTitle = station?.Name is { } name ? $"FG Scanner — station {name}" : "FG Scanner";
+        // A test copy may be scanned into (SPEC-SCANNER-2026-011 Q6), so it must never be mistaken
+        // for Jim's round-trip workspace.
+        WindowTitle = station?.Name is not { } name
+            ? "FG Scanner"
+            : FgScanner.Core.Station.TestCopyMarker.Read(station.Root) is { } copy
+                ? $"FG Scanner — TEST COPY of {copy.From} — station {name}"
+                : $"FG Scanner — station {name}";
 
         var version = typeof(ShellViewModel).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
         VersionText = $"Version {version}";

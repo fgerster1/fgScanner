@@ -104,6 +104,35 @@ public sealed class BackupViewModelTests : IDisposable
         Assert.Equal("NOT OK — the Scan page has pages not yet saved — save or discard them first", vm.ResultText);
     }
 
+    /// <summary>§03 item 6: the same checked copy goes to Franz through the shared Drive folder;
+    /// only the newest one is kept there, since Drive space is shared and Franz wants the latest.</summary>
+    [Fact]
+    public async Task A_test_copy_goes_to_Franzs_copies_folder_and_only_the_newest_stays()
+    {
+        var copies = Path.Combine(_root, "Drive", "to-franz", "copies");
+        var vm = new BackupViewModel(new BackupService(Station, new WorkGate()), _settings, () => null, () => [], copies);
+        await vm.LoadAsync(Token);
+        Assert.True(vm.SendTestCopyCommand.CanExecute(null));
+
+        await vm.SendTestCopyCommand.ExecuteAsync(null);
+        await vm.SendTestCopyCommand.ExecuteAsync(null);
+
+        Assert.True(vm.Succeeded);
+        Assert.Matches("^OK [0-9a-f]{4}-[0-9a-f]{4}", vm.ResultText);
+        Assert.Single(Directory.GetDirectories(copies));
+        // A copy for Franz is not Jim's backup: "Last backup" speaks only of the stick.
+        Assert.Null(FgScanner.Core.Station.LastBackupRecord.Read(Station.Root));
+    }
+
+    [Fact]
+    public async Task Without_the_Drive_folder_a_test_copy_cannot_be_sent()
+    {
+        var vm = ViewModel();
+        await vm.LoadAsync(Token);
+
+        Assert.False(vm.SendTestCopyCommand.CanExecute(null));
+    }
+
     [Fact]
     public async Task With_no_stick_it_says_to_plug_one_in()
     {
