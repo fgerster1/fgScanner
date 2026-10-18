@@ -5,7 +5,8 @@ namespace FgScanner.Core.Station;
 /// <summary>What to pack, and the station-state facts only the caller can read from the database.</summary>
 /// <param name="BasedOnManifest">The manifest of the last pack the receiver applied or verified;
 /// its files are what the receiver already holds. Null for a first pack, which ships everything.</param>
-/// <param name="Kind"><c>send</c> (Jim to Franz) or <c>return</c> (Franz to Jim) — names the folder.</param>
+/// <param name="Kind"><c>send</c> (Jim to Franz), <c>return</c> (Franz to Jim) or <c>backup</c> (a
+/// whole, checked copy to a USB stick or Franz's test folder, SPEC-SCANNER-2026-011) — names the folder.</param>
 /// <param name="BasedOnContent">The fingerprint of the database the receiver holds — what its apply
 /// compares its own rows against. Null for a first pack.</param>
 /// <param name="LiveContent">This station's own fingerprint now, kept in the freeze record.</param>
@@ -45,12 +46,18 @@ public sealed record StationPackResult(
 /// <param name="copyDatabase">Copies the database consistently (SQLite's backup API in the CLI).</param>
 /// <param name="freeBytes">Free space on the destination's drive.</param>
 /// <param name="onFileWritten">Observes each evidence or manifest file as it lands (tests).</param>
+/// <param name="restProblem">Replaces the closed-station check for a caller that is the open app
+/// itself (the Back up button, SPEC-SCANNER-2026-011): its database is open in WAL mode and its
+/// live scan session keeps an index, so "closed cleanly" can never hold — it answers instead.</param>
 public sealed class StationPacker(
     Func<bool> isAppOpen,
     Action<string, string> copyDatabase,
     Func<string, long> freeBytes,
-    Action<string>? onFileWritten = null)
+    Action<string>? onFileWritten = null,
+    Func<string?>? restProblem = null)
 {
+    public const string BackupKind = "backup";
+
     /// <summary>Drive's local cache holds the pack until it uploads, so it needs this much spare.</summary>
     private const long Headroom = 1L << 30;
 
@@ -135,9 +142,15 @@ public sealed class StationPacker(
                     $"the pack did not verify after copying ({string.Join("; ", verified.Problems)}) — pack again");
             }
 
-            StationFreezeRecord.Write(request.StationRoot, new StationFreezeRecord(
-                Path.GetFileName(pack), verified.Code!, manifest.SentAt, liveDbSha256,
-                StationManifest.HashOf(manifestBytes), request.LiveContent), manifestBytes);
+            // A backup is never what the other station holds: recording it as the baseline would
+            // refuse Franz's next return as "not made from this station's last pack".
+            if (request.Kind != BackupKind)
+            {
+                StationFreezeRecord.Write(request.StationRoot, new StationFreezeRecord(
+                    Path.GetFileName(pack), verified.Code!, manifest.SentAt, liveDbSha256,
+                    StationManifest.HashOf(manifestBytes), request.LiveContent), manifestBytes);
+            }
+
             return new StationPackResult(pack, verified.Code, shipped.Count, shipped.Sum(f => f.Size), null);
         }
         catch
@@ -151,9 +164,23 @@ public sealed class StationPacker(
     private string? RefusalOf(StationPackRequest request)
     {
         var source = request.Source;
-        if (StationRest.Problem(isAppOpen, source.Database, request.StationRoot, "pack") is { } notAtRest)
+        if ((restProblem is null ? StationRest.Problem(isAppOpen, source.Database, request.StationRoot, "pack") : restProblem()) is { } notAtRest)
         {
             return notAtRest;
+        }
+
+        // Nothing done in a test copy may reach the station it came from (SPEC-SCANNER-2026-011 Q6),
+        // and a backup of one would carry no marker: restored, it could send (Revision C, SR-4).
+        if (TestCopyMarker.IsTestCopy(request.StationRoot))
+        {
+            return "this is a test copy — it can never be sent, returned or backed up";
+        }
+
+        // A backup must restore on its own; a delta needs the pack it was based on, which may be
+        // the one that is lost.
+        if (request.Kind == BackupKind && request.BasedOnManifest is not null)
+        {
+            return "a backup is always the whole station, never based on another pack";
         }
 
         if ((request.Reports ?? []).FirstOrDefault(r => !StationManifest.ReportNames.Contains(r.Name, StringComparer.Ordinal)) is { } unknown)
@@ -170,10 +197,13 @@ public sealed class StationPacker(
 
         // A pack inside a live folder would be packed into the next pack, and a sync client
         // watching it could carry a deletion back into the station (§03 C2).
+        // Links resolved first: a folder that is a junction into the evidence is inside it, whatever
+        // its name says (SPEC-SCANNER-2026-011 Revision C, SR-6).
         var destination = Path.GetFullPath(request.Destination);
+        var resolved = Resolved(destination);
         foreach (var live in new[] { request.StationRoot, source.EvidenceRoot })
         {
-            if (IsInside(destination, Path.GetFullPath(live)))
+            if (IsInside(destination, Path.GetFullPath(live)) || IsInside(resolved, Resolved(Path.GetFullPath(live))))
             {
                 return $"the pack destination is inside the station's own folders: {destination}";
             }
@@ -227,6 +257,24 @@ public sealed class StationPacker(
         var slash = rel.IndexOf('/', StringComparison.Ordinal);
         var root = rel[..slash] == StationManifest.TrashFolder ? source.Trash : source.EvidenceRoot;
         return Path.Combine(root, rel[(slash + 1)..].Replace('/', Path.DirectorySeparatorChar));
+    }
+
+    /// <summary>The path with every junction or symbolic link along it followed to its target.</summary>
+    internal static string Resolved(string path, int depth = 0)
+    {
+        var tail = new Stack<string>();
+        for (var current = new DirectoryInfo(Path.GetFullPath(path)); current is not null; current = current.Parent)
+        {
+            if (depth < 16 && current.Exists && current.LinkTarget is not null
+                && current.ResolveLinkTarget(returnFinalTarget: true) is { } target)
+            {
+                return Path.Combine([Resolved(target.FullName, depth + 1), .. tail]);
+            }
+
+            tail.Push(current.Name);
+        }
+
+        return Path.GetFullPath(path);
     }
 
     private static bool IsInside(string path, string folder)

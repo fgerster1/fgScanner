@@ -235,6 +235,68 @@ public sealed class ShellTests : IDisposable
         Assert.Contains(station.Root, shell.AboutText);
     }
 
+    private ShellViewModel CreateStationShell(FgScanner.Core.Station.StationPaths station, ScanViewModel? scan = null)
+    {
+        var appSettings = new AppSettingsService(new TestFactory(_dbPath));
+        return new ShellViewModel(
+            scan ?? CreateScanViewModel(),
+            new GroupsViewModel(_groupService, _profileService, _indexingService, _trashService, _activeGroup, CreateToolset(), CreateRetroService()),
+            new SearchViewModel(new SearchService(new TestFactory(_dbPath)), _groupService),
+            new TrashViewModel(_trashService, _activeGroup),
+            new SettingsViewModel(
+                _profileService, _trashService, appSettings,
+                new FgScanner.Ocr.LanguageManager(Path.Combine(_root, "tessdata")),
+                new FgScanner.Ai.CredentialStore(Path.Combine(_root, "cred"), useCredentialManager: false),
+                _groupService),
+            appSettings,
+            station);
+    }
+
+    /// <summary>SPEC-SCANNER-2026-011 AC-9: the line under Back up reads the station's own record,
+    /// so it works with the stick unplugged.</summary>
+    [Fact]
+    public void Last_backup_reads_never_then_the_time_of_the_last_one()
+    {
+        var station = FgScanner.Core.Station.StationPaths.Resolve(Path.Combine(_root, "station-jim"));
+        Directory.CreateDirectory(station.Root);
+        var shell = CreateStationShell(station);
+        Assert.Equal("Last backup: never", shell.LastBackupText);
+
+        var at = new DateTimeOffset(2026, 10, 17, 9, 0, 0, TimeSpan.FromHours(-4));
+        FgScanner.Core.Station.LastBackupRecord.Write(station.Root, new(@"E:\FGScanner-Backup\x", "ab12-cd34", at));
+        shell.RefreshLastBackup();
+
+        Assert.Equal($"Last backup: {at.ToLocalTime():yyyy-MM-dd HH:mm}", shell.LastBackupText);
+    }
+
+    /// <summary>SPEC-SCANNER-2026-011 Q6: Franz may scan into a test copy, so the title must say
+    /// plainly that it is one and not Jim's round-trip workspace.</summary>
+    [Fact]
+    public void A_test_copy_says_so_in_the_title()
+    {
+        var station = FgScanner.Core.Station.StationPaths.Resolve(Path.Combine(_root, "station-jim-test"));
+        Directory.CreateDirectory(station.Root);
+        FgScanner.Core.Station.TestCopyMarker.Write(station.Root, new("jim-2026-10-17-0900-backup", "ab12-cd34", @"C:\Evidence-Scans-test", DateTimeOffset.Now));
+
+        var shell = CreateStationShell(station);
+
+        Assert.Equal("FG Scanner — TEST COPY of jim-2026-10-17-0900-backup — station station-jim-test", shell.WindowTitle);
+    }
+
+    [Fact]
+    public async Task A_backup_is_refused_while_the_Scan_page_holds_unsaved_pages()
+    {
+        var scan = CreateScanViewModel(new FakeScanService { PageCount = 1 });
+        await scan.RefreshDevicesCommand.ExecuteAsync(null);
+        var shell = CreateStationShell(FgScanner.Core.Station.StationPaths.Resolve(Path.Combine(_root, "station-jim")), scan);
+        Assert.Null(shell.BackupBlockedReason);
+
+        scan.Source = ScanSource.Feeder;
+        await scan.ScanCommand.ExecuteAsync(null);
+
+        Assert.Contains("not yet saved", shell.BackupBlockedReason);
+    }
+
     [Fact]
     public void Shell_starts_on_scan_section()
     {

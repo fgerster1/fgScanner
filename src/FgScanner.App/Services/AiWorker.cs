@@ -22,6 +22,7 @@ public sealed class AiWorker : IDisposable
     private readonly IndexingService _indexing;
     private readonly ActiveGroupStore _activeGroup;
     private readonly CredentialStore _credentials;
+    private readonly WorkGate _gate;
     private readonly SemaphoreSlim _wake = new(0);
     private readonly CancellationTokenSource _stop = new();
     private Task? _loop;
@@ -32,13 +33,15 @@ public sealed class AiWorker : IDisposable
         AppSettingsService settings,
         IndexingService indexing,
         ActiveGroupStore activeGroup,
-        CredentialStore credentials)
+        CredentialStore credentials,
+        WorkGate gate)
     {
         _queue = queue;
         _settings = settings;
         _indexing = indexing;
         _activeGroup = activeGroup;
         _credentials = credentials;
+        _gate = gate;
         queue.JobsEnqueued += () => _wake.Release();
     }
 
@@ -89,34 +92,40 @@ public sealed class AiWorker : IDisposable
         var touchedGroups = new HashSet<Guid>();
         var running = new List<Task>();
 
-        while (!_stop.IsCancellationRequested)
-        {
-            running.RemoveAll(t => t.IsCompleted);
-            if (running.Count >= Volatile.Read(ref _concurrencyLimit))
+        // A backup waits for the jobs in flight and the re-export after them (GatedBatch). A job is
+        // started, not awaited, so up to the concurrency limit run at once.
+        await GatedBatch.RunAsync(
+            _gate,
+            async token =>
             {
-                await Task.WhenAny(running);
-                continue;
-            }
+                running.RemoveAll(t => t.IsCompleted);
+                while (running.Count >= Volatile.Read(ref _concurrencyLimit))
+                {
+                    await Task.WhenAny(running);
+                    running.RemoveAll(t => t.IsCompleted);
+                }
 
-            var job = await _queue.ClaimNextAsync(_stop.Token);
-            if (job is null)
+                return await _queue.ClaimNextAsync(token);
+            },
+            job =>
             {
-                break;
-            }
+                lock (touchedGroups)
+                {
+                    touchedGroups.Add(job.GroupId);
+                }
 
-            lock (touchedGroups)
+                running.Add(Task.Run(() => ProcessAsync(provider, job, model), _stop.Token));
+                return Task.CompletedTask;
+            },
+            async () =>
             {
-                touchedGroups.Add(job.GroupId);
-            }
-
-            running.Add(Task.Run(() => ProcessAsync(provider, job, model), _stop.Token));
-        }
-
-        await Task.WhenAll(running);
-        foreach (var groupId in touchedGroups)
-        {
-            await _indexing.ReexportIfCommittedAsync(groupId, _stop.Token);
-        }
+                await Task.WhenAll(running);
+                foreach (var groupId in touchedGroups)
+                {
+                    await _indexing.ReexportIfCommittedAsync(groupId, _stop.Token);
+                }
+            },
+            _stop.Token);
 
         if (touchedGroups.Count > 0)
         {

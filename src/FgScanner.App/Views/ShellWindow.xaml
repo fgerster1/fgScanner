@@ -19,6 +19,9 @@
 
         <DockPanel Grid.Column="0">
             <StackPanel DockPanel.Dock="Bottom" Margin="8">
+                <Button Content="Back up…" Click="OnBackupClick" HorizontalAlignment="Stretch" />
+                <TextBlock Text="{Binding LastBackupText}" Margin="0,4,0,10" TextWrapping="Wrap"
+                           HorizontalAlignment="Center" Opacity="0.7" />
                 <Button Content="About" Click="OnAboutClick" HorizontalAlignment="Stretch" />
                 <TextBlock Text="{Binding VersionText}" Margin="0,6,0,0"
                            HorizontalAlignment="Center" Opacity="0.7" />

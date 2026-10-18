@@ -43,7 +43,17 @@ public interface IStationDatabase
     /// or, for a station with no database yet (<paramref name="receiver"/> null), no Settings are
     /// kept at all; and trash paths are re-rooted to <paramref name="receiverTrash"/>.
     /// </summary>
-    void BindToStation(string incoming, string? receiver, string receiverTrash);
+    /// <param name="restore">A station rebuilt from its own backup (SPEC-SCANNER-2026-011 Revision C,
+    /// CR-3): with no receiver, the backup's Settings are kept, except every <c>Hook.*</c> — the
+    /// commit command line and webhook — so a restore never runs or calls anything it brought.</param>
+    void BindToStation(string incoming, string? receiver, string receiverTrash, bool restore = false);
 
     bool IntegrityOk(string database);
+
+    /// <summary>
+    /// Moves every stored evidence path from <paramref name="fromRoot"/> to <paramref name="toRoot"/>,
+    /// for a test copy opened beside the station it came from (SPEC-SCANNER-2026-011). Called only
+    /// once <see cref="PathOutside"/> has found every path inside <paramref name="fromRoot"/>.
+    /// </summary>
+    void RerootEvidence(string database, string fromRoot, string toRoot);
 }
